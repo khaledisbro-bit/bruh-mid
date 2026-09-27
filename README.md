@@ -1,41 +1,44 @@
-# unmoonveil - static unpacker for MoonVeil Obfuscator v1.4.5
+# VmSmart
 
-`word.lua` is a Luau script wrapped by MoonVeil Obfuscator v1.4.5. This tool
-peels back every deterministic layer without a Lua runtime, then documents
-what the final layer needs.
+A Luau deobfuscator for the base85 + Zstd VM obfuscator family (obf2, obf3, and
+siblings), with a desktop app and a hybrid static + dynamic pipeline that
+recovers genuine program logic and refuses to fabricate.
 
-## Files
-- `word.lua` - the obfuscated input.
-- `unmoonveil.py` - the unpacker. Pure Python, no dependencies.
-- `RECONSTRUCTION.md` - the layer pipeline and recovery status.
-- `out/` - generated output (created by the tool).
+## Layout
+- `app/` - VmSmart, the Electron desktop app (purple glass UI). Drop an
+  obfuscated `.lua`, watch the stages, get the verified source.
+- `pipeline/` - the engine the app drives:
+  - `deob.py` - one-command driver (detect -> unwrap -> harness -> audit).
+  - `unobf.py` - static analyzer and Layer-1 unwrapper.
+  - `unobf.lua` - dynamic oracle harness (runs in a Roblox executor).
+  - `ai.py` - semantic audit; rejects failed runs, verifies output.
+  - `obfuscators/` - per-family plugins; add a build type without core changes.
+  - `REPORT_obf3.md`, `VERIFICATION_obf3.md` - worked results.
+- `deobfuscated.lua` - the trace-verified source recovered for obf3.
+- `unmoonveil.py`, `RECONSTRUCTION.md` - a separate tool for a MoonVeil-wrapped
+  sample (`word.lua`).
 
-## Usage
+## Quick start (command line)
 ```
-python3 unmoonveil.py word.lua out
+pip install zstandard
+python3 pipeline/deob.py obf.lua              # detect, unwrap, make harness
+# run the printed harness in your executor, save its output to result.txt
+python3 pipeline/deob.py obf.lua --trace result.txt --candidate deobfuscated.lua
 ```
-Writes to `out/`:
-- `payload.bin` - the base64-decoded VM chunk (25,549 bytes).
-- `payload_dec.bin` - the LZSS-decompressed chunk (152,128 bytes).
-- `constants.txt` - all 159 decoded `yf()` string constants (53 unique).
 
-## The layers
+## Quick start (app)
 ```
-(function() ... return Qd(Gf'<base64>', {handlers}) end)()(...)
+cd app
+npm install
+npm start
 ```
-1. `Gf` - base64 decode (standard alphabet).
-2. `ze` - LZSS decompress (2048-byte window, 11-bit distance, 5-bit length).
-3. `Ia` - ChaCha20-variant stream cipher (rotations 16/12/8/7).
-4. `Qd` - VM deserializer and interpreter.
+Build a Windows installer with `npm run dist` (needs Python 3 + zstandard on the
+machine that runs it). See `app/README.md`.
 
-Inline strings use `yf(cipher, key)`, a repeating-key XOR.
-
-## What is recovered vs not
-- **Recovered (deterministic):** obfuscator identity, all string constants,
-  the `yf` XOR cipher, the base64 payload, and the LZSS-decompressed VM
-  chunk.
-- **Not source-level:** the VM program. The 152 KB chunk stays
-  ChaCha-encrypted under a key `Qd` derives at runtime, and the code is
-  Roblox Luau. Getting readable Lua back needs either a Luau runtime to trace
-  the VM, or a full static lifter that reproduces the key derivation and the
-  opcode set. See `RECONSTRUCTION.md`.
+## How it works
+The outer wrapper (base85 + EncodingService Zstd + header split) is unwrapped
+statically. The inner VM decrypts constants with a runtime key and per-pc LCG, so
+there is no static key; the dynamic oracle runs the VM in a real executor and
+the audit verifies the result against the observed behavior. Nothing is
+hardcoded per sample: the alphabet, header, resolver, and keys are all detected
+from each build.

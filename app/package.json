@@ -5,17 +5,32 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "icon": "python3 assets/make_icon.py",
+    "dist": "electron-builder --win nsis portable"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^32.0.0"
+    "electron": "^32.0.0",
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.vmsmart.app",
     "productName": "VmSmart",
-    "files": ["**/*", "../pipeline/**/*"],
-    "win": { "target": "nsis" }
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "renderer/**/*", "assets/icon.*"],
+    "extraResources": [
+      { "from": "../pipeline", "to": "pipeline", "filter": ["**/*.py", "**/*.lua", "**/*.md"] }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "VmSmart"
+    }
   }
 }

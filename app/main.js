@@ -6,8 +6,16 @@ const os = require('os');
 const http = require('http');
 const { spawn } = require('child_process');
 
-// pipeline lives next to the app folder in the repo
-const PIPELINE_DIR = path.join(__dirname, '..', 'pipeline');
+// pipeline lives next to the app folder in dev, or under resources when packaged
+function resolvePipeline() {
+  const candidates = [
+    path.join(__dirname, '..', 'pipeline'),          // dev (repo)
+    path.join(process.resourcesPath || '', 'pipeline') // packaged (extraResources)
+  ];
+  for (const c of candidates) { try { if (fs.existsSync(path.join(c, 'deob.py'))) return c; } catch (_) {} }
+  return candidates[0];
+}
+const PIPELINE_DIR = resolvePipeline();
 const DEOB = path.join(PIPELINE_DIR, 'deob.py');
 const WORK = path.join(os.tmpdir(), 'vmsmart');
 fs.mkdirSync(WORK, { recursive: true });
@@ -34,7 +42,7 @@ app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) creat
 // ---- helpers ----------------------------------------------------------------
 function runPython(args) {
   return new Promise((resolve) => {
-    const p = spawn(settings.python, args, { cwd: path.join(__dirname, '..') });
+    const p = spawn(settings.python, args, { cwd: WORK });
     let out = '', err = '';
     p.stdout.on('data', d => out += d);
     p.stderr.on('data', d => err += d);

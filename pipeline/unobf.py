@@ -81,9 +81,19 @@ def b85_decode(blob, alphabet):
 
 
 def unwrap_layer1(src, log):
-    """Try every (alphabet, blob) pair; keep the one that yields valid Zstd."""
+    """Dispatch to the matching obfuscator plugin (see pipeline/obfuscators/).
+    Falls back to the built-in base85+Zstd path if no plugin matches."""
     if zstandard is None:
         raise SystemExit("pip install zstandard")
+    try:
+        import obfuscators
+        plug = obfuscators.pick(src)
+        if plug is not None:
+            log["family"] = plug.NAME
+            return plug.unwrap(src, log)
+    except Exception:
+        pass
+    # legacy inline fallback
     alphabets = find_base85_alphabet(src)
     blobs = find_blobs(src)
     subs = find_header_subtractors(src)
