@@ -124,7 +124,8 @@
       <!-- SETTINGS -->
       <section class="page" id="page-settings">
         <div class="card" style="padding:18px; max-width:560px">
-          <div class="field"><label>Roblox Executor MCP URL</label><input id="mcpUrl" placeholder="http://localhost:16384" /></div>
+          <div class="field"><label>MCP endpoint (from the MCP server panel)</label><input id="mcpUrl" placeholder="http://127.0.0.1:8225/mcp" /></div>
+          <div class="field"><label>Bearer token</label><input id="mcpToken" type="password" placeholder="paste the token from the MCP server panel" /></div>
           <div class="field"><label>Python command</label><input id="pyCmd" placeholder="python" /></div>
           <button class="btn" id="saveSettings"><svg><use href="#i-save"/></svg> Save settings</button>
         </div>

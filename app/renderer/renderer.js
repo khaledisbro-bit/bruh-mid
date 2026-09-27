@@ -170,18 +170,19 @@ function pushHistory(verdict) {
 // ---- settings ----
 (async () => {
   const s = await window.vm.getSettings();
-  $('#mcpUrl').value = s.mcpUrl || ''; $('#pyCmd').value = s.python || '';
-  probeMcp(s.mcpUrl);
+  $('#mcpUrl').value = s.mcpUrl || ''; $('#pyCmd').value = s.python || ''; $('#mcpToken').value = s.mcpToken || '';
+  probeMcp();
 })();
 $('#saveSettings').addEventListener('click', async () => {
-  const s = await window.vm.setSettings({ mcpUrl: $('#mcpUrl').value.trim(), python: $('#pyCmd').value.trim() });
-  flash('#saveSettings', 'Saved'); probeMcp(s.mcpUrl);
+  await window.vm.setSettings({ mcpUrl: $('#mcpUrl').value.trim(), mcpToken: $('#mcpToken').value.trim(), python: $('#pyCmd').value.trim() });
+  flash('#saveSettings', 'Saved'); probeMcp();
 });
-async function probeMcp(url) {
+async function probeMcp() {
   const dot = $('#mcpDot'), txt = $('#mcpText');
+  dot.className = 'mcp-dot off'; txt.textContent = 'MCP checking...';
   try {
-    const res = await window.vm.runMcp('print("vmsmart-probe")');
-    if (res && res.ok) { dot.className = 'mcp-dot on'; txt.textContent = 'MCP connected'; }
-    else { dot.className = 'mcp-dot off'; txt.textContent = 'MCP manual mode'; }
+    const res = await window.vm.runMcp('return "vmsmart-probe"');
+    if (res && res.ok) { dot.className = 'mcp-dot on'; txt.textContent = 'MCP connected (' + (res.tool || 'exec') + ')'; }
+    else { dot.className = 'mcp-dot off'; txt.textContent = 'MCP manual (' + (res && res.error ? res.error : 'offline') + ')'; }
   } catch (_) { dot.className = 'mcp-dot off'; txt.textContent = 'MCP manual mode'; }
 }

@@ -21,7 +21,7 @@ const WORK = path.join(os.tmpdir(), 'vmsmart');
 fs.mkdirSync(WORK, { recursive: true });
 
 let win;
-let settings = { mcpUrl: 'http://localhost:16384', python: process.platform === 'win32' ? 'python' : 'python3' };
+let settings = { mcpUrl: 'http://127.0.0.1:8225/mcp', mcpToken: '', python: process.platform === 'win32' ? 'python' : 'python3' };
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 try { Object.assign(settings, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); } catch (_) {}
 function saveSettings() { try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2)); } catch (_) {} }
@@ -51,33 +51,97 @@ function runPython(args) {
   });
 }
 
-function postMcp(urlBase, lua) {
-  // Best-effort: try a few likely execute endpoints on the local bridge.
-  // Manual paste is always available as a fallback in the UI.
-  const bodies = [
-    { path: '/execute', payload: JSON.stringify({ script: lua }) },
-    { path: '/api/execute', payload: JSON.stringify({ code: lua }) },
-    { path: '/run', payload: JSON.stringify({ lua }) }
-  ];
+// ---- MCP (Streamable HTTP / JSON-RPC) client -------------------------------
+function mcpPost(urlStr, token, sessionId, bodyObj) {
   return new Promise((resolve) => {
-    let i = 0;
-    const tryOne = () => {
-      if (i >= bodies.length) return resolve({ ok: false, error: 'no execute endpoint responded' });
-      const b = bodies[i++];
-      try {
-        const u = new URL(urlBase + b.path);
-        const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b.payload) } },
-          res => { let d = ''; res.on('data', c => d += c); res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) resolve({ ok: true, body: d });
-            else tryOne();
-          }); });
-        req.on('error', tryOne);
-        req.write(b.payload); req.end();
-      } catch (_) { tryOne(); }
+    let payload;
+    try { payload = JSON.stringify(bodyObj); } catch (e) { return resolve({ error: String(e) }); }
+    let u; try { u = new URL(urlStr); } catch (e) { return resolve({ error: 'bad url' }); }
+    const lib = u.protocol === 'https:' ? require('https') : http;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+      'Content-Length': Buffer.byteLength(payload)
     };
-    tryOne();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+    const req = lib.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method: 'POST', headers },
+      res => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => {
+          const sid = res.headers['mcp-session-id'] || sessionId;
+          // body may be plain JSON or SSE (lines of "data: {json}")
+          let obj = null;
+          const trimmed = d.trim();
+          if (trimmed.startsWith('{')) { try { obj = JSON.parse(trimmed); } catch (_) {} }
+          if (!obj) {
+            for (const line of d.split('\n')) {
+              const m = line.match(/^data:\s*(.+)$/);
+              if (m) { try { const o = JSON.parse(m[1]); if (o && (o.result || o.error || o.id !== undefined)) obj = o; } catch (_) {} }
+            }
+          }
+          resolve({ status: res.statusCode, sessionId: sid, obj, raw: d });
+        });
+      });
+    req.on('error', e => resolve({ error: String(e) }));
+    req.write(payload); req.end();
   });
+}
+
+function pickExecTool(tools) {
+  const score = (t) => {
+    const n = (t.name || '').toLowerCase();
+    let s = 0;
+    if (/exec|run/.test(n)) s += 2;
+    if (/lua|luau|code|script/.test(n)) s += 2;
+    if (/eval/.test(n)) s += 1;
+    return s;
+  };
+  return tools.map(t => [score(t), t]).filter(x => x[0] >= 2).sort((a, b) => b[0] - a[0]).map(x => x[1])[0] || null;
+}
+
+function execArgName(tool, lua) {
+  const props = (tool.inputSchema && tool.inputSchema.properties) || {};
+  const keys = Object.keys(props);
+  for (const cand of ['script', 'code', 'source', 'lua', 'luau', 'text', 'command']) {
+    if (keys.includes(cand)) return { [cand]: lua };
+  }
+  // first string property, else a generic guess
+  const strKey = keys.find(k => (props[k].type || 'string') === 'string');
+  return strKey ? { [strKey]: lua } : { script: lua };
+}
+
+async function mcpExecute(urlStr, token, lua) {
+  // 1) initialize
+  const init = await mcpPost(urlStr, token, null, {
+    jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'VmSmart', version: '1.0.0' } }
+  });
+  if (init.error) return { ok: false, error: init.error };
+  if (init.status === 401 || init.status === 403) return { ok: false, error: 'unauthorized (check bearer token)' };
+  const sid = init.sessionId;
+  // 2) initialized notification
+  await mcpPost(urlStr, token, sid, { jsonrpc: '2.0', method: 'notifications/initialized' });
+  // 3) list tools
+  const list = await mcpPost(urlStr, token, sid, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+  const tools = (list.obj && list.obj.result && list.obj.result.tools) || [];
+  if (!tools.length) return { ok: false, error: 'no tools from MCP', tools: [] };
+  const tool = pickExecTool(tools);
+  if (!tool) return { ok: false, error: 'no execute tool found', tools: tools.map(t => t.name) };
+  // 4) call it
+  const call = await mcpPost(urlStr, token, sid, {
+    jsonrpc: '2.0', id: 3, method: 'tools/call',
+    params: { name: tool.name, arguments: execArgName(tool, lua) }
+  });
+  if (call.error) return { ok: false, error: call.error };
+  const res = call.obj && call.obj.result;
+  if (call.obj && call.obj.error) return { ok: false, error: call.obj.error.message || 'tool error' };
+  let text = '';
+  if (res && Array.isArray(res.content)) text = res.content.map(c => c.text || '').join('\n');
+  else if (typeof res === 'string') text = res;
+  else text = JSON.stringify(res);
+  return { ok: true, body: text, tool: tool.name };
 }
 
 function parseStages(stdout) {
@@ -112,8 +176,7 @@ ipcMain.handle('analyze', async (_e, filePath) => {
 });
 
 ipcMain.handle('run-mcp', async (_e, harnessLua) => {
-  const res = await postMcp(settings.mcpUrl, harnessLua);
-  return res;
+  return await mcpExecute(settings.mcpUrl, settings.mcpToken, harnessLua);
 });
 
 ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePath }) => {
