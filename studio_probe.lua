@@ -1,21 +1,16 @@
--- studio_probe.lua
--- Run this in your Roblox executor (or Studio command bar) to characterize the
--- deobfuscated module produced by 5a10205e-obfuscated.lua.
+-- studio_probe.lua  (v2)
+-- Runs 5a10205e-obfuscated.lua and captures the real module even when the
+-- chunk's return value comes back nil. It hooks setmetatable so the module
+-- table `M` is grabbed at the moment the program builds it, then probes it.
 --
--- The obfuscated file ends with `):H(...)`, so loading it RETURNS the real
--- module. We load it, then probe every observable behavior so the exact source
--- can be reconstructed. Paste the printed OUTPUT back.
---
--- Setup: save the obfuscated script next to your executor as "obf.lua"
--- (or edit SOURCE below to inline it / http-fetch it).
+-- Save the obfuscated script as "obf.lua" where your executor can readfile it,
+-- OR paste it into SOURCE below. Run this, then paste the printed OUTPUT back.
 
 local SOURCE
 do
-    -- Option A: read from a file your executor can see.
     local ok, txt = pcall(function() return readfile("obf.lua") end)
     if ok and txt then SOURCE = txt end
-    -- Option B: paste the whole obfuscated string here instead:
-    -- SOURCE = [[ ...paste... ]]
+    -- SOURCE = [[ ...paste whole obfuscated script here... ]]
 end
 assert(SOURCE, "put the obfuscated script in obf.lua (readfile) or paste into SOURCE")
 
@@ -26,45 +21,73 @@ local function out(...)
     log[#log + 1] = table.concat(parts, "\t")
 end
 
--- Load the module (its top-level `):H(...)` returns the real value).
+-- ---- hook setmetatable to capture every table + metatable the program sets
+local real_setmetatable = setmetatable
+local captured = {}          -- list of { tbl = ..., mt = ... }
+local function hooked_setmetatable(t, mt)
+    captured[#captured + 1] = { tbl = t, mt = mt }
+    return real_setmetatable(t, mt)
+end
+
+-- Install the hook where the VM will see it. The VM reads globals via
+-- getfenv(), so replacing the global entry is enough. We also setfenv the
+-- chunk onto a proxy env that forwards to the real globals but overrides
+-- setmetatable, in case the executor sandboxes the global table.
+local realenv = getfenv()
+realenv.setmetatable = hooked_setmetatable
+
 local chunk = loadstring(SOURCE)
-local ok, M = pcall(chunk)
+local proxy = setmetatable({ setmetatable = hooked_setmetatable },
+    { __index = realenv, __newindex = realenv })
+pcall(function() setfenv(chunk, proxy) end)
+
 out("== load ==")
-out("load ok:", ok, "type(M):", typeof(M))
-if not ok then out("error:", M) end
+local ok, ret = pcall(chunk)
+out("run ok:", ok, "return type:", typeof(ret))
+if not ok then out("error:", ret) end
+out("setmetatable calls captured:", #captured)
 
-if ok and (type(M) == "table" or type(M) == "userdata") then
-    -- Metatable shape
-    local mt = getmetatable(M)
-    out("== metatable ==")
-    out("has mt:", mt ~= nil, "type(mt):", typeof(mt))
-    if type(mt) == "table" then
-        for k, v in pairs(mt) do out("mt key:", k, "->", typeof(v)) end
-    end
+-- restore
+realenv.setmetatable = real_setmetatable
 
-    -- Direct keys present on the table itself
-    out("== rawpairs ==")
-    if type(M) == "table" then
-        for k, v in pairs(M) do out("field:", k, "=", typeof(v)) end
-    end
+-- ---- pick the module: prefer the return value, else a captured table whose
+-- metatable has an __index function.
+local function looks_like_module(entry)
+    return type(entry.mt) == "table" and type(entry.mt.__index) == "function"
+end
 
-    -- Probe the known action names + a few unknown keys through __index.
-    local keys = { "add", "mul", "sub", "div", "mod", "pow", "nope", "__index" }
-    out("== __index probe ==")
+local candidates = {}
+if type(ret) == "table" then candidates[#candidates + 1] = { tbl = ret, mt = getmetatable(ret) } end
+for _, e in ipairs(captured) do
+    if looks_like_module(e) then candidates[#candidates + 1] = e end
+end
+
+out("== candidate modules:", #candidates, "==")
+local keys = { "add", "mul", "sub", "div", "mod", "pow", "nope" }
+local samples = { {6, 2}, {5, 3}, {10, 4}, {7, 0} }
+
+for ci, e in ipairs(candidates) do
+    local M = e.tbl
+    out(("-- candidate #%d  mt=%s __index=%s"):format(
+        ci, typeof(e.mt), e.mt and typeof(e.mt.__index) or "nil"))
     for _, k in ipairs(keys) do
         local okv, v = pcall(function() return M[k] end)
-        out("M[" .. k .. "] ->", okv, typeof(v))
+        out(("  M[%s] -> ok=%s type=%s"):format(k, tostring(okv), typeof(v)))
         if okv and type(v) == "function" then
-            -- exercise with sample args to learn the operation
-            local samples = { {6, 2}, {5, 3}, {10, 4}, {7, 0} }
             for _, a in ipairs(samples) do
                 local okc, r = pcall(v, a[1], a[2])
-                out(("  %s(%d,%d) -> ok=%s r=%s"):format(k, a[1], a[2], tostring(okc), tostring(r)))
+                out(("    %s(%d,%d) -> ok=%s r=%s"):format(k, a[1], a[2], tostring(okc), tostring(r)))
             end
-            -- identity check: is M[k] the raw fn or a wrapper? (compare across two reads)
             local _, v2 = pcall(function() return M[k] end)
-            out("  stable identity:", v == v2)
+            out("    same-object across two reads:", v == v2)
         end
+    end
+end
+
+if #candidates == 0 then
+    out("no module captured -- the VM may have bailed. Dumping captured mts:")
+    for i, e in ipairs(captured) do
+        out(("  cap#%d tbl=%s mt=%s"):format(i, typeof(e.tbl), typeof(e.mt)))
     end
 end
 
