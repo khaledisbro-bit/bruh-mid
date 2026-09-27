@@ -142,12 +142,19 @@ if type(ret)=="table" then probe("return",ret) end
 for i,e in ipairs(captured) do probe("cap"..i, e.tbl) end
 
 ------------------------------------------------- structured result
+-- Keep the PRINTED block small so executor/MCP consoles do not truncate it
+-- (a truncated block loses END and breaks auto-capture). Full detail, including
+-- every decoded string, is written to unobf_result_full.txt.
 say("counts: strings="..#strings.." ops="..#ops.." behavior="..#behavior.." stream="..#stream)
-say("---STRINGS---"); for _,s in ipairs(strings) do say(s) end
 say("---OPS---"); for _,o in ipairs(ops) do say(o) end
-say("---BEHAVIOR---"); for _,b in ipairs(behavior) do say(b) end
+say("---BEHAVIOR---"); for i=1,math.min(#behavior,40) do say(behavior[i]) end
+say("---STRINGS---"); for i=1,math.min(#strings,60) do say(strings[i]) end
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R,"\n").."\nEND_UNOBF_RESULT"
 print(body)
+-- full detail (all strings) to a side file, not to the console
+local full = {}
+for _,s in ipairs(strings) do full[#full+1]=s end
 pcall(function() writefile("unobf_result.txt", body) end)
+pcall(function() writefile("unobf_result_full.txt", table.concat(full,"\n")) end)
 return body

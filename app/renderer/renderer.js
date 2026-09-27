@@ -149,10 +149,14 @@ async function autoRun() {
   setStage('harness', 'run', 'running via MCP...');
   const res = await window.vm.runMcp(state.harness).catch(e => ({ ok: false, error: String(e) }));
   const body = (res && res.body) || '';
-  const m = body.match(/BEGIN_UNOBF_RESULT[\s\S]*?END_UNOBF_RESULT/);
-  if (res && res.ok && m) {
+  // accept a full block, or a BEGIN block whose END was truncated by the console
+  let block = null;
+  const full = body.match(/BEGIN_UNOBF_RESULT[\s\S]*?END_UNOBF_RESULT/);
+  if (full) block = full[0];
+  else { const i = body.indexOf('BEGIN_UNOBF_RESULT'); if (i >= 0) block = body.slice(i); }
+  if (res && res.ok && block) {
     setStage('harness', 'done', 'ran via MCP');
-    finalize(m[0]);
+    finalize(block);
   } else if (res && res.ok) {
     // MCP ran but no BEGIN block in the returned text. Dump the raw response so
     // we can see where the output lives, and let the user paste console output.

@@ -80,8 +80,8 @@ end
 
 say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
 say("mode: universal")
-say("---PRINTS---"); for _,s in ipairs(prints) do say("PRINT: "..s) end
-say("---BEHAVIOR---"); for _,b in ipairs(behavior) do say(b) end
+say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
+say("---BEHAVIOR---"); for i=1,math.min(#behavior,80) do say(behavior[i]) end
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R, "\n").."\nEND_UNOBF_RESULT"
 print(body)
