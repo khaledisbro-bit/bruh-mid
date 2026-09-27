@@ -182,7 +182,39 @@ def parse_trace(text):
             tr[section].append(ln)
         if ln.startswith("PRINT:"):
             tr["prints"].append(ln[len("PRINT:"):].strip())
+        if ln.startswith("K: "):
+            tr.setdefault("consts", []).append(ln[3:])
+    tr.setdefault("consts", [])
     return tr
+
+
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{1,40}$")
+STOP = {"string", "table", "concat", "char", "sub", "format", "insert", "remove",
+        "byte", "rep", "gsub", "find", "match", "self", "true", "false", "nil",
+        "function", "return", "local", "then", "else", "end", "and", "not"}
+
+
+def meaningful_constants(consts):
+    """Filter a dumped constant pool down to likely program constants:
+    identifier-like field names, data keys, and readable words."""
+    out, seen = [], set()
+    for c in consts:
+        c = c.strip()
+        if not c or c in seen:
+            continue
+        # identifier-like (Coins, Level, PlayerStats_V2, MaxHealth), a short
+        # all-caps field (XP, HP, ID), or a readable phrase with spaces
+        ok = False
+        if IDENT.match(c) and c.lower() not in STOP:
+            if len(c) >= 3 and any(ch.isupper() for ch in c):
+                ok = True
+            elif len(c) == 2 and c.isupper():
+                ok = True
+        elif len(c) >= 4 and re.search(r"[A-Za-z]{3}", c) and " " in c:
+            ok = True
+        if ok:
+            seen.add(c); out.append(c)
+    return out[:80]
 
 
 OP_SYMBOL = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "^": "POW"}

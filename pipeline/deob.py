@@ -144,6 +144,11 @@ def main():
             lines.append("  (no external intent isolated)")
         lines.append("  confidence: %s (%s)" % (conf, why))
         lines.append("")
+        mc = ai.meaningful_constants(tr.get("consts", []))
+        if mc:
+            lines.append("== decoded constants (field names / keys / values) ==")
+            lines.append("  " + ", ".join(mc))
+            lines.append("")
         lines.append("== REAL program behavior ==")
         if cls["REAL"]:
             for l, _w in cls["REAL"]:
