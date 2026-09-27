@@ -46,12 +46,38 @@ env.warn  = function(...) local p={}; for i=1,select("#",...) do p[i]=tostring((
 env.getgenv = ES.getgenv
 env.loadstring = function(src, ...) loads[#loads+1] = #tostring(src or ""); behavior[#behavior+1]="loadstring #"..#tostring(src or ""); local f=realLoad(src, ...); if f then pcall(setfenv, f, env) end return f end
 env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c); return RI.new(c,...) end end return RI[k] end })
--- wrap game:GetService without breaking typeof(game)=="DataModel"
+
+-- Server-only services (DataStore, Messaging, etc.) throw on a client executor
+-- and stop the trace early. Proxy `game` so GetService logs every service and
+-- returns harmless stubs for the server-only ones, letting the trace continue.
+-- Note: this makes typeof(game) ~= "DataModel"; scripts that hard-check that
+-- will bail, which is an accepted limit of universal (behavior) mode.
 do
   local realGame = realenv.game
   if realGame then
-    -- log via a lightweight namecall proxy is risky; instead log GetService by wrapping the method table is not possible on userdata.
-    -- keep game real (datatype checks pass); services are logged when scripts index them by name through HttpGet/request stubs above.
+    local function stubStore()
+      return setmetatable({}, { __index = function() return function() return nil end end })
+    end
+    local serverStubs = {
+      DataStoreService = { GetDataStore = stubStore, GetOrderedDataStore = stubStore, GetGlobalDataStore = stubStore },
+      MessagingService = { PublishAsync = function() end, SubscribeAsync = function() return { Disconnect = function() end } end },
+    }
+    env.game = setmetatable({}, {
+      __index = function(_, k)
+        if k == "GetService" or k == "FindService" or k == "service" then
+          return function(_, name)
+            behavior[#behavior + 1] = "GetService: " .. tostring(name)
+            if serverStubs[name] then return serverStubs[name] end
+            local ok, svc = pcall(function() return realGame:GetService(name) end)
+            return ok and svc or setmetatable({}, { __index = function() return function() end end })
+          end
+        end
+        local v = realGame[k]
+        if type(v) == "function" then return function(_, ...) return v(realGame, ...) end end
+        return v
+      end
+    })
+    env.Game = env.game
   end
 end
 local wN = 0
