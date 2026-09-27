@@ -180,6 +180,8 @@ ipcMain.handle('run-mcp', async (_e, harnessLua) => {
 });
 
 ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePath }) => {
+  if (!outDir) outDir = path.join(WORK, 'out_' + Date.now());
+  try { fs.mkdirSync(outDir, { recursive: true }); } catch (_) {}
   const traceFile = path.join(outDir, 'result.txt');
   fs.writeFileSync(traceFile, traceText);
   const args = [DEOB, filePath, '-o', outDir, '--trace', traceFile];
