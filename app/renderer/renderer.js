@@ -158,12 +158,19 @@ async function autoRun() {
     setStage('harness', 'done', 'ran via MCP');
     finalize(block);
   } else if (res && res.ok) {
-    // MCP ran but no BEGIN block in the returned text. Dump the raw response so
-    // we can see where the output lives, and let the user paste console output.
-    let dump = body || '';
-    try { if (res.raw) dump += '\n\n--- raw MCP result ---\n' + JSON.stringify(res.raw, null, 2); } catch (_) {}
+    // MCP ran but its RESPONSE carried no BEGIN block (this executor returns
+    // status/return value, not console output). Put the raw response at the TOP
+    // so it is easy to copy, and explain the reason in plain words.
+    let dump = '=== WHY AUTO-CAPTURE FAILED ===\n' +
+      'The MCP execute tool ("' + (res.tool || '?') + '") returned a response that does NOT contain the\n' +
+      'printed BEGIN_UNOBF_RESULT block. The block only appears in the executor console.\n' +
+      'COPY THE JSON BELOW and send it so auto-capture can be wired to the right field.\n\n' +
+      '=== RAW MCP RESPONSE ===\n';
+    try { dump += JSON.stringify(res.raw, null, 2); } catch (_) { dump += String(res.raw); }
+    dump += '\n\n=== (any text the tool returned) ===\n' + (body || '(empty)');
     $('#pasteBox').value = dump;
-    setStage('harness', '', 'MCP ran, no result block - see Executor tab (raw response shown)');
+    $('#finalLbl').textContent = 'Auto-capture failed - see Executor tab for the reason';
+    setStage('harness', '', 'MCP returned no result block (see Executor tab for raw response + reason)');
   } else {
     setStage('harness', '', 'MCP failed: ' + (res && res.error ? res.error : 'offline') + ' - use Executor tab');
   }
