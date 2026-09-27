@@ -179,16 +179,21 @@ def main():
             lines.append("")
         resolved = tr.get("resolved", [])
         if resolved:
-            rstrings = [r[2:] for r in resolved if r.startswith("S:")]
-            rnums = [r[2:] for r in resolved if r.startswith("N:")]
-            mstr = ai.meaningful_constants(['"%s"' % s for s in rstrings])
+            fr = ai.filter_resolved(resolved)
             lines.append("== deep constants (dumped from inner VM resolver) ==")
-            if mstr:
-                for it in mstr:
-                    lines.append("  " + it)
-            if rnums:
-                lines.append("  numbers: " + ", ".join(rnums[:60]))
-            lines.append("  (%d strings + %d numbers resolved from the inner VM)" % (len(rstrings), len(rnums)))
+            lines.append("  %d tokens resolved; VM/crypto noise removed by structure:" % len(resolved))
+            lines.append("  dropped %d hash/random strings + %d LCG/hash/index numbers." %
+                         (fr["dropped_strings"], fr["dropped_numbers"]))
+            lines.append("")
+            lines.append("  -- recovered program API surface, grouped by area --")
+            for it in ai.reconstruct_outline(fr["strings"], fr["numbers"]):
+                lines.append("  " + it)
+            if fr["small"]:
+                lines.append("  [small ints, real but VM-index-ambiguous] " +
+                             ", ".join(fr["small"]))
+            lines.append("")
+            lines.append("  (%d clean program strings + %d clean numbers kept of %d resolved)" %
+                         (len(fr["strings"]), len(fr["numbers"]), len(resolved)))
             lines.append("")
         cov, notes = ai.coverage_check(tr, log)
         lines.append("== coverage audit (did we read all of the obf?) ==")

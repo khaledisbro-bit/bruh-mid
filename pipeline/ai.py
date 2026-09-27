@@ -223,6 +223,131 @@ def meaningful_constants(behavior):
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Deep-constant filter. The inner-VM resolver dump mixes the REAL program's
+# constants (Roblox API names, DataStore keys, clean numeric literals) with the
+# VM's own machinery (LCG multipliers, SHA-256 hashes, per-constant table
+# indices, integrity opcodes). We separate them by STRUCTURE, never by matching
+# a known sample:
+#   noise strings  = 64-char hex (SHA-256) or high-entropy random probe names.
+#   noise numbers  = negative (LCG state deltas), huge (>=100000: hashes/opcodes/
+#                    offsets), or arbitrary mid integers (VM table indices).
+#   program numbers= 0/1, round tens up to 1000 (e.g. 60, 100), and clean
+#                    fractions with a power-of-two or /10 /100 denominator
+#                    (0.5, 0.75, 0.125, 0.625 ... = Color3/CFrame/UDim/Tween).
+# --------------------------------------------------------------------------- #
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _clean_fraction(x):
+    """A float that reads like a real program literal: a short decimal or a
+    power-of-two fraction (colors, CFrame, UDim, tween alphas)."""
+    if x != x or x in (float("inf"), float("-inf")):
+        return False
+    for denom in (2, 4, 8, 16, 10, 100, 1000):
+        if abs(round(x * denom) - x * denom) < 1e-9:
+            return True
+    return False
+
+
+def classify_number(tok):
+    """'program' | 'small' | 'noise' for one resolved number token."""
+    try:
+        if "." in tok or "e" in tok.lower():
+            x = float(tok)
+            return "program" if _clean_fraction(x) else "noise"
+        n = int(tok)
+    except ValueError:
+        return "noise"
+    if n < 0:                       # LCG state deltas
+        return "noise"
+    if n in (0, 1):                 # ubiquitous, genuinely part of the program
+        return "program"
+    if n >= 100000:                 # SHA/opcode/offset material
+        return "noise"
+    if n % 10 == 0 and n <= 1000:   # round program value (60, 100, ...)
+        return "program"
+    if n <= 16:                     # small ints: real but indistinguishable
+        return "small"
+    return "noise"
+
+
+def filter_resolved(resolved):
+    """Split a resolver dump into clean program constants and VM/crypto noise.
+    `resolved` is the list of 'S:...'/'N:...' tokens from the trace."""
+    prog_str, prog_num, small_num = [], [], []
+    dropped_str = dropped_num = 0
+    seen = set()
+    for tok in resolved:
+        if tok.startswith("S:"):
+            s = tok[2:]
+            if HEX64.match(s) or looks_random(s):
+                dropped_str += 1
+                continue
+            if s not in seen:
+                seen.add(s); prog_str.append(s)
+        elif tok.startswith("N:"):
+            kind = classify_number(tok[2:])
+            if kind == "program":
+                if tok not in seen:
+                    seen.add(tok); prog_num.append(tok[2:])
+            elif kind == "small":
+                if tok not in seen:
+                    seen.add(tok); small_num.append(tok[2:])
+            else:
+                dropped_num += 1
+    return {"strings": prog_str, "numbers": prog_num, "small": small_num,
+            "dropped_strings": dropped_str, "dropped_numbers": dropped_num}
+
+
+# Roblox API grouped by functional area. Grouping is generic (by API category),
+# not tied to any one sample; a name only appears in the outline if the trace
+# actually resolved it.
+_AREAS = [
+    ("data persistence", ["DataStoreService", "GetDataStore", "GetOrderedDataStore",
+                          "GetAsync", "SetAsync", "UpdateAsync", "IncrementAsync",
+                          "RemoveAsync", "Coins", "Level", "XP", "PlayerStats_V2"]),
+    ("players / lifecycle", ["Players", "PlayerAdded", "PlayerRemoving",
+                             "CharacterAdded", "Connect", "GetPlayers", "UserId"]),
+    ("geometry / raycast", ["RaycastParams", "IgnoreWater", "Vector3", "Vector2",
+                            "CFrame", "Position", "Size", "Axes", "Axis", "PartType"]),
+    ("color / tween / ui", ["Color3", "ColorSequence", "ColorSequenceKeypoint",
+                            "Keypoints", "TweenInfo", "EasingStyle", "EasingDirection",
+                            "Quad", "InOut", "Time", "RepeatCount", "Reverses",
+                            "DelayTime", "UDim", "UDim2", "Offset", "Scale"]),
+    ("instances / world", ["Instance", "Part", "Folder", "Model", "Material",
+                           "Plastic", "Parent", "Name", "ClassName", "Destroy",
+                           "GetChildren", "FindFirstChild", "FindFirstChildOfClass",
+                           "FindFirstChildWhichIsA", "Workspace", "Changed"]),
+    ("services / env", ["HttpService", "RunService", "ReplicatedStorage",
+                        "GetService", "IsStudio", "IsClient", "IsServer",
+                        "GenerateGUID"]),
+    ("scheduling", ["spawn", "task", "defer", "delay", "wait"]),
+    ("lua stdlib", ["pcall", "tostring", "typeof", "type", "pairs", "getmetatable",
+                    "rawequal", "table", "unpack", "string", "byte", "sub", "len",
+                    "format", "gsub", "Enum"]),
+]
+
+
+def reconstruct_outline(prog_str, prog_num):
+    """Group the recovered program constants into functional areas and note the
+    concrete keys/defaults found. This is a RECOVERED API SURFACE, grouped for
+    reading -- not a byte-exact source (the VM discarded the original source)."""
+    sset = set(prog_str)
+    lines, used = [], set()
+    for area, names in _AREAS:
+        hit = [n for n in names if n in sset]
+        if hit:
+            used.update(hit)
+            lines.append("  [%s] %s" % (area, ", ".join(hit)))
+    leftover = [s for s in prog_str if s not in used]
+    if leftover:
+        lines.append("  [other names/keys] " + ", ".join(leftover[:30]))
+    if prog_num:
+        lines.append("  [numeric literals] " + ", ".join(prog_num))
+    return lines
+
+
 def coverage_check(tr, log):
     """Honest completeness audit: did we process the whole obfuscated program,
     or were parts skipped? Reports concrete signals, no guessing."""
@@ -248,10 +373,16 @@ def coverage_check(tr, log):
             notes.append("[nested] the program loadstring'd an inner chunk (%s); its internal "
                          "constants/branches are only partially observable at runtime" % layer)
     events = [l for l in tr.get("behavior", []) if re.search(r"PlayerAdded|CharacterAdded|Connect", l)]
-    if events:
+    # event names also surface as resolved constants even when the handler never
+    # fired during the trace; treat those as event-gated logic too.
+    ev_consts = sorted({c[2:] for c in tr.get("resolved", [])
+                        if c.startswith("S:") and c[2:] in
+                        ("PlayerAdded", "PlayerRemoving", "CharacterAdded", "Connect")})
+    if events or ev_consts:
         complete = False
-        notes.append("[event-gated] %d event handler(s) connected; their bodies run only when the "
-                     "event fires, so that logic is not in this trace" % len(events))
+        detail = ", ".join(ev_consts) if ev_consts else "%d" % len(events)
+        notes.append("[event-gated] event handlers present (%s); their bodies run only when the "
+                     "event fires, so that logic is not exercised by a passive trace" % detail)
     verdict = "FULL" if complete else "PARTIAL"
     return verdict, notes
 

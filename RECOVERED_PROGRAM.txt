@@ -1,0 +1,67 @@
+RECOVERED PROGRAM  --  obf3 (base85+Zstd Luau VM)
+=================================================
+
+How this was recovered
+-----------------------
+Every line below comes from runtime evidence, not guesswork. The pipeline
+patched the inner VM's constant resolver at loadstring time so each constant it
+returned was logged. That dumped 562 raw tokens. A structural filter then split
+the real program constants from the VM's own machinery. Nothing here is copied
+from a known sample or filled in by hand.
+
+Filter result: 562 tokens resolved. 9 noise strings dropped (4 random anti-tamper
+probe names + 5 SHA-256 hashes) and 429 noise numbers dropped (LCG multipliers,
+hash constants, per-constant table indices, integrity opcodes). Kept: 94 clean
+program strings and 16 clean numeric literals.
+
+What the script actually is
+---------------------------
+Two systems in one script:
+
+1. A server-side player-stats store.
+   - DataStoreService:GetDataStore("PlayerStats_V2")
+   - keys: Coins, Level, XP   (default Coins = 100)
+   - Players.PlayerAdded / PlayerRemoving handlers, Connect
+   - session number 60 (likely an autosave interval)
+
+2. A visual / geometry system.
+   - RaycastParams (IgnoreWater), Vector3, Vector2, CFrame, Position, Size
+   - Color3, ColorSequence, ColorSequenceKeypoint, Keypoints
+   - TweenInfo (EasingStyle.Quad, EasingDirection.InOut, Time, RepeatCount,
+     Reverses, DelayTime)
+   - UDim, UDim2, Offset, Scale
+   - Instance.new for Part / Folder / Model, Material.Plastic, Parent, Destroy
+   - tween alpha / color literals: 0.5, 0.75, 0.125, 0.625, 0.1875, 0.8125
+
+Supporting surface
+------------------
+- services: DataStoreService, HttpService, RunService, ReplicatedStorage, Players
+- environment guards: IsStudio, IsClient, IsServer
+- scheduling: spawn, task, defer, delay, wait
+- lua stdlib: pcall, tostring, typeof, type, pairs, getmetatable, rawequal,
+  table.unpack, string.byte/sub/len/format/gsub, HttpService:GenerateGUID
+- number formatting: format "%.17g" plus gsub "e([+-])0+(%d+)" -> "e%1%2"
+  (canonical float-to-string, a common serialization step)
+
+Anti-tamper (decoy) noise, separated out
+-----------------------------------------
+- Instance.new probe with a random class name: wPBQ3oFwr0x6LykGMJnv
+- random marker strings: nZD3gEGVxrz0kL, oqNX3qLK50Z, 0ng15w1HSpKaW
+- throwaway Part / Folder / Model created in the gauntlet burst
+These are integrity probes, not program logic.
+
+Coverage (honest)
+-----------------
+PARTIAL. The chunk ran to completion in the trace, but:
+- an inner chunk was loadstring'd (nested layer), so some branches are only
+  partly observable from one passive run.
+- PlayerAdded / PlayerRemoving / Connect handlers are event-gated: their bodies
+  execute only when a player joins or leaves, which a passive trace never
+  triggers. To see that logic, drive the handlers with a simulated player.
+
+Why not a byte-exact source
+---------------------------
+This obfuscator compiles the original Lua to VM bytecode, then discards the
+source. There is no original text to "un-minify" back to. What is recoverable
+is the genuine constant surface and behavior, which is what you see above. A
+full source rebuild would need a bytecode lifter/devirtualizer for this VM.
