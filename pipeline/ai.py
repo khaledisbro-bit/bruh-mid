@@ -22,7 +22,96 @@ Optional escalation: if ANTHROPIC_API_KEY and ANTHROPIC_MODEL are set, it asks
 the model to do a final natural-language audit of candidate-vs-evidence. Without
 them it runs the deterministic audit only (fully offline).
 """
-import argparse, json, os, re, sys
+import argparse, json, math, os, re, sys
+from collections import Counter
+
+# --------------------------------------------------------------------------- #
+# Decoy classifier: separate anti-tamper / gauntlet noise from real program
+# behavior, using evidence (not looks). Signals:
+#   DECOY  - Instance.new with a random high-entropy "class" (probe marker), or
+#            primitive instances (Part/Folder/Model) created inside the gauntlet
+#            burst; created-then-destroyed throwaways.
+#   REAL   - calls with meaningful string args, DataStore/Remote/Http/Player ops.
+#   LOADER - the obfuscator's own unwrap layer (EncodingService, loadstring).
+# --------------------------------------------------------------------------- #
+VALID_CLASSES = {
+    "Part", "Folder", "Model", "Configuration", "RemoteEvent", "RemoteFunction",
+    "BindableEvent", "BindableFunction", "ScreenGui", "Frame", "TextButton",
+    "TextLabel", "TextBox", "ImageLabel", "ImageButton", "Sound", "Animation",
+    "Humanoid", "Tool", "Script", "LocalScript", "ModuleScript", "IntValue",
+    "StringValue", "BoolValue", "NumberValue", "ObjectValue", "Attachment",
+    "Beam", "ParticleEmitter", "MeshPart", "UnionOperation", "SpawnLocation",
+    "Highlight", "ProximityPrompt", "ClickDetector", "SurfaceGui", "BillboardGui",
+}
+LOADER_TOKENS = ("EncodingService", "loadstring", "DecompressBuffer", "CompressionAlgorithm")
+REAL_API = re.compile(
+    r"DataStore|GetAsync|SetAsync|UpdateAsync|IncrementAsync|RemoveAsync|GetSortedAsync|"
+    r"RemoteEvent|RemoteFunction|FireServer|FireClient|FireAllClients|InvokeServer|InvokeClient|"
+    r"HttpService|JSONEncode|JSONDecode|PostAsync|RequestAsync|GetDataStore|GetOrderedDataStore|"
+    r"PlayerAdded|PlayerRemoving|CharacterAdded|MarketplaceService|PromptPurchase|"
+    r"TeleportService|Teleport|BindToClose|MessagingService|PublishAsync|SubscribeAsync")
+
+
+def _entropy(s):
+    if not s:
+        return 0.0
+    c = Counter(s); n = len(s)
+    return -sum((v / n) * math.log2(v / n) for v in c.values())
+
+
+def looks_random(s):
+    if not s or s in VALID_CLASSES:
+        return False
+    if len(s) < 10:
+        return False
+    hu = any(c.isupper() for c in s)
+    hl = any(c.islower() for c in s)
+    hd = any(c.isdigit() for c in s)
+    return hu and hl and hd and _entropy(s) > 3.2
+
+
+def _instance_arg(line):
+    m = re.search(r"Instance\.new:\s*(.+)$", line)
+    return m.group(1).strip() if m else None
+
+
+def _has_meaningful_string(line):
+    for m in re.findall(r'"([^"]+)"', line):
+        if len(m) >= 3 and re.search(r"[A-Za-z]", m) and not looks_random(m):
+            return True
+    return False
+
+
+def classify_behavior(lines):
+    """Return dict with REAL / DECOY / LOADER / UNKNOWN lists of (line, reason)."""
+    gauntlet = any(looks_random(_instance_arg(l) or "") for l in lines)
+    out = {"REAL": [], "DECOY": [], "LOADER": [], "UNKNOWN": []}
+    for l in lines:
+        if any(tok in l for tok in LOADER_TOKENS):
+            out["LOADER"].append((l, "obfuscator unwrap layer, not user code"))
+            continue
+        a = _instance_arg(l)
+        if a is not None:
+            if looks_random(a):
+                out["DECOY"].append((l, "random fake class name = anti-tamper probe"))
+            elif gauntlet and (a in VALID_CLASSES or a.lower() == "part"):
+                out["DECOY"].append((l, "primitive instance created inside the gauntlet burst"))
+            else:
+                out["UNKNOWN"].append((l, "instance create without gauntlet context"))
+            continue
+        if REAL_API.search(l) or _has_meaningful_string(l):
+            out["REAL"].append((l, "meaningful API call / string constant"))
+            continue
+        if l.startswith("GetService:"):
+            svc = l.split(":", 1)[1].strip()
+            if svc in ("DataStoreService", "Players", "HttpService", "ReplicatedStorage",
+                       "MessagingService", "MarketplaceService", "TeleportService"):
+                out["REAL"].append((l, "service used by real logic"))
+            else:
+                out["UNKNOWN"].append((l, "service (gauntlet or real, unproven)"))
+            continue
+        out["UNKNOWN"].append((l, "unclassified"))
+    return out
 
 
 def parse_trace(text):

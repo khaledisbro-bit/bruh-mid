@@ -112,7 +112,7 @@ def main():
     print(f"[4/4] AUDIT   : verdict={verdict}")
     for t, m in findings:
         print(f"              [{t}] {m}")
-    # write a readable behavior report from the trace
+    # write a readable behavior report from the trace, with REAL vs DECOY split
     summ = os.path.join(a.out, "BEHAVIOR.txt")
     lines = ["run_ok: %s" % tr["run_ok"], ""]
     if tr["prints"]:
@@ -125,8 +125,31 @@ def main():
         lines.append("== module ==")
         lines += tr["module"]; lines.append("")
     if tr["behavior"]:
-        lines.append("== behavior (services, instances, calls) ==")
-        lines += tr["behavior"]; lines.append("")
+        cls = ai.classify_behavior(tr["behavior"])
+        lines.append("== REAL program behavior ==")
+        if cls["REAL"]:
+            for l, _w in cls["REAL"]:
+                lines.append("  " + l)
+        else:
+            lines.append("  (none isolated)")
+        lines.append("")
+        lines.append("== DECOY (anti-tamper, ignore) ==")
+        for l, w in cls["DECOY"]:
+            lines.append("  " + l + "   # " + w)
+        lines.append("")
+        if cls["LOADER"]:
+            lines.append("== loader (unwrap layer) ==")
+            for l, _w in cls["LOADER"]:
+                lines.append("  " + l)
+            lines.append("")
+        if cls["UNKNOWN"]:
+            lines.append("== uncertain ==")
+            for l, _w in cls["UNKNOWN"]:
+                lines.append("  " + l)
+            lines.append("")
+        # a written summary so we save the actual folder file below
+        json.dump({k: [x[0] for x in v] for k, v in cls.items()},
+                  open(os.path.join(a.out, "classification.json"), "w"), indent=2)
     if len(lines) <= 2:
         lines.append("(no behavior captured - the run may have been empty or the")
         lines.append(" result block did not reach the analyzer)")
