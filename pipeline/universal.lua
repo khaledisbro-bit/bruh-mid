@@ -29,8 +29,7 @@ local rtask = realenv.task
 -- rebuilds opcodes the same way). Instead we capture constants where they are
 -- HIGH SIGNAL: the real arguments passed to API calls (logProxy / logForward
 -- below). Those are the program's genuine strings/numbers, e.g.
--- GetDataStore("PlayerStats_V2") and JSONEncode({Coins=100,...}).
-local capN = 0
+-- GetDataStore("PlayerStats_V2") and captured argument tables.
 
 -- executor-sim stubs so executor scripts run in Studio too
 local genv = {}
@@ -120,22 +119,8 @@ local function logProxy(ns)
   end })
 end
 -- like logProxy but forwards to the REAL service so results stay valid (used for
--- HttpService: this captures JSONEncode({Coins=100,Level=1,XP=0}) with real args
--- AND real return, so number constants surface genuinely, not by guessing).
-local function logForward(realSvc, ns)
-  return setmetatable({}, { __index = function(_, method)
-    local rf
-    local ok = pcall(function() rf = realSvc[method] end)
-    return function(_, ...)
-      behavior[#behavior + 1] = ns .. ":" .. tostring(method) .. "(" .. argstr(...) .. ")"
-      if ok and type(rf) == "function" then
-        local okc, res = pcall(rf, realSvc, ...)
-        if okc then return res end
-      end
-      return nil
-    end
-  end })
-end
+-- (Real client services like HttpService are left untouched: proxying them
+-- returns a function for every field, which the VM's integrity ops break on.)
 do
   local realGame = realenv.game
   if realGame then
@@ -150,10 +135,9 @@ do
           return function(_, name)
             behavior[#behavior + 1] = "GetService: " .. tostring(name)
             if serverStubs[name] then return logProxy(name) end
+            -- everything else stays REAL (client services like HttpService work
+            -- fine and must not be proxied, or the VM's integrity ops break).
             local ok, svc = pcall(function() return realGame:GetService(name) end)
-            -- HttpService: forward to real so results stay valid, but log args
-            -- (captures JSONEncode({Coins=100,...}) so number constants surface)
-            if name == "HttpService" and ok and svc then return logForward(svc, name) end
             return ok and svc or logProxy(name)
           end
         end
