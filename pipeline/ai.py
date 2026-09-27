@@ -179,8 +179,9 @@ def parse_trace(text):
         elif ln == "---OPS---": section = "ops"
         elif ln == "---BEHAVIOR---": section = "behavior"
         elif ln in ("---PRINTS---", "---CONSTANTS---"): section = None  # handled by prefix
+        elif ln == "---RESOLVED---": section = "resolved"
         elif section:
-            tr[section].append(ln)
+            tr.setdefault(section, []).append(ln)
         if ln.startswith("PRINT:"):
             tr["prints"].append(ln[len("PRINT:"):].strip())
         if ln.startswith("K: "):

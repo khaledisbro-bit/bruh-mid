@@ -177,6 +177,19 @@ def main():
             for it in mc:
                 lines.append("  " + it)
             lines.append("")
+        resolved = tr.get("resolved", [])
+        if resolved:
+            rstrings = [r[2:] for r in resolved if r.startswith("S:")]
+            rnums = [r[2:] for r in resolved if r.startswith("N:")]
+            mstr = ai.meaningful_constants(['"%s"' % s for s in rstrings])
+            lines.append("== deep constants (dumped from inner VM resolver) ==")
+            if mstr:
+                for it in mstr:
+                    lines.append("  " + it)
+            if rnums:
+                lines.append("  numbers: " + ", ".join(rnums[:60]))
+            lines.append("  (%d strings + %d numbers resolved from the inner VM)" % (len(rstrings), len(rnums)))
+            lines.append("")
         cov, notes = ai.coverage_check(tr, log)
         lines.append("== coverage audit (did we read all of the obf?) ==")
         lines.append("  verdict: %s" % cov)

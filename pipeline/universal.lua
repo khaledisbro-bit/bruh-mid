@@ -67,16 +67,55 @@ local function detectLayer(s)
     if s:byte(1) == 27 then return "raw Luau bytecode" end  -- \27 = precompiled
     return "plain/unknown"
 end
+-- Deep constant recovery: nested chunks in this family carry a constant
+-- resolver of the form
+--   local function R(x) if x<0 then x=-x-GC end; return DEC(TBL[x]) end
+-- We patch that resolver so every constant it returns is logged. When the outer
+-- program later drives the inner VM, this dumps the REAL program constants
+-- (keys, field names, numbers). All guarded by pcall so it can never break the
+-- run: if the patch does not apply, the original chunk is loaded unchanged.
+local resolved, seenR = {}, {}
+env.__SL = function(r)
+    if #resolved > 4000 then return end
+    if type(r) == "string" then
+        if #r >= 2 and #r <= 120 and not seenR["S"..r] then
+            local ok = true
+            for i = 1, #r do local b = r:byte(i); if b < 9 or (b > 13 and b < 32) or b > 126 then ok = false break end end
+            if ok then seenR["S"..r] = true; resolved[#resolved+1] = "S:" .. r end
+        end
+    elseif type(r) == "number" and not seenR["N"..tostring(r)] then
+        seenR["N"..tostring(r)] = true; resolved[#resolved+1] = "N:" .. tostring(r)
+    end
+end
+env.__CAP = function() end
+
+local function patchResolver(s)
+    local rn, ra, rg, rd, rt = s:match("local function (%w+)%((%w+)%)if %2<0 then %2=%-%2%-(%w+) end;return (%w+)%((%w+)%[%2%]%)end")
+    if not rn then return nil end
+    local orig = ("local function %s(%s)if %s<0 then %s=-%s-%s end;return %s(%s[%s])end"):format(rn, ra, ra, ra, ra, rg, rd, rt, ra)
+    local patched = ("local function %s(%s)if %s<0 then %s=-%s-%s end;local _r=%s(%s[%s]);if __SL then __SL(_r) end;return _r end;if __CAP then __CAP(%s,%s)end"):format(rn, ra, ra, ra, ra, rg, rd, rt, ra, rd, rt)
+    local out, nrep = s:gsub(orig:gsub("[%-%[%]%(%)%.%+%*%?%^%$%%]", "%%%0"), patched, 1)
+    if nrep == 1 then return out, rn end
+    return nil
+end
+
 env.loadstring = function(src, ...)
     local n = #tostring(src or "")
     loads[#loads+1] = n
     local layer = detectLayer(src)
     behavior[#behavior+1] = "loadstring #" .. n .. "  (inner layer: " .. layer .. ")"
-    -- save the first inner chunk so it can be re-analyzed by the pipeline
     if n > 200 and #loads <= 3 then
         pcall(function() writefile("inner_chunk_" .. #loads .. ".txt", tostring(src)) end)
     end
-    local f = realLoad(src, ...)
+    -- try to patch the inner resolver so it dumps real constants (guarded)
+    local use = src
+    local ok, patched, rn = pcall(patchResolver, src)
+    if ok and patched then
+        use = patched
+        behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
+    end
+    local f = realLoad(use, ...)
+    if not f then f = realLoad(src, ...) end  -- fallback if patched won't compile
     if f then pcall(setfenv, f, env) end
     return f
 end
@@ -179,6 +218,10 @@ say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
 say("mode: universal")
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
 say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
+-- real constants dumped from the inner VM resolver (the deep recovery)
+say("resolved="..#resolved)
+say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
+pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R, "\n").."\nEND_UNOBF_RESULT"
 print(body)
