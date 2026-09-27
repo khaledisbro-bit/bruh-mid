@@ -244,9 +244,24 @@ ipcMain.handle('run-mcp', async (_e, harnessLua) => {
   return await mcpExecute(settings.mcpUrl, settings.mcpToken, harnessLua);
 });
 
+function normalizeBlock(s) {
+  if (typeof s !== 'string') return '';
+  // Console tools often return the block as a JSON-escaped string, so real
+  // newlines arrive as literal \n. Unescape when there are no real newlines
+  // inside the block but escaped ones are present.
+  const hasReal = /BEGIN_UNOBF_RESULT[\s\S]*\n[\s\S]*END_UNOBF_RESULT/.test(s);
+  const hasEsc = s.includes('\\n');
+  if (!hasReal && hasEsc) {
+    s = s.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+         .replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  return s;
+}
+
 ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePath }) => {
   if (!outDir) outDir = path.join(WORK, 'out_' + Date.now());
   try { fs.mkdirSync(outDir, { recursive: true }); } catch (_) {}
+  traceText = normalizeBlock(traceText);
   const traceFile = path.join(outDir, 'result.txt');
   fs.writeFileSync(traceFile, traceText);
   const args = [DEOB, filePath, '-o', outDir, '--trace', traceFile];
