@@ -27,16 +27,27 @@ and the results are reconciled by an audit layer that rejects failed runs.
    string coverage, no leftover decode layers, no unresolved dynamic dispatch.
    A failed trace is a BLOCKER, so guesses from anti-tamper noise are rejected.
 
-## Run
+## Run (one command)
 ```
-# static (works here, no executor)
-python3 pipeline/unobf.py obf3.lua -o out
-cat out/vm_structure.txt
+# stages 1-3: detect, unwrap, and generate a ready executor harness
+python3 pipeline/deob.py obf.lua
 
-# dynamic (in your executor, obf.lua saved alongside)
-#   run pipeline/unobf.lua, copy the BEGIN_UNOBF_RESULT block to unobf_result.txt
+#   run out/harness.lua in your executor (the obfuscated source is EMBEDDED,
+#   so no readfile and no folder hassle), save its printed
+#   BEGIN_UNOBF_RESULT..END block to result.txt
 
-# audit
+# stage 4: verify and finalize
+python3 pipeline/deob.py obf.lua --trace result.txt --candidate deobfuscated.lua
+#   -> out/FINAL_SOURCE.lua when the verdict is CONSISTENT
+
+# just identify the obfuscator:
+python3 pipeline/deob.py obf.lua --detect
+```
+
+## Run (stages by hand)
+```
+python3 pipeline/unobf.py obf.lua -o out          # static
+# run pipeline/unobf.lua in your executor -> unobf_result.txt
 python3 pipeline/ai.py --static out/analysis_log.json \
     --trace unobf_result.txt --candidate deobfuscated.lua
 ```
