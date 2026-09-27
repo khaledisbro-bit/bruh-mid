@@ -44,7 +44,32 @@ env = setmetatable({}, { __index = function(_, k) local rv = realenv[k]; if rv ~
 env.print = function(...) local p={}; for i=1,select("#",...) do p[i]=tostring((select(i,...))) end local s=table.concat(p, ", "); prints[#prints+1]=s; behavior[#behavior+1]="print: "..s end
 env.warn  = function(...) local p={}; for i=1,select("#",...) do p[i]=tostring((select(i,...))) end behavior[#behavior+1]="warn: "..table.concat(p, ", ") end
 env.getgenv = ES.getgenv
-env.loadstring = function(src, ...) loads[#loads+1] = #tostring(src or ""); behavior[#behavior+1]="loadstring #"..#tostring(src or ""); local f=realLoad(src, ...); if f then pcall(setfenv, f, env) end return f end
+-- loadstring hook: log size, detect nested obfuscation layers, and setfenv the
+-- inner chunk so its behavior is traced too (recursive unwrap).
+local function detectLayer(s)
+    s = tostring(s or "")
+    local head = s:sub(1, 200)
+    if head:find("MoonVeil", 1, true) then return "MoonVeil" end
+    if head:find("Luraph", 1, true) then return "Luraph" end
+    if head:find("Moonsec", 1, true) or head:find("MoonSec", 1, true) then return "MoonSec" end
+    if head:find("DecompressBuffer", 1, true) or head:find("CompressionAlgorithm", 1, true) then return "base85+Zstd" end
+    if head:find("return{", 1, true) or head:find("return({", 1, true) then return "wrapper-table VM" end
+    if s:byte(1) == 27 then return "raw Luau bytecode" end  -- \27 = precompiled
+    return "plain/unknown"
+end
+env.loadstring = function(src, ...)
+    local n = #tostring(src or "")
+    loads[#loads+1] = n
+    local layer = detectLayer(src)
+    behavior[#behavior+1] = "loadstring #" .. n .. "  (inner layer: " .. layer .. ")"
+    -- save the first inner chunk so it can be re-analyzed by the pipeline
+    if n > 200 and #loads <= 3 then
+        pcall(function() writefile("inner_chunk_" .. #loads .. ".txt", tostring(src)) end)
+    end
+    local f = realLoad(src, ...)
+    if f then pcall(setfenv, f, env) end
+    return f
+end
 env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c); return RI.new(c,...) end end return RI[k] end })
 
 -- Server-only services throw on a client executor and stop the trace. Proxy

@@ -82,6 +82,56 @@ def _has_meaningful_string(line):
     return False
 
 
+def build_intent(cls, tr):
+    """Human-readable reconstruction of the real intent from classified behavior.
+    Handles short/print/compute programs too (falls back to prints/ops)."""
+    real = [l for l, _ in cls.get("REAL", [])]
+    services, datastores, remotes, http, keys = set(), set(), set(), set(), set()
+    for l in real:
+        m = re.match(r"GetService:\s*(\w+)", l)
+        if m:
+            services.add(m.group(1))
+        for ds in re.findall(r'GetDataStore\("([^"]+)"\)', l):
+            datastores.add(ds)
+        for rk in re.findall(r'(?:GetAsync|SetAsync|UpdateAsync|IncrementAsync)\("([^"]+)"', l):
+            keys.add(rk)
+        for r in re.findall(r'(?:FireServer|FireClient|InvokeServer)\b', l):
+            remotes.add(l.strip())
+        for u in re.findall(r'https?://[^\s")]+', l):
+            http.add(u)
+    out = []
+    if services:
+        out.append("services: " + ", ".join(sorted(services)))
+    if datastores:
+        out.append("DataStores: " + ", ".join('"%s"' % d for d in sorted(datastores)))
+    if keys:
+        out.append("keys: " + ", ".join('"%s"' % k for k in sorted(keys)))
+    if http:
+        out.append("http: " + ", ".join(sorted(http)))
+    if remotes:
+        out.append("remotes: " + str(len(remotes)))
+    if tr.get("prints"):
+        out.append("prints %d line(s)" % len(tr["prints"]))
+    if tr.get("ops"):
+        out.append("arithmetic: %d op(s)" % len(tr["ops"]))
+    return out
+
+
+def confidence(cls, tr):
+    """Score how much we trust the separation, with a plain reason."""
+    real, decoy = len(cls.get("REAL", [])), len(cls.get("DECOY", []))
+    gauntlet = decoy > 0 and any("anti-tamper probe" in w or "gauntlet" in w for _, w in cls.get("DECOY", []))
+    if tr.get("run_ok") is False:
+        return "LOW", "the VM did not finish (anti-tamper or error); behavior is partial"
+    if real == 0 and not tr.get("prints") and not tr.get("ops"):
+        return "LOW", "no real behavior isolated; the program may be event-gated or bytecode-only"
+    if gauntlet and real >= 3:
+        return "HIGH", "anti-tamper gauntlet identified and filtered; real API surface captured"
+    if real >= 1:
+        return "MEDIUM", "real behavior captured; decoy separation partial"
+    return "LOW", "little signal captured"
+
+
 def classify_behavior(lines):
     """Return dict with REAL / DECOY / LOADER / UNKNOWN lists of (line, reason)."""
     gauntlet = any(looks_random(_instance_arg(l) or "") for l in lines)

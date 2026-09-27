@@ -43,12 +43,20 @@ def safe_long_bracket(content):
 
 
 def detect(src, log):
-    inner_src, inner_data = unobf.unwrap_layer1(src, log)
+    # robust: any failure downgrades to universal mode instead of crashing
+    try:
+        inner_src, inner_data = unobf.unwrap_layer1(src, log)
+    except Exception as e:
+        log["layer1_error"] = str(e)
+        inner_src, inner_data = None, None
     if inner_src is None:
         return None, None, "unknown-family"
-    knobs = unobf.analyze_inner(inner_src.decode("latin1"), log)
-    family = "base85+Zstd Luau VM"
-    return inner_src, inner_data, family
+    try:
+        unobf.analyze_inner(inner_src.decode("latin1"), log)
+    except Exception as e:
+        log["analyze_error"] = str(e)
+        return None, None, "unknown-family"
+    return inner_src, inner_data, "base85+Zstd Luau VM"
 
 
 def make_harness(src, outdir, template="unobf.lua"):
@@ -126,6 +134,16 @@ def main():
         lines += tr["module"]; lines.append("")
     if tr["behavior"]:
         cls = ai.classify_behavior(tr["behavior"])
+        conf, why = ai.confidence(cls, tr)
+        intent = ai.build_intent(cls, tr)
+        lines.append("== reconstructed intent ==")
+        if intent:
+            for it in intent:
+                lines.append("  - " + it)
+        else:
+            lines.append("  (no external intent isolated)")
+        lines.append("  confidence: %s (%s)" % (conf, why))
+        lines.append("")
         lines.append("== REAL program behavior ==")
         if cls["REAL"]:
             for l, _w in cls["REAL"]:
