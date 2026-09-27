@@ -149,11 +149,18 @@ def main():
             lines.append("  (no external intent isolated)")
         lines.append("  confidence: %s (%s)" % (conf, why))
         lines.append("")
-        mc = ai.meaningful_constants(tr.get("consts", []))
+        mc = ai.meaningful_constants(tr.get("behavior", []))
         if mc:
-            lines.append("== decoded constants (field names / keys / values) ==")
-            lines.append("  " + ", ".join(mc))
+            lines.append("== recovered constants (from real API arguments) ==")
+            for it in mc:
+                lines.append("  " + it)
             lines.append("")
+        cov, notes = ai.coverage_check(tr, log)
+        lines.append("== coverage audit (did we read all of the obf?) ==")
+        lines.append("  verdict: %s" % cov)
+        for nt in notes:
+            lines.append("  " + nt)
+        lines.append("")
         lines.append("== REAL program behavior ==")
         if cls["REAL"]:
             for l, _w in cls["REAL"]:

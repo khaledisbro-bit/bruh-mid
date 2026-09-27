@@ -195,27 +195,64 @@ STOP = {"string", "table", "concat", "char", "sub", "format", "insert", "remove"
         "function", "return", "local", "then", "else", "end", "and", "not"}
 
 
-def meaningful_constants(consts):
-    """Filter a dumped constant pool down to likely program constants:
-    identifier-like field names, data keys, and readable words."""
-    out, seen = [], set()
-    for c in consts:
-        c = c.strip()
-        if not c or c in seen:
-            continue
-        # identifier-like (Coins, Level, PlayerStats_V2, MaxHealth), a short
-        # all-caps field (XP, HP, ID), or a readable phrase with spaces
-        ok = False
-        if IDENT.match(c) and c.lower() not in STOP:
-            if len(c) >= 3 and any(ch.isupper() for ch in c):
-                ok = True
-            elif len(c) == 2 and c.isupper():
-                ok = True
-        elif len(c) >= 4 and re.search(r"[A-Za-z]{3}", c) and " " in c:
-            ok = True
-        if ok:
-            seen.add(c); out.append(c)
-    return out[:80]
+def meaningful_constants(behavior):
+    """Extract genuine program constants from the ARGUMENTS of captured API
+    calls (high signal), not from a noisy per-byte dump. Pulls quoted strings,
+    table field names, and numbers out of lines like
+    GetDataStore("PlayerStats_V2") and JSONEncode({Coins=100, Level=1, XP=0})."""
+    strings, fields, numbers, seen = [], [], [], set()
+    for line in behavior:
+        # skip pure Instance.new noise; keep API-argument lines
+        for s in re.findall(r'"([^"]{2,60})"', line):
+            if s not in seen and re.search(r"[A-Za-z]", s) and not looks_random(s):
+                seen.add(s); strings.append(s)
+        for f in re.findall(r'\{([^}]*)\}', line):          # table body -> fields
+            for k, v in re.findall(r'(\w+)\s*=\s*([^,}]+)', f):
+                if k not in seen:
+                    seen.add(k); fields.append(k)
+                if re.match(r"^-?\d+(\.\d+)?$", v.strip()) and v.strip() not in seen:
+                    seen.add(v.strip()); numbers.append(v.strip())
+    out = []
+    if strings:
+        out.append("strings: " + ", ".join('"%s"' % s for s in strings[:40]))
+    if fields:
+        out.append("fields: " + ", ".join(fields[:40]))
+    if numbers:
+        out.append("numbers: " + ", ".join(numbers[:40]))
+    return out
+
+
+def coverage_check(tr, log):
+    """Honest completeness audit: did we process the whole obfuscated program,
+    or were parts skipped? Reports concrete signals, no guessing."""
+    notes, complete = [], True
+    if tr.get("run_ok") is True:
+        notes.append("[ok] the program ran to completion")
+    elif tr.get("run_ok") is False:
+        complete = False
+        notes.append("[partial] the VM stopped early (anti-tamper or a client-only API); "
+                     "logic after that point was NOT reached")
+    else:
+        complete = False
+        notes.append("[unknown] no run status; the trace may be truncated")
+    loads = [l for l in tr.get("behavior", []) if l.startswith("loadstring")]
+    for l in loads:
+        m = re.search(r"inner layer:\s*([^)]+)", l)
+        layer = m.group(1).strip() if m else "?"
+        if layer not in ("plain/unknown",):
+            complete = False
+            notes.append("[nested] an inner obfuscation layer was loaded (%s); it holds more "
+                         "logic that a single trace does not fully expand" % layer)
+        else:
+            notes.append("[nested] the program loadstring'd an inner chunk (%s); its internal "
+                         "constants/branches are only partially observable at runtime" % layer)
+    events = [l for l in tr.get("behavior", []) if re.search(r"PlayerAdded|CharacterAdded|Connect", l)]
+    if events:
+        complete = False
+        notes.append("[event-gated] %d event handler(s) connected; their bodies run only when the "
+                     "event fires, so that logic is not in this trace" % len(events))
+    verdict = "FULL" if complete else "PARTIAL"
+    return verdict, notes
 
 
 OP_SYMBOL = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "^": "POW"}

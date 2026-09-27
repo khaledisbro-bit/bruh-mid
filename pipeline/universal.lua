@@ -24,32 +24,13 @@ local realLoad = loadstring
 local RI = realenv.Instance
 local rtask = realenv.task
 
--- ===== CONSTANT DUMPER (standard technique) ==============================
--- VMs rebuild their string constants with string.char / sub / table.concat.
--- Hook those so every constant the VM unpacks is captured. This surfaces the
--- real hidden strings (keys, field names, defaults) the behavior trace misses.
-local consts, seenC, capN = {}, {}, 0
-local function capture(s)
-    if type(s) ~= "string" then return end
-    local n = #s
-    if n < 2 or n > 120 or seenC[s] or capN > 6000 then return end
-    for i = 1, n do local b = s:byte(i); if b < 9 or (b > 13 and b < 32) or b > 126 then return end end
-    seenC[s] = true; capN = capN + 1; consts[capN] = s
-end
-local rstring, rtable = realenv.string, realenv.table
-local wrapString = setmetatable({}, { __index = function(_, k)
-    local f = rstring[k]
-    if k == "char" or k == "sub" or k == "format" or k == "rep" or k == "reverse" then
-        return function(...) local r = f(...); capture(r); return r end
-    end
-    return f
-end })
-local wrapTable = setmetatable({}, { __index = function(_, k)
-    local f = rtable[k]
-    if k == "concat" then return function(...) local r = f(...); capture(r); return r end end
-    return f
-end })
--- ========================================================================
+-- Constant capture note: hooking string.char/table.concat globally floods the
+-- log with the VM's per-byte intermediates AND can break the interpreter (it
+-- rebuilds opcodes the same way). Instead we capture constants where they are
+-- HIGH SIGNAL: the real arguments passed to API calls (logProxy / logForward
+-- below). Those are the program's genuine strings/numbers, e.g.
+-- GetDataStore("PlayerStats_V2") and JSONEncode({Coins=100,...}).
+local capN = 0
 
 -- executor-sim stubs so executor scripts run in Studio too
 local genv = {}
@@ -68,8 +49,6 @@ local ES = {
 
 local env
 env = setmetatable({}, { __index = function(_, k)
-    if k == "string" then return wrapString end
-    if k == "table" then return wrapTable end
     local rv = realenv[k]; if rv ~= nil then return rv end
     return ES[k]
 end })
@@ -210,13 +189,10 @@ else
   say("run_ok: false  return_type: nil"); say("error: loadstring failed")
 end
 
-say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior.." consts="..capN)
+say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
 say("mode: universal")
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
-say("---BEHAVIOR---"); for i=1,math.min(#behavior,80) do say(behavior[i]) end
--- captured constant pool (full set to a side file, a sample to the console)
-say("---CONSTANTS---"); for i=1,math.min(capN,120) do say("K: "..consts[i]) end
-pcall(function() local t={}; for i=1,capN do t[i]=consts[i] end; writefile("constants_full.txt", table.concat(t,"\n")) end)
+say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R, "\n").."\nEND_UNOBF_RESULT"
 print(body)
