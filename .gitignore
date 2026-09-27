@@ -4,3 +4,5 @@ obfuscated.lua
 pipeline/out_obf3/
 pipeline/out_obf2/
 pipeline/out_25ms/
+__pycache__/
+*.pyc
