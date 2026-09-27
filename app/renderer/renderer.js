@@ -180,6 +180,7 @@ $('#copyHarnessBtn').addEventListener('click', async () => { await window.vm.cop
 $('#finalizeBtn').addEventListener('click', () => { const t = $('#pasteBox').value.trim(); if (t) finalize(t); else alert('Paste the result block first.'); });
 
 async function finalize(traceText) {
+  state.lastTrace = traceText;
   setStage('audit', 'run', 'verifying...');
   const r = await window.vm.finalize({ filePath: state.filePath, outDir: state.outDir, traceText, candidatePath: null })
     .catch(e => ({ code: -1, stderr: String(e) }));
@@ -192,13 +193,16 @@ async function finalize(traceText) {
     $('#verdictBox').innerHTML = `<span class="verdict ${ok ? 'ok' : 'bad'}">${verdict || 'DONE'}</span>`;
     state.finalSource = src; $('#finalLbl').textContent = 'Recovered source'; showSource($('#finalCode'), src);
   } else {
-    // universal / behavior-only result
+    // universal / behavior-only result. Prefer the engine's behavior report,
+    // fall back to the raw captured block so the user always sees something real.
     setStage('audit', 'done', 'behavior captured');
     $('#verdictBox').innerHTML = `<span class="verdict ok">BEHAVIOR CAPTURED</span>`;
     $('#finalLbl').textContent = 'What the script actually does (universal trace)';
-    showSource($('#finalCode'), r.behavior || 'No behavior recorded.');
+    const shown = (r.behavior && r.behavior.trim().length > 12) ? r.behavior : (state.lastTrace || 'No behavior recorded.');
+    $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = shown;
   }
-  if (r.behavior) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = r.behavior; }
+  const constText = (r.behavior && r.behavior.trim()) || state.lastTrace || '';
+  if (constText) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = constText; }
   pushHistory(verdict || 'BEHAVIOR');
 }
 

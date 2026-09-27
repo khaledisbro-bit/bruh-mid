@@ -112,13 +112,28 @@ def main():
     print(f"[4/4] AUDIT   : verdict={verdict}")
     for t, m in findings:
         print(f"              [{t}] {m}")
-    # write a behavior summary from the trace
+    # write a readable behavior report from the trace
     summ = os.path.join(a.out, "BEHAVIOR.txt")
-    with open(summ, "w") as f:
-        f.write("run_ok: %s\n" % tr["run_ok"])
-        f.write("prints: %s\n" % tr["prints"])
-        f.write("module: %s\n" % tr["module"])
-        f.write("ops: %s\n" % tr["ops"])
+    lines = ["run_ok: %s" % tr["run_ok"], ""]
+    if tr["prints"]:
+        lines.append("== printed output ==")
+        lines += tr["prints"]; lines.append("")
+    if tr["ops"]:
+        lines.append("== arithmetic ==")
+        lines += tr["ops"]; lines.append("")
+    if tr["module"]:
+        lines.append("== module ==")
+        lines += tr["module"]; lines.append("")
+    if tr["behavior"]:
+        lines.append("== behavior (services, instances, calls) ==")
+        lines += tr["behavior"]; lines.append("")
+    if len(lines) <= 2:
+        lines.append("(no behavior captured - the run may have been empty or the")
+        lines.append(" result block did not reach the analyzer)")
+        lines.append("")
+        lines.append("--- raw trace received ---")
+        lines.append(trace[:4000])
+    open(summ, "w").write("\n".join(lines))
     print(f"              behavior -> {summ}")
     if verdict == "CONSISTENT" and cand:
         final = os.path.join(a.out, "FINAL_SOURCE.lua")
