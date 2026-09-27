@@ -97,8 +97,30 @@ def main():
         open(os.path.join(a.out, "inner_source.lua"), "wb").write(inner_src)
         open(os.path.join(a.out, "inner_data.bin"), "wb").write(inner_data)
         unobf.classify_constructs(src, log["inner_vm"], log)
+        # static VM lift: import table + readable strings, straight from bytes
+        try:
+            import lift
+            lifted = lift.lift(inner_data)
+            log["lift"] = {"segments": lifted.get("segments"),
+                           "imports": [".".join(p) for p in (lifted.get("imports") or [])],
+                           "strings": lifted.get("strings", [])[:120]}
+            with open(os.path.join(a.out, "vm_imports.txt"), "w") as f:
+                f.write("static VM imports (recovered from bytes, no execution):\n")
+                for imp in log["lift"]["imports"]:
+                    f.write("  " + imp + "\n")
+                if log["lift"]["strings"]:
+                    f.write("\nreadable strings:\n")
+                    for s in log["lift"]["strings"]:
+                        f.write("  " + s + "\n")
+            print(f"[2b/4] LIFT   : {len(log['lift']['imports'])} static imports -> {a.out}/vm_imports.txt")
+        except Exception as e:
+            log["lift_error"] = str(e)
         json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
-        open(os.path.join(a.out, "vm_structure.txt"), "w").write(unobf.vm_structure_text(log))
+        vmtext = unobf.vm_structure_text(log)
+        if log.get("lift", {}).get("imports"):
+            vmtext += "\n\nstatic VM imports (from bytes, no execution):\n" + \
+                      "\n".join("  " + i for i in log["lift"]["imports"])
+        open(os.path.join(a.out, "vm_structure.txt"), "w").write(vmtext)
         print(f"[2/4] STATIC  : inner_source={len(inner_src)}  inner_data={len(inner_data)}  -> {a.out}/")
     else:
         json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
