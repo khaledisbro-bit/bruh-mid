@@ -153,12 +153,13 @@ async function autoRun() {
   if (res && res.ok && m) {
     setStage('harness', 'done', 'ran via MCP');
     finalize(m[0]);
-  } else if (res && res.ok && body) {
-    // MCP ran; block may be split across console lines. Show it and let the
-    // user finalize, but also try: if it has the BEGIN marker, finalize anyway.
-    $('#pasteBox').value = body;
-    if (body.includes('BEGIN_UNOBF_RESULT')) { setStage('harness', 'done', 'ran via MCP'); finalize(body); }
-    else { setStage('harness', '', 'MCP ran, output not a result block - paste from console into Executor tab'); }
+  } else if (res && res.ok) {
+    // MCP ran but no BEGIN block in the returned text. Dump the raw response so
+    // we can see where the output lives, and let the user paste console output.
+    let dump = body || '';
+    try { if (res.raw) dump += '\n\n--- raw MCP result ---\n' + JSON.stringify(res.raw, null, 2); } catch (_) {}
+    $('#pasteBox').value = dump;
+    setStage('harness', '', 'MCP ran, no result block - see Executor tab (raw response shown)');
   } else {
     setStage('harness', '', 'MCP failed: ' + (res && res.error ? res.error : 'offline') + ' - use Executor tab');
   }
