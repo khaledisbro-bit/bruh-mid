@@ -81,21 +81,39 @@ drop.addEventListener('click', async () => { const f = await window.vm.pickFile(
 drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) analyzeFile(f.path); });
 
 async function analyzeFile(filePath) {
-  state.filePath = filePath;
+  state.filePath = filePath; state.harness = null; state.finalSource = null;
   $('#dropFile').textContent = filePath;
   $('#pageSub').textContent = filePath.split(/[\\/]/).pop();
   resetStages();
   setStage('detect', 'run', 'analyzing...');
-  const r = await window.vm.analyze(filePath);
+  const r = await window.vm.analyze(filePath).catch(e => ({ code: -1, stderr: String(e) }));
   state.outDir = r.outDir; state.harness = r.harness; state.analysis = r.analysis;
-
-  if (r.stages.detect) setStage('detect', 'done', r.stages.detect);
-  else { setStage('detect', '', 'failed'); alert('Detect failed:\n' + (r.stderr || r.stdout)); return; }
-  if (r.stages.static) setStage('static', 'done', r.stages.static); else setStage('static', '', 'unknown family');
-  if (r.harness) setStage('harness', 'run', 'harness ready - run in executor');
   fillStructure(r);
-  // try MCP auto-run
-  if (r.harness) autoRun();
+
+  const family = (r.stages && r.stages.detect) || '';
+  const recognized = r.harness && !/unknown/i.test(family);
+  if (!recognized) {
+    setStage('detect', '', family || 'failed');
+    setStage('static', '', 'stopped');
+    // show the real reason in the source pane so nothing hangs
+    const why = (r.stderr && r.stderr.trim()) || (r.stdout || '').trim() || 'unrecognized file';
+    $('#finalLbl').textContent = 'Could not process this file';
+    $('#finalCode').classList.remove('empty');
+    $('#finalCode').textContent =
+      'Detect: ' + (family || 'unknown') + '\n\n' +
+      'This file is not the base85+Zstd family, or the pipeline folder is out of date.\n\n' +
+      'Checklist:\n' +
+      ' 1) Is this the same obfuscated file we cracked (base85 + Zstd)?\n' +
+      ' 2) Does pipeline/obfuscators/ exist next to the app? If not, update the pipeline folder.\n' +
+      ' 3) Is python + zstandard installed? (pip install zstandard)\n\n' +
+      '--- engine output ---\n' + why;
+    return; // never proceed to Run VM / Verify on an unrecognized file
+  }
+
+  setStage('detect', 'done', family);
+  setStage('static', 'done', r.stages.static || 'unwrapped');
+  setStage('harness', 'run', 'ready');
+  autoRun(); // full auto when recognized
 }
 
 function fillStructure(r) {
@@ -121,12 +139,18 @@ function fillStructure(r) {
 
 // ---- executor ----
 async function autoRun() {
-  const res = await window.vm.runMcp(state.harness);
-  if (res && res.ok && res.body) {
+  if (!state.harness) { setStage('harness', '', 'no harness (file not recognized)'); return; }
+  setStage('harness', 'run', 'running via MCP...');
+  const res = await window.vm.runMcp(state.harness).catch(e => ({ ok: false, error: String(e) }));
+  if (res && res.ok && res.body && res.body.includes('BEGIN_UNOBF_RESULT')) {
     setStage('harness', 'done', 'ran via MCP');
     finalize(res.body);
+  } else if (res && res.ok && res.body) {
+    // MCP ran but the output is not our block (no Roblox client, or truncated)
+    setStage('harness', '', 'MCP ran but no result block - is a Roblox client connected?');
+    $('#pasteBox').value = res.body;
   } else {
-    setStage('harness', 'run', 'MCP not reachable - use the Executor tab');
+    setStage('harness', '', 'MCP failed: ' + (res && res.error ? res.error : 'offline') + ' - use Executor tab');
   }
 }
 $('#mcpRunBtn').addEventListener('click', autoRun);
@@ -135,8 +159,9 @@ $('#finalizeBtn').addEventListener('click', () => { const t = $('#pasteBox').val
 
 async function finalize(traceText) {
   setStage('audit', 'run', 'verifying...');
-  const candidatePath = null; // the pipeline recomputes print-class output itself
-  const r = await window.vm.finalize({ filePath: state.filePath, outDir: state.outDir, traceText, candidatePath });
+  const r = await window.vm.finalize({ filePath: state.filePath, outDir: state.outDir, traceText, candidatePath: null })
+    .catch(e => ({ code: -1, stderr: String(e) }));
+  if (!r || r.code === -1) { setStage('audit', '', 'verify error: ' + ((r && r.stderr) || 'unknown')); return; }
   const verdict = (r.verdict || '').trim();
   const ok = verdict === 'CONSISTENT';
   setStage('audit', ok ? 'done' : 'run', verdict || 'done');
