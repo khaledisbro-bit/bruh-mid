@@ -149,8 +149,10 @@ do
     env.Game = env.game
   end
 end
+-- Let loops run more iterations (so loop-gated behavior is captured) but still
+-- bound it so an infinite while-wait cannot hang the trace.
 local wN = 0
-env.wait = function() wN = wN + 1; if wN > 5 then error("WAIT_BUDGET") end return 0 end
+env.wait = function() wN = wN + 1; if wN > 40 then error("WAIT_BUDGET") end return 0 end
 env.task = setmetatable({}, { __index=function(_,k) if k=="wait" then return env.wait end return rtask[k] end })
 
 -- run
