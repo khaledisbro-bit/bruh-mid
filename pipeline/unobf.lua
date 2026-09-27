@@ -23,8 +23,14 @@ local R = {}
 local function say(...) local p = {}; for i = 1, select("#", ...) do p[i] = tostring((select(i, ...))) end; R[#R + 1] = table.concat(p, "\t") end
 
 ------------------------------------------------------------ Layer 1 (auto)
-local alphabet = SOURCE:match("for %w+=1,85 do %w+%[?%w*%(?%w*%(?%[%[(.-)%]%]")
-    or SOURCE:match("%[%[(................................................................................................)%]%]")
+-- prefer the [[..]] literal inside the `for i=1,85 do` alphabet loop; else any
+-- long-bracket literal that is exactly 85 chars (matches unobf.py's approach).
+local alphabet = SOURCE:match("1,85 do.-%[%[(.-)%]%]")
+if not (alphabet and #alphabet == 85) then
+    for cap in SOURCE:gmatch("%[%[(.-)%]%]") do
+        if #cap == 85 then alphabet = cap break end
+    end
+end
 assert(alphabet and #alphabet == 85, "base85 alphabet not found")
 local BM = {}; for i = 1, 85 do BM[sub(alphabet, i, i)] = i - 1 end
 local subA, subB = SOURCE:match("%-(%d%d%d%d%d%d+)%)%%4294967296.-%-(%d%d%d%d%d%d+)%)%%4294967296")
