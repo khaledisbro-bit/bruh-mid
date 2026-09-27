@@ -91,29 +91,35 @@ async function analyzeFile(filePath) {
   fillStructure(r);
 
   const family = (r.stages && r.stages.detect) || '';
-  const recognized = r.harness && !/unknown/i.test(family);
-  if (!recognized) {
+  const universal = /unknown/i.test(family);
+  if (!r.harness) {
+    // engine could not even build a harness (e.g. crash, missing python/zstandard)
     setStage('detect', '', family || 'failed');
     setStage('static', '', 'stopped');
-    // show the real reason in the source pane so nothing hangs
-    const why = (r.stderr && r.stderr.trim()) || (r.stdout || '').trim() || 'unrecognized file';
+    const why = (r.stderr && r.stderr.trim()) || (r.stdout || '').trim() || 'engine produced no harness';
     $('#finalLbl').textContent = 'Could not process this file';
     $('#finalCode').classList.remove('empty');
     $('#finalCode').textContent =
       'Detect: ' + (family || 'unknown') + '\n\n' +
-      'This file is not the base85+Zstd family, or the pipeline folder is out of date.\n\n' +
+      'The engine could not build a harness.\n\n' +
       'Checklist:\n' +
-      ' 1) Is this the same obfuscated file we cracked (base85 + Zstd)?\n' +
-      ' 2) Does pipeline/obfuscators/ exist next to the app? If not, update the pipeline folder.\n' +
-      ' 3) Is python + zstandard installed? (pip install zstandard)\n\n' +
+      ' 1) Is python + zstandard installed?  (pip install zstandard)\n' +
+      ' 2) Is the pipeline folder up to date (pipeline/universal.lua present)?\n\n' +
       '--- engine output ---\n' + why;
-    return; // never proceed to Run VM / Verify on an unrecognized file
+    return;
   }
 
-  setStage('detect', 'done', family);
-  setStage('static', 'done', r.stages.static || 'unwrapped');
-  setStage('harness', 'run', 'ready');
-  autoRun(); // full auto when recognized
+  if (universal) {
+    setStage('detect', 'done', 'unknown family');
+    setStage('static', 'done', 'universal dynamic trace');
+    setStage('harness', 'run', 'ready (behavior mode)');
+    $('#finalLbl').textContent = 'Universal mode: recovering behavior (no static plugin for this family)';
+  } else {
+    setStage('detect', 'done', family);
+    setStage('static', 'done', r.stages.static || 'unwrapped');
+    setStage('harness', 'run', 'ready');
+  }
+  autoRun(); // full auto in both modes
 }
 
 function fillStructure(r) {
@@ -163,16 +169,21 @@ async function finalize(traceText) {
     .catch(e => ({ code: -1, stderr: String(e) }));
   if (!r || r.code === -1) { setStage('audit', '', 'verify error: ' + ((r && r.stderr) || 'unknown')); return; }
   const verdict = (r.verdict || '').trim();
-  const ok = verdict === 'CONSISTENT';
-  setStage('audit', ok ? 'done' : 'run', verdict || 'done');
-  $('#verdictBox').innerHTML = verdict ? `<span class="verdict ${ok ? 'ok' : 'bad'}">${verdict}</span>` : '';
-  // constants / behavior
-  if (r.behavior) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = r.behavior; }
-  // final source: prefer FINAL_SOURCE.lua, else show behavior summary
   const src = r.finalSource;
-  if (src) { state.finalSource = src; $('#finalLbl').textContent = 'Recovered source'; showSource($('#finalCode'), src); }
-  else { $('#finalLbl').textContent = 'Behavior captured (no auto source for this program shape)'; showSource($('#finalCode'), r.behavior || ''); }
-  pushHistory(verdict);
+  if (src) {
+    const ok = verdict === 'CONSISTENT';
+    setStage('audit', ok ? 'done' : 'run', verdict || 'done');
+    $('#verdictBox').innerHTML = `<span class="verdict ${ok ? 'ok' : 'bad'}">${verdict || 'DONE'}</span>`;
+    state.finalSource = src; $('#finalLbl').textContent = 'Recovered source'; showSource($('#finalCode'), src);
+  } else {
+    // universal / behavior-only result
+    setStage('audit', 'done', 'behavior captured');
+    $('#verdictBox').innerHTML = `<span class="verdict ok">BEHAVIOR CAPTURED</span>`;
+    $('#finalLbl').textContent = 'What the script actually does (universal trace)';
+    showSource($('#finalCode'), r.behavior || 'No behavior recorded.');
+  }
+  if (r.behavior) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = r.behavior; }
+  pushHistory(verdict || 'BEHAVIOR');
 }
 
 // ---- final source actions ----

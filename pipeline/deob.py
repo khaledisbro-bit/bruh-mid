@@ -51,13 +51,11 @@ def detect(src, log):
     return inner_src, inner_data, family
 
 
-def make_harness(src, outdir):
-    """Embed the obfuscated source into unobf.lua so it needs no readfile."""
-    tmpl = open(os.path.join(HERE, "unobf.lua"), encoding="utf-8").read()
+def make_harness(src, outdir, template="unobf.lua"):
+    """Embed the obfuscated source into the given harness template (no readfile)."""
+    tmpl = open(os.path.join(HERE, template), encoding="utf-8").read()
     op, cl = safe_long_bracket(src)
     embedded = "local SOURCE\nSOURCE = " + op + "\n" + src + "\n" + cl
-    # replace the readfile do-block with a direct assignment (function repl to
-    # avoid backslash-escape interpretation of the embedded source)
     tmpl = re.sub(r"local SOURCE\ndo\n.*?\nend", lambda _m: embedded,
                   tmpl, count=1, flags=re.S)
     path = os.path.join(outdir, "harness.lua")
@@ -78,24 +76,27 @@ def main():
     log = {"sample": os.path.basename(a.input), "size": len(src)}
     inner_src, inner_data, family = detect(src, log)
 
-    print(f"[1/4] DETECT  : {family}")
+    universal = inner_src is None  # unknown family -> obfuscator-agnostic trace
+    print(f"[1/4] DETECT  : {family if not universal else 'unknown-family (universal mode)'}")
     if inner_src is not None:
         vm = log["inner_vm"]
         print(f"              resolver={vm['resolver']}  functions={vm['local_function_count']}")
-    if a.detect or inner_src is None:
-        if inner_src is None:
-            print("        This sample is not the base85+Zstd family; add a plugin for it.")
+    if a.detect:
         return
 
     os.makedirs(a.out, exist_ok=True)
-    open(os.path.join(a.out, "inner_source.lua"), "wb").write(inner_src)
-    open(os.path.join(a.out, "inner_data.bin"), "wb").write(inner_data)
-    unobf.classify_constructs(src, log["inner_vm"], log)
-    json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
-    open(os.path.join(a.out, "vm_structure.txt"), "w").write(unobf.vm_structure_text(log))
-    print(f"[2/4] STATIC  : inner_source={len(inner_src)}  inner_data={len(inner_data)}  -> {a.out}/")
+    if not universal:
+        open(os.path.join(a.out, "inner_source.lua"), "wb").write(inner_src)
+        open(os.path.join(a.out, "inner_data.bin"), "wb").write(inner_data)
+        unobf.classify_constructs(src, log["inner_vm"], log)
+        json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
+        open(os.path.join(a.out, "vm_structure.txt"), "w").write(unobf.vm_structure_text(log))
+        print(f"[2/4] STATIC  : inner_source={len(inner_src)}  inner_data={len(inner_data)}  -> {a.out}/")
+    else:
+        json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
+        print(f"[2/4] STATIC  : unknown family -> universal dynamic trace (behavior, not static source)")
 
-    harness = make_harness(src, a.out)
+    harness = make_harness(src, a.out, template="universal.lua" if universal else "unobf.lua")
     print(f"[3/4] HARNESS : {harness}  (paste into your executor, save its output)")
 
     if not a.trace:
