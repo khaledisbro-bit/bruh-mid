@@ -148,13 +148,17 @@ async function autoRun() {
   if (!state.harness) { setStage('harness', '', 'no harness (file not recognized)'); return; }
   setStage('harness', 'run', 'running via MCP...');
   const res = await window.vm.runMcp(state.harness).catch(e => ({ ok: false, error: String(e) }));
-  if (res && res.ok && res.body && res.body.includes('BEGIN_UNOBF_RESULT')) {
+  const body = (res && res.body) || '';
+  const m = body.match(/BEGIN_UNOBF_RESULT[\s\S]*?END_UNOBF_RESULT/);
+  if (res && res.ok && m) {
     setStage('harness', 'done', 'ran via MCP');
-    finalize(res.body);
-  } else if (res && res.ok && res.body) {
-    // MCP ran but the output is not our block (no Roblox client, or truncated)
-    setStage('harness', '', 'MCP ran but no result block - is a Roblox client connected?');
-    $('#pasteBox').value = res.body;
+    finalize(m[0]);
+  } else if (res && res.ok && body) {
+    // MCP ran; block may be split across console lines. Show it and let the
+    // user finalize, but also try: if it has the BEGIN marker, finalize anyway.
+    $('#pasteBox').value = body;
+    if (body.includes('BEGIN_UNOBF_RESULT')) { setStage('harness', 'done', 'ran via MCP'); finalize(body); }
+    else { setStage('harness', '', 'MCP ran, output not a result block - paste from console into Executor tab'); }
   } else {
     setStage('harness', '', 'MCP failed: ' + (res && res.error ? res.error : 'offline') + ' - use Executor tab');
   }

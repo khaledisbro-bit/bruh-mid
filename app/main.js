@@ -137,11 +137,16 @@ async function mcpExecute(urlStr, token, lua) {
   if (call.error) return { ok: false, error: call.error };
   const res = call.obj && call.obj.result;
   if (call.obj && call.obj.error) return { ok: false, error: call.obj.error.message || 'tool error' };
+  // execute tools return output in varied shapes; gather text from all of them
   let text = '';
-  if (res && Array.isArray(res.content)) text = res.content.map(c => c.text || '').join('\n');
-  else if (typeof res === 'string') text = res;
-  else text = JSON.stringify(res);
-  return { ok: true, body: text, tool: tool.name };
+  const grab = (v) => { if (typeof v === 'string') text += (text ? '\n' : '') + v; };
+  if (res) {
+    if (Array.isArray(res.content)) res.content.forEach(c => grab(c && c.text));
+    grab(res.output); grab(res.stdout); grab(res.result); grab(res.text); grab(res.logs);
+    if (Array.isArray(res.logs)) res.logs.forEach(l => grab(typeof l === 'string' ? l : (l && l.message)));
+  }
+  if (!text) text = JSON.stringify(res);
+  return { ok: true, body: text, tool: tool.name, raw: res };
 }
 
 function parseStages(stdout) {
