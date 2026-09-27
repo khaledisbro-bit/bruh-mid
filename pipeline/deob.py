@@ -135,6 +135,11 @@ def main():
     if tr["behavior"]:
         cls = ai.classify_behavior(tr["behavior"])
         conf, why = ai.confidence(cls, tr)
+        nev = len(tr["behavior"]) + len(tr.get("consts", [])) + len(tr["prints"])
+        lines.append("== provenance ==")
+        lines.append("  every line below is derived from %d captured runtime records." % nev)
+        lines.append("  nothing is invented, guessed, or filled in from a known sample.")
+        lines.append("")
         intent = ai.build_intent(cls, tr)
         lines.append("== reconstructed intent ==")
         if intent:
