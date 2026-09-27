@@ -1,0 +1,21 @@
+{
+  "name": "vmsmart",
+  "version": "1.0.0",
+  "description": "VmSmart - purple glass deobfuscator for the base85+Zstd Luau VM family",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^32.0.0"
+  },
+  "build": {
+    "appId": "com.vmsmart.app",
+    "productName": "VmSmart",
+    "files": ["**/*", "../pipeline/**/*"],
+    "win": { "target": "nsis" }
+  }
+}

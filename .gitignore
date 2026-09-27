@@ -6,3 +6,5 @@ pipeline/out_obf2/
 pipeline/out_25ms/
 __pycache__/
 *.pyc
+app/node_modules/
+app/dist/

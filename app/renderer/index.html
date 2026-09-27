@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>VmSmart</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<!-- inline Lucide icon symbols (MIT) -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-script" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="m9 12 2 2-2 2"/><path d="M13 16h2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+  <symbol id="i-braces" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.94 14.66A4 4 0 0 1 5.34 10 4 4 0 0 1 10 5.34a4 4 0 0 1 4.66 4.66 4 4 0 0 1-4.72 4.66Z"/><path d="M22 22l-2-2M17 17l-1-1"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo"><svg><use href="#i-script"/></svg></div>
+      <div>
+        <div class="name">Vm<b>Smart</b></div>
+        <div class="tag">Luau deobfuscator</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <button data-page="deob" class="active"><svg><use href="#i-sparkles"/></svg> Deobfuscate</button>
+      <button data-page="structure"><svg><use href="#i-cpu"/></svg> VM Structure</button>
+      <button data-page="constants"><svg><use href="#i-braces"/></svg> Constants</button>
+      <button data-page="history"><svg><use href="#i-history"/></svg> History</button>
+      <button data-page="settings"><svg><use href="#i-settings"/></svg> Settings</button>
+    </nav>
+    <div class="foot"><span id="mcpDot" class="mcp-dot off"></span><span id="mcpText">MCP unknown</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div><h1 id="pageTitle">Deobfuscate</h1><div class="sub" id="pageSub">Drop an obfuscated .lua to begin</div></div>
+      <div class="row" id="topActions"></div>
+    </div>
+    <div class="content">
+
+      <!-- DEOB -->
+      <section class="page active" id="page-deob">
+        <div class="drop" id="drop">
+          <div class="big"><svg><use href="#i-upload"/></svg></div>
+          <h2>Drop obfuscated.lua here</h2>
+          <p>or click to browse. VmSmart unwraps, runs, and verifies automatically.</p>
+          <div class="file" id="dropFile"></div>
+        </div>
+
+        <div class="stages" id="stages">
+          <div class="stage" data-st="detect"><div class="h"><svg><use href="#i-search"/></svg> Detect</div><div class="s">-</div><div class="pill"></div></div>
+          <div class="stage" data-st="static"><div class="h"><svg><use href="#i-layers"/></svg> Unwrap</div><div class="s">-</div><div class="pill"></div></div>
+          <div class="stage" data-st="harness"><div class="h"><svg><use href="#i-terminal"/></svg> Run VM</div><div class="s">-</div><div class="pill"></div></div>
+          <div class="stage" data-st="audit"><div class="h"><svg><use href="#i-shield"/></svg> Verify</div><div class="s">-</div><div class="pill"></div></div>
+        </div>
+
+        <div class="card">
+          <div class="tabs" style="padding:12px 12px 0">
+            <button class="active" data-tab="final"><svg><use href="#i-script"/></svg> Final Source</button>
+            <button data-tab="run"><svg><use href="#i-play"/></svg> Executor</button>
+          </div>
+          <div class="tabpane active" id="tab-final">
+            <div class="editor">
+              <div class="bar">
+                <span class="lbl" id="finalLbl">No result yet</span>
+                <div class="row">
+                  <span id="verdictBox"></span>
+                  <button class="btn ghost" id="copyBtn"><svg><use href="#i-copy"/></svg> Copy</button>
+                  <button class="btn" id="saveBtn"><svg><use href="#i-save"/></svg> Save</button>
+                </div>
+              </div>
+              <pre id="finalCode" class="empty">Drop a file to see the recovered source.</pre>
+            </div>
+          </div>
+          <div class="tabpane" id="tab-run">
+            <div style="padding:16px">
+              <div class="row" style="justify-content:space-between; margin-bottom:12px">
+                <div class="sub">Executor step. Auto via MCP, or copy the harness and paste the result.</div>
+                <div class="row">
+                  <button class="btn" id="mcpRunBtn"><svg><use href="#i-play"/></svg> Auto-run (MCP)</button>
+                  <button class="btn ghost" id="copyHarnessBtn"><svg><use href="#i-copy"/></svg> Copy harness</button>
+                </div>
+              </div>
+              <textarea class="paste" id="pasteBox" placeholder="Paste the BEGIN_UNOBF_RESULT..END block here if running manually"></textarea>
+              <div class="row" style="margin-top:10px"><button class="btn" id="finalizeBtn"><svg><use href="#i-shield"/></svg> Verify & finalize</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STRUCTURE -->
+      <section class="page" id="page-structure">
+        <div class="card"><div class="kv" id="structKv"><div class="empty" style="grid-column:1/3">Analyze a file to see its VM structure.</div></div></div>
+        <div class="sec-title">Classification</div>
+        <div class="card"><div class="pills" id="classPills"></div></div>
+        <div class="sec-title">Raw structure</div>
+        <div class="card"><pre id="structRaw" style="padding:14px; max-height:34vh; overflow:auto; font:12.5px/1.5 monospace"></pre></div>
+      </section>
+
+      <!-- CONSTANTS -->
+      <section class="page" id="page-constants">
+        <div class="card"><div class="editor"><div class="bar"><span class="lbl" id="constLbl">Decoded strings and behavior from the run</span></div><pre id="constCode" class="empty" style="max-height:52vh">Run a file to capture decoded constants.</pre></div></div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="page" id="page-history">
+        <div class="card"><div id="histList"><div class="empty">No runs yet.</div></div></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="page" id="page-settings">
+        <div class="card" style="padding:18px; max-width:560px">
+          <div class="field"><label>Roblox Executor MCP URL</label><input id="mcpUrl" placeholder="http://localhost:16384" /></div>
+          <div class="field"><label>Python command</label><input id="pyCmd" placeholder="python" /></div>
+          <button class="btn" id="saveSettings"><svg><use href="#i-save"/></svg> Save settings</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+<script src="renderer.js"></script>
+</body>
+</html>
