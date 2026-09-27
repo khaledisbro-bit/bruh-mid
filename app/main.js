@@ -93,12 +93,53 @@ function pickExecTool(tools) {
   const score = (t) => {
     const n = (t.name || '').toLowerCase();
     let s = 0;
-    if (/exec|run/.test(n)) s += 2;
+    if (/exec|run|dispatch/.test(n)) s += 2;
     if (/lua|luau|code|script/.test(n)) s += 2;
     if (/eval/.test(n)) s += 1;
+    if (/console|log|read|get/.test(n)) s -= 3; // not the exec tool
     return s;
   };
   return tools.map(t => [score(t), t]).filter(x => x[0] >= 2).sort((a, b) => b[0] - a[0]).map(x => x[1])[0] || null;
+}
+
+function pickConsoleTool(tools) {
+  const score = (t) => {
+    const n = (t.name || '').toLowerCase();
+    let s = 0;
+    if (/console|log|output/.test(n)) s += 2;
+    if (/read|get|fetch|poll|tail|dump/.test(n)) s += 1;
+    if (/exec|dispatch|run/.test(n)) s -= 2;
+    return s;
+  };
+  return tools.map(t => [score(t), t]).filter(x => x[0] >= 2).sort((a, b) => b[0] - a[0]).map(x => x[1])[0] || null;
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function fillArgs(tool, wanted) {
+  // wanted: {clientId, cursor} -> map onto the tool's schema property names
+  const props = (tool.inputSchema && tool.inputSchema.properties) || {};
+  const keys = Object.keys(props);
+  const out = {};
+  const put = (cands, val) => { if (val == null) return; for (const c of cands) { const k = keys.find(x => x.toLowerCase() === c); if (k) { out[k] = val; return; } } for (const c of cands) { const k = keys.find(x => x.toLowerCase().includes(c)); if (k) { out[k] = val; return; } } };
+  put(['clientid', 'client', 'target', 'targetid'], wanted.clientId);
+  put(['cursor', 'after', 'since', 'from', 'offset', 'start'], wanted.cursor);
+  return out;
+}
+
+function textFromResult(r) {
+  let t = '';
+  const add = (v) => { if (typeof v === 'string') t += (t ? '\n' : '') + v; };
+  if (r) {
+    if (Array.isArray(r.content)) r.content.forEach(c => add(c && c.text));
+    const sc = r.structuredContent;
+    if (sc) {
+      if (Array.isArray(sc.lines)) sc.lines.forEach(l => add(typeof l === 'string' ? l : (l && (l.message || l.text))));
+      if (Array.isArray(sc.logs)) sc.logs.forEach(l => add(typeof l === 'string' ? l : (l && (l.message || l.text))));
+      add(sc.output); add(sc.console); add(sc.message);
+    }
+  }
+  return t;
 }
 
 function execArgName(tool, lua) {
@@ -129,7 +170,7 @@ async function mcpExecute(urlStr, token, lua) {
   if (!tools.length) return { ok: false, error: 'no tools from MCP', tools: [] };
   const tool = pickExecTool(tools);
   if (!tool) return { ok: false, error: 'no execute tool found', tools: tools.map(t => t.name) };
-  // 4) call it
+  // 4) call the execute tool (async: it dispatches and returns a cursor)
   const call = await mcpPost(urlStr, token, sid, {
     jsonrpc: '2.0', id: 3, method: 'tools/call',
     params: { name: tool.name, arguments: execArgName(tool, lua) }
@@ -137,16 +178,35 @@ async function mcpExecute(urlStr, token, lua) {
   if (call.error) return { ok: false, error: call.error };
   const res = call.obj && call.obj.result;
   if (call.obj && call.obj.error) return { ok: false, error: call.obj.error.message || 'tool error' };
-  // execute tools return output in varied shapes; gather text from all of them
-  let text = '';
-  const grab = (v) => { if (typeof v === 'string') text += (text ? '\n' : '') + v; };
-  if (res) {
-    if (Array.isArray(res.content)) res.content.forEach(c => grab(c && c.text));
-    grab(res.output); grab(res.stdout); grab(res.result); grab(res.text); grab(res.logs);
-    if (Array.isArray(res.logs)) res.logs.forEach(l => grab(typeof l === 'string' ? l : (l && l.message)));
+
+  let text = textFromResult(res);
+  if (text.includes('BEGIN_UNOBF_RESULT')) return { ok: true, body: text, tool: tool.name, raw: res };
+
+  // async path: read structured cursor + target, then poll a console tool
+  const sc = (res && res.structuredContent) || {};
+  let cursor = sc.console_cursor != null ? sc.console_cursor : (sc.cursor != null ? sc.cursor : null);
+  const targets = sc.targets || sc.clients || [];
+  const clientId = Array.isArray(targets) ? targets[0] : targets;
+  const consoleTool = pickConsoleTool(tools);
+  if (!consoleTool) return { ok: true, body: text || JSON.stringify(res), tool: tool.name, raw: res, note: 'no console tool' };
+
+  let acc = '';
+  for (let i = 0; i < 15; i++) {
+    await sleep(700);
+    const rc = await mcpPost(urlStr, token, sid, {
+      jsonrpc: '2.0', id: 100 + i, method: 'tools/call',
+      params: { name: consoleTool.name, arguments: fillArgs(consoleTool, { clientId, cursor }) }
+    });
+    const r2 = rc.obj && rc.obj.result;
+    if (r2) {
+      const chunk = textFromResult(r2);
+      if (chunk) acc += (acc ? '\n' : '') + chunk;
+      const s2 = r2.structuredContent;
+      if (s2 && (s2.console_cursor != null || s2.cursor != null)) cursor = s2.console_cursor != null ? s2.console_cursor : s2.cursor;
+    }
+    if (acc.includes('END_UNOBF_RESULT')) break;
   }
-  if (!text) text = JSON.stringify(res);
-  return { ok: true, body: text, tool: tool.name, raw: res };
+  return { ok: true, body: acc || text || JSON.stringify(res), tool: tool.name + ' + ' + consoleTool.name, raw: res };
 }
 
 function parseStages(stdout) {
