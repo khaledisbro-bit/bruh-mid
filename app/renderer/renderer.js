@@ -209,6 +209,14 @@ async function finalize(traceText) {
 // ---- final source actions ----
 $('#copyBtn').addEventListener('click', async () => { await window.vm.copy(state.finalSource || $('#finalCode').textContent); flash('#copyBtn', 'Copied'); });
 $('#saveBtn').addEventListener('click', async () => { const p = await window.vm.saveSource(state.finalSource || $('#finalCode').textContent); if (p) flash('#saveBtn', 'Saved'); });
+$('#exportBtn').addEventListener('click', async () => {
+  const p = await window.vm.exportReport({
+    title: (state.filePath || '').split(/[\\/]/).pop() || 'sample',
+    body: state.finalSource || $('#finalCode').textContent || '',
+    structure: $('#structRaw').textContent || ''
+  });
+  if (p) flash('#exportBtn', 'Exported');
+});
 
 function flash(sel, text) { const el = $(sel); const t = el.innerHTML; el.innerHTML = `<svg><use href="#i-shield"/></svg> ${text}`; setTimeout(() => el.innerHTML = t, 1200); }
 

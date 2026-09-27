@@ -47,29 +47,58 @@ env.getgenv = ES.getgenv
 env.loadstring = function(src, ...) loads[#loads+1] = #tostring(src or ""); behavior[#behavior+1]="loadstring #"..#tostring(src or ""); local f=realLoad(src, ...); if f then pcall(setfenv, f, env) end return f end
 env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c); return RI.new(c,...) end end return RI[k] end })
 
--- Server-only services (DataStore, Messaging, etc.) throw on a client executor
--- and stop the trace early. Proxy `game` so GetService logs every service and
--- returns harmless stubs for the server-only ones, letting the trace continue.
--- Note: this makes typeof(game) ~= "DataModel"; scripts that hard-check that
--- will bail, which is an accepted limit of universal (behavior) mode.
+-- Server-only services throw on a client executor and stop the trace. Proxy
+-- `game` so GetService returns LOGGING PROXIES: every method call and its
+-- arguments are recorded (e.g. GetDataStore("PlayerStats_V2"),
+-- SetAsync(key, {...})), which recovers real names/keys/values, much closer to
+-- source than bare service names. typeof(game) ~= "DataModel" here, an accepted
+-- limit of universal mode.
+local function preview(v, depth)
+  depth = depth or 0
+  local t = typeof(v)
+  if t == "string" then return string.format("%q", #v > 60 and v:sub(1,60).."..." or v)
+  elseif t == "number" or t == "boolean" then return tostring(v)
+  elseif t == "nil" then return "nil"
+  elseif t == "table" then
+    if depth > 2 then return "{...}" end
+    local parts = {}
+    for k, vv in pairs(v) do
+      if #parts >= 8 then parts[#parts+1] = "..."; break end
+      parts[#parts+1] = tostring(k).."="..preview(vv, depth+1)
+    end
+    return "{"..table.concat(parts, ", ").."}"
+  else return t end
+end
+local function argstr(...)
+  local n = select("#", ...); local p = {}
+  for i = 1, n do p[i] = preview((select(i, ...))) end
+  return table.concat(p, ", ")
+end
+-- a proxy whose every method logs "ns:method(args)" and returns another proxy
+local function logProxy(ns)
+  return setmetatable({}, { __index = function(_, method)
+    return function(_, ...)
+      behavior[#behavior + 1] = ns .. ":" .. tostring(method) .. "(" .. argstr(...) .. ")"
+      return logProxy(ns .. "." .. tostring(method))
+    end
+  end })
+end
 do
   local realGame = realenv.game
   if realGame then
-    local function stubStore()
-      return setmetatable({}, { __index = function() return function() return nil end end })
-    end
     local serverStubs = {
-      DataStoreService = { GetDataStore = stubStore, GetOrderedDataStore = stubStore, GetGlobalDataStore = stubStore },
-      MessagingService = { PublishAsync = function() end, SubscribeAsync = function() return { Disconnect = function() end } end },
+      DataStoreService = "DataStoreService",
+      MessagingService = "MessagingService",
+      MarketplaceService = "MarketplaceService",
     }
     env.game = setmetatable({}, {
       __index = function(_, k)
         if k == "GetService" or k == "FindService" or k == "service" then
           return function(_, name)
             behavior[#behavior + 1] = "GetService: " .. tostring(name)
-            if serverStubs[name] then return serverStubs[name] end
+            if serverStubs[name] then return logProxy(name) end
             local ok, svc = pcall(function() return realGame:GetService(name) end)
-            return ok and svc or setmetatable({}, { __index = function() return function() end end })
+            return ok and svc or logProxy(name)
           end
         end
         local v = realGame[k]

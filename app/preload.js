@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('vm', {
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   setSettings: (s) => ipcRenderer.invoke('set-settings', s),
-  saveSource: (text) => ipcRenderer.invoke('save-source', text)
+  saveSource: (text) => ipcRenderer.invoke('save-source', text),
+  exportReport: (args) => ipcRenderer.invoke('export-report', args)
 });

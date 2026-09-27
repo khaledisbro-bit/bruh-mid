@@ -286,3 +286,19 @@ ipcMain.handle('save-source', async (_e, text) => {
   if (r.canceled) return null;
   fs.writeFileSync(r.filePath, text); return r.filePath;
 });
+
+ipcMain.handle('export-report', async (_e, { title, body, structure }) => {
+  const r = await dialog.showSaveDialog(win, { defaultPath: 'VmSmart_report.html', filters: [{ name: 'HTML', extensions: ['html'] }] });
+  if (r.canceled) return null;
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>VmSmart report</title>
+<style>body{background:#140a24;color:#ece6ff;font-family:Segoe UI,system-ui,sans-serif;margin:0;padding:32px}
+h1{color:#b98bff}h2{color:#a874ff;border-bottom:1px solid #3a2a5a;padding-bottom:6px;margin-top:28px}
+pre{background:#0d0718;border:1px solid #3a2a5a;border-radius:12px;padding:16px;overflow:auto;color:#cfc3ef;font:13px/1.5 Consolas,monospace}
+.tag{color:#9d92c4;font-size:13px}</style></head><body>
+<h1>VmSmart report</h1><div class="tag">${esc(title)} &middot; ${new Date().toLocaleString()}</div>
+<h2>Recovered source / behavior</h2><pre>${esc(body)}</pre>
+<h2>VM structure</h2><pre>${esc(structure)}</pre>
+</body></html>`;
+  fs.writeFileSync(r.filePath, html); return r.filePath;
+});
