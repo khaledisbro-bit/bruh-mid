@@ -24,8 +24,8 @@ import re
 from collections import Counter
 
 
-# pc;opcode;operands[;stackpointer[;topvalue]]  -- 3, 4 or 5 fields
-_LINE = re.compile(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?(?:;(.*))?$")
+# pc;opcode;operands[;stackpointer[;topvalue[;secondvalue]]]  -- 3..6 fields
+_LINE = re.compile(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?(?:;([^;]*))?(?:;.*)?$")
 
 
 def parse_ops(text):

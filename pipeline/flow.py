@@ -65,7 +65,7 @@ def parse(text):
     text = text.split("END_UNOBF_RESULT", 1)[0]
     out = []
     for ln in text.splitlines():
-        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?(?:;(.*))?$", ln.strip())
+        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?(?:;([^;]*))?(?:;.*)?$", ln.strip())
         if m:
             out.append((int(m.group(1)), int(m.group(2)), m.group(3),
                         m.group(4) and int(m.group(4)), m.group(5)))
