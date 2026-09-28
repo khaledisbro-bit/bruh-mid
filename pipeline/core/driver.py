@@ -240,13 +240,16 @@ def main():
     ap.add_argument("captures", nargs="*")
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--one-run", action="store_true",
+                    help="the files are pieces of a single run, not separate "
+                         "runs; fold them together first")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
     if not a.captures:
         ap.error("give at least one capture file, or --selftest")
     analyses = []
-    for cap in tracefmt.load(a.captures):
+    for cap in tracefmt.load(a.captures, one_run=a.one_run):
         an = Analysis(cap)
         sub = os.path.join(a.out, os.path.splitext(cap.name)[0])
         names = an.write(sub)

@@ -162,14 +162,73 @@ def _args(text):
     return out
 
 
-def load(paths):
-    """Read several captures. Each is analysed independently; merging happens
-    later and only where the evidence rules allow it."""
+def combine(caps):
+    """Fold several files of ONE run into a single capture.
+
+    An executor writes a run out in pieces: the console block carries the calls
+    and the constants but only the first few thousand instructions, while the
+    instruction dump beside it carries all of them. They describe the same
+    execution, so analysing them separately would throw away half the evidence
+    in each.
+
+    Where two pieces hold the same instructions, the longer one wins - one is
+    the truncated copy of the other. Where they hold different instructions,
+    they are joined in order. Calls, constants and printed output are unioned,
+    keeping the order each piece recorded."""
+    if not caps:
+        return None
+    base = caps[0]
+    for other in caps[1:]:
+        base.rows = _longer(base.rows, other.rows)
+        base.calls = _union(base.calls, other.calls, lambda c: c["raw"])
+        base.constants = _union(base.constants, other.constants, lambda c: c)
+        base.prints = _union(base.prints, other.prints, lambda p: p)
+        base.headers.update(other.headers)
+        for k, v in other.sections.items():
+            base.sections.setdefault(k, []).extend(v)
+        base.name = base.name + "+" + other.name
+    for i, r in enumerate(base.rows):
+        r["i"] = i
+    return base
+
+
+def _key(rows):
+    return [(r["pc"], r["opcode"], tuple(r["operands"])) for r in rows]
+
+
+def _longer(a, b):
+    if not a:
+        return b
+    if not b:
+        return a
+    ka, kb = _key(a), _key(b)
+    if kb[:len(ka)] == ka:
+        return b
+    if ka[:len(kb)] == kb:
+        return a
+    return a + b
+
+
+def _union(a, b, key):
+    seen = {key(x) for x in a}
+    out = list(a)
+    for x in b:
+        if key(x) not in seen:
+            seen.add(key(x))
+            out.append(x)
+    return out
+
+
+def load(paths, one_run=False):
+    """Read captures. Each file is a separate run unless one_run says they are
+    pieces of the same one, in which case they are folded together first."""
     import os
     caps = []
     for p in paths:
         with open(p, encoding="latin1") as f:
             caps.append(Capture(f.read(), os.path.basename(p)))
+    if one_run and len(caps) > 1:
+        return [combine(caps)]
     return caps
 
 

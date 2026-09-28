@@ -88,6 +88,11 @@ def main():
     ap.add_argument("--detect", action="store_true")
     ap.add_argument("--trace", nargs="+",
                     help="one or more captures; extra runs can only add")
+    ap.add_argument("--one-run", action="store_true",
+                    help="the trace files are pieces of a SINGLE run (the "
+                         "console block plus the instruction dump beside it), "
+                         "so fold them together instead of treating each as a "
+                         "separate run")
     ap.add_argument("--safe", action="store_true",
                     help="also write a harness that does not trace opcodes, for "
                          "builds whose integrity check reacts to the trace")
@@ -154,7 +159,7 @@ def main():
               % (os.path.basename(__file__), a.input))
         return 0
 
-    captures = tracefmt.load(a.trace)
+    captures = tracefmt.load(a.trace, one_run=a.one_run)
     analyses = []
     for cap in captures:
         if not cap.has_instructions():
