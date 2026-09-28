@@ -59,6 +59,29 @@ def decoy_opcodes(steps):
     return decoys
 
 
+def fold_cycles(steps, max_period=160):
+    """Collapse consecutive repeated instruction blocks (the VM's constant-
+    decrypt routine and hash loop repeat dozens of times). Returns a list of
+    (start_index, period, repeats). A generic run-length over cycles - correct
+    regardless of opcode semantics, and it turns thousands of machinery steps
+    into a readable skeleton."""
+    toks = [f"{op}:{','.join(od)}" for _pc, op, od in steps]
+    out, i, n = [], 0, len(toks)
+    while i < n:
+        best = (1, 1)
+        limit = min(max_period, (n - i) // 2)
+        for p in range(1, limit + 1):
+            r = 1
+            while toks[i + r * p:i + (r + 1) * p] == toks[i:i + p]:
+                r += 1
+            if r >= 2 and p * r > best[0] * best[1]:
+                best = (p, r)
+        p, r = best
+        out.append((i, p, r))
+        i += p * r
+    return out
+
+
 def blocks(steps):
     """Split the linear trace into basic blocks at pc discontinuities. A step
     whose pc is not prev_pc+1 begins a new block; a backward target is a loop."""
@@ -77,38 +100,52 @@ def blocks(steps):
     return bl, loop_edges
 
 
-def summarize(text, max_lines=400):
+def summarize(text, max_lines=600):
     steps = parse_ops(text)
     if not steps:
         return "no opcode trace found (the dispatch hook may not have matched " \
                "this build, or the VM did not run)."
-    decoys = decoy_opcodes(steps)
     hist = Counter(op for _pc, op, _o in steps)
-    bl, loops = blocks(steps)
-    real = [s for s in steps if s[1] not in decoys]
+    folded = fold_cycles(steps)
+    _bl, loops = blocks(steps)
+    repeated = sum(p * r for _i, p, r in folded if r >= 2)
+    skeleton = sum(1 for _i, _p, r in folded if r < 2)
 
     out = []
     out.append("VM DEVIRTUALIZATION (from the executed instruction stream)")
     out.append("=" * 58)
     out.append("instructions executed (logged): %d" % len(steps))
-    out.append("distinct opcodes: %d   decoy opcodes: %d   real: %d"
-               % (len(hist), len(decoys), len(hist) - len(decoys)))
-    out.append("basic blocks: %d   loop edges (backward jumps): %d" % (len(bl), loops))
-    out.append("real (non-decoy) instructions: %d" % len(real))
+    out.append("distinct opcode values: %d" % len(hist))
+    out.append("repeated machinery steps folded away: %d" % repeated)
+    out.append("program skeleton instructions (after folding): %d" % skeleton)
+    out.append("loop edges (backward jumps): %d" % loops)
     out.append("")
-    out.append("opcode histogram (opcode: count, [decoy] marked):")
-    for op, n in hist.most_common(40):
-        tag = "  [decoy]" if op in decoys else ""
-        out.append("  OP_%-6d %6d%s" % (op, n, tag))
+    out.append("NOTE ON FIDELITY (honest): this VM emits the same logical")
+    out.append("operation under many opcode values (%d distinct) and duplicates" % len(hist))
+    out.append("handler branches as decoys. That defeats a fixed opcode->Lua")
+    out.append("table, so instructions are shown as OP_<n> with operands, not")
+    out.append("renamed to Lua ops we cannot prove. The folding below removes the")
+    out.append("constant-decrypt and hash-loop machinery so the real program")
+    out.append("skeleton is visible - nothing is invented.")
     out.append("")
-    out.append("linear disassembly (real instructions, pc: opcode operands):")
+    out.append("opcode histogram (top 30 by frequency):")
+    for op, n in hist.most_common(30):
+        out.append("  OP_%-6d %6d" % (op, n))
+    out.append("")
+    out.append("folded instruction skeleton (machinery collapsed as xN):")
     shown = 0
-    for pc, op, operands in real:
-        out.append("  %6d: OP_%-6d %s" % (pc, op, " ".join(operands)))
+    for i, p, r in folded:
+        pc, op, operands = steps[i]
+        ops = " ".join(operands)
+        if r >= 2:
+            out.append("  [ machinery block: %d instr x%d  (decrypt/hash, skipped) ]"
+                       % (p, r))
+        else:
+            out.append("  %6d: OP_%-6d %s" % (pc, op, ops))
         shown += 1
         if shown >= max_lines:
-            out.append("  ... (%d more real instructions in opcode_trace.txt)"
-                       % (len(real) - shown))
+            out.append("  ... (%d more units; full stream in opcode_trace.txt)"
+                       % (len(folded) - shown))
             break
     return "\n".join(out)
 
