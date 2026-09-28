@@ -23,6 +23,9 @@ import time
 BLOCK = "unobf_result.txt"
 DUMP = "opcode_trace.txt"
 EXTRA = "resolved_constants.txt"
+# The harness also writes the interpreter it found. Its handlers say what each
+# opcode does, which a short run cannot establish on its own.
+INNER = "inner_chunk_1.txt"
 SETTLE = 2.0            # seconds a file must stay unchanged to count as written
 POLL = 0.5
 
@@ -118,13 +121,13 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
                 n = len(got) + 1
                 parts = []
                 for name, tag in ((BLOCK, "block"), (DUMP, "dump"),
-                                  (EXTRA, "consts")):
+                                  (EXTRA, "consts"), (INNER, "vm")):
                     src = os.path.join(ws, name)
                     if not os.path.isfile(src):
                         continue
                     dst = os.path.join(outdir, "run%d_%s.txt" % (n, tag))
                     shutil.copy2(src, dst)
-                    if tag != "consts":
+                    if tag in ("block", "dump"):
                         parts.append(dst)
                 if not parts:
                     continue

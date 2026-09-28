@@ -102,6 +102,9 @@ def main():
     ap.add_argument("--workspace",
                     help="the executor's output folder, if --collect cannot "
                          "find it")
+    ap.add_argument("--vm-source",
+                    help="the interpreter's own source, if it is not where "
+                         "the harness left it")
     ap.add_argument("--safe", action="store_true",
                     help="also write a harness that does not trace opcodes, for "
                          "builds whose integrity check reacts to the trace")
@@ -213,6 +216,24 @@ def main():
             for f in here:
                 print("   " + f)
         return 1
+    # The interpreter's own source names what its opcodes do. The harness
+    # writes it out when it patches a chunk, so it is used when it is there.
+    vm_src = None
+    vm_path = a.vm_source
+    if not vm_path:
+        for cand in [os.path.join(a.out, "captures", "run1_vm.txt"),
+                     os.path.join(a.out, "inner_chunk_1.txt"),
+                     "inner_chunk_1.txt"]:
+            if os.path.isfile(cand):
+                vm_path = cand
+                break
+    if vm_path and os.path.isfile(vm_path):
+        with open(vm_path, encoding="latin1") as f:
+            vm_src = f.read()
+        print("              interpreter source: %s (%d bytes) - opcode "
+              "meanings will be read from its handlers"
+              % (vm_path, len(vm_src)))
+
     captures = tracefmt.load(a.trace, one_run=a.one_run)
     analyses = []
     for cap in captures:
@@ -221,7 +242,7 @@ def main():
                   "hook did not match this build, so there is nothing to lift."
                   % cap.name)
             continue
-        an = driver.Analysis(cap)
+        an = driver.Analysis(cap, vm_src)
         an.write(a.out)
         analyses.append(an)
         print("[4/4] ANALYSE : %s" % cap.name)

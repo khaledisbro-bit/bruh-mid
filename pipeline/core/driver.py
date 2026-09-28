@@ -35,14 +35,16 @@ import noise           # noqa: E402
 import opsem           # noqa: E402
 import stackint        # noqa: E402
 import tracefmt        # noqa: E402
+import vmsrc           # noqa: E402
 import verify          # noqa: E402
 
 
 class Analysis:
     """Everything one capture supports, and the reports that explain it."""
 
-    def __init__(self, capture):
+    def __init__(self, capture, vm_source=None):
         self.capture = capture
+        self.vm_source = vm_source
         # Instruction numbers restart in every function, so records are placed
         # in the function they belong to before anything is measured. Without
         # this, code from unrelated functions shares an address.
@@ -60,6 +62,14 @@ class Analysis:
         self.models = opsem.measure(self.program)
         self.lift = stackint.lift(self.program, self.program, self.models)
         self.named = opsem.identify(self.models, self.lift.instances())
+        # The interpreter states what its opcodes do; a short run cannot.
+        self.vm, self.from_handlers, self.handler_why = (None, 0, {})
+        if vm_source:
+            self.vm, self.from_handlers, self.handler_why = vmsrc.apply(
+                self.models, vm_source, self.lift.steps)
+            dropped, _checked = vmsrc.revoke(self.models, self.lift,
+                                             self.handler_why)
+            self.from_handlers -= dropped
         self.slots = dataflow.infer_slots(self.lift)
         self.alias = dataflow.alias(self.lift, self.slots)
         self.tables = dataflow.infer_tables(self.lift)
@@ -94,7 +104,8 @@ class Analysis:
              % (len(self.capture.rows) - len(self.program)),
              "program instructions       %d" % len(self.program),
              "distinct opcodes           %d, arity measured for %d, operation "
-             "proved for %d" % (len(self.models), arity, named),
+             "known for %d (%d read from the interpreter's handlers)"
+             % (len(self.models), arity, named, self.from_handlers),
              "values recovered           %d (%d consumed from outside the "
              "capture)" % (len(self.lift.values), self.lift.externals),
              "stack desynchronisations   %d" % len(self.lift.divergences),
@@ -139,7 +150,10 @@ class Analysis:
             "PROVENANCE.txt": self.emitter.provenance(),
             "FUNCTIONS.txt": frames.report(self.frames),
             "MACHINERY.txt": noise.report(self.capture.rows),
-            "OPCODES.txt": opsem.report(self.models),
+            "OPCODES.txt": opsem.report(self.models) + "\n\n" +
+                           vmsrc.report(self.vm, self.from_handlers,
+                                        len(self.models), self.handler_why)
+                           if self.vm else opsem.report(self.models),
             "VALUES.txt": stackint.report(self.lift, self.models),
             "VARIABLES.txt": dataflow.report(self.lift, self.slots) +
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
@@ -287,6 +301,10 @@ def main():
     ap.add_argument("captures", nargs="*")
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--vm-source",
+                    help="the interpreter's own source (the inner chunk the "
+                         "harness writes out), so opcode meanings can be read "
+                         "from its handlers")
     ap.add_argument("--one-run", action="store_true",
                     help="the files are pieces of a single run, not separate "
                          "runs; fold them together first")
@@ -296,8 +314,12 @@ def main():
     if not a.captures:
         ap.error("give at least one capture file, or --selftest")
     analyses = []
+    vm_src = None
+    if a.vm_source and os.path.isfile(a.vm_source):
+        with open(a.vm_source, encoding="latin1") as f:
+            vm_src = f.read()
     for cap in tracefmt.load(a.captures, one_run=a.one_run):
-        an = Analysis(cap)
+        an = Analysis(cap, vm_src)
         sub = os.path.join(a.out, os.path.splitext(cap.name)[0])
         names = an.write(sub)
         analyses.append(an)

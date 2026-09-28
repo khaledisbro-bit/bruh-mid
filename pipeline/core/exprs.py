@@ -290,14 +290,10 @@ class Renderer:
             if src.runtime and src.runtime.startswith('"'):
                 return _unq(src.runtime)
         m = self.models.get(v.op)
-        if m is not None and m.operation and len(v.inputs) == 2:
-            a = self.value(v.inputs[0], depth + 1)
-            b = self.value(v.inputs[1], depth + 1)
-            sym = {"ADD": "+", "SUB": "-", "MUL": "*", "DIV": "/", "MOD": "%",
-                   "CONCAT": "..", "LT": "<", "LE": "<=", "GT": ">",
-                   "EQ": "=="}.get(m.operation)
-            if sym:
-                return "(%s %s %s)" % (a, sym, b)
+        if m is not None and m.operation:
+            out = self._operation(v, m.operation, depth)
+            if out is not None:
+                return out
         if v.inputs and v.op not in self.env_ops:
             head = self.L.values[v.inputs[0]]
             if head.op in self.env_ops and len(head.inputs) == 1:
@@ -313,6 +309,29 @@ class Renderer:
             return "OP_%d()" % v.op if v.op is not None else "<unknown value>"
         return "OP_%d(%s)" % (v.op, ", ".join(
             self.value(i, depth + 1) for i in v.inputs))
+
+    SYMBOLS = {"ADD": "+", "SUB": "-", "MUL": "*", "DIV": "/", "MOD": "%",
+               "CONCAT": "..", "LT": "<", "LE": "<=", "GT": ">", "GE": ">=",
+               "EQ": "==", "NE": "~="}
+
+    def _operation(self, v, op, depth):
+        """Render an operation the interpreter's handler named."""
+        args = [self.value(i, depth + 1) for i in v.inputs]
+        sym = self.SYMBOLS.get(op)
+        if sym and len(args) == 2:
+            return "(%s %s %s)" % (args[0], sym, args[1])
+        if op == "INDEX" and len(args) == 2:
+            key = _unq(args[1]) if args[1].startswith('"') else None
+            if key and re.fullmatch(r"[A-Za-z_]\w*", key):
+                return "%s.%s" % (args[0], key)
+            return "%s[%s]" % (args[0], args[1])
+        if op == "NEWTABLE" and not args:
+            return "{}"
+        if op == "LOADK":
+            return v.runtime if v.runtime else "<constant>"
+        if op == "CALL" and args:
+            return "%s(%s)" % (args[0], ", ".join(args[1:]))
+        return None
 
     def call_text(self, call, depth=0):
         rec = call.record
