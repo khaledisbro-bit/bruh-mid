@@ -130,6 +130,7 @@ env.__OP = function(pc, oc, NO, sp, top)
                   .. ";" .. tostring(sp) .. ";" .. vprev(top)
 end
 
+local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
 local function patchDispatch(s)
     -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
     local nl, nu = s:match("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
@@ -189,11 +190,11 @@ env.loadstring = function(src, ...)
     -- crashed the run; one traced chunk gives the program's opcodes while
     -- leaving nested layers untouched (they still get the safe resolver dump).
     local useD = use
-    if not _G.__DISPATCH_DONE then
+    if not dispatchDone then
         local okD, patchedD, dn = pcall(patchDispatch, use)
         if okD and patchedD then
             useD = patchedD
-            _G.__DISPATCH_DONE = true
+            dispatchDone = true
             behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn) .. " -> tracing opcodes]"
         end
     else
