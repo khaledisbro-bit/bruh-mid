@@ -116,19 +116,18 @@ local function vprev(v)
     return t   -- function / userdata / thread
 end
 
-env.__OP = function(pc, oc, NO, sp, top, top2)
+env.__OP = function(pc, oc, NO, sp, top)
     opn = opn + 1
     if opn > 40000 then return end
     local a = {}
     if type(NO) == "table" then
         for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
     end
-    -- format: pc;opcode;operands;stackpointer;topvalue;secondvalue
-    -- top (NY) and top2 (NN) are the two pending values the VM is about to use;
-    -- for a binary op they are its inputs, so the lifter can reconstruct real
-    -- expressions like push(a + b) with the actual operand values.
+    -- format: pc;opcode;operands;stackpointer;topvalue
+    -- topvalue is the real value the VM just produced (the pending write slot),
+    -- so the lifter sees actual strings/numbers flowing between opcodes.
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
-                  .. ";" .. tostring(sp) .. ";" .. vprev(top) .. ";" .. vprev(top2)
+                  .. ";" .. tostring(sp) .. ";" .. vprev(top)
 end
 
 local function patchDispatch(s)
@@ -150,14 +149,12 @@ local function patchDispatch(s)
     -- stale at the loop top (nil most of the time); the freshly produced value
     -- lives in NY. Capture NY and log THAT as the value flowing.
     local ny = s:match("if %w+>=1 then %w+%[%w+%]=(%w+) end")
-    local nn = s:match("if %w+>=2 then %w+%[%w+%-1%]=(%w+) end")
     local topexpr = ny or ((arr and sp ~= "0") and (arr .. "[" .. sp .. "]")) or "nil"
-    local top2expr = nn or "nil"
     -- inject the logger right after the NL assignment `local NL=...;`
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
     local j = s:find(";", i + #mark, true); if not j then return nil end
-    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. "," .. top2expr .. ")end"
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end"
     return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 
