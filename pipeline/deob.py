@@ -260,6 +260,15 @@ def main():
             dpath = os.path.join(a.out, "DISASSEMBLY.txt")
             open(dpath, "w").write(disasm)
             print(f"              disassembly -> {dpath}")
+            # value-flow reconstruction (needs the 5-field value trace)
+            try:
+                import flow
+                if ";" in trace and re.search(r"\n-?\d+;-?\d+;[^;]*;-?\d+;", trace):
+                    fpath = os.path.join(a.out, "FLOW.txt")
+                    open(fpath, "w").write(flow.reconstruct(trace))
+                    print(f"              value-flow -> {fpath}")
+            except Exception as e:
+                print(f"              (value-flow skipped: {e})")
             if vmsrc:
                 import opmap, re as _re
                 steps, steps_sp = [], []
