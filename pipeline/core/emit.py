@@ -130,6 +130,10 @@ class Emitter:
                 and st.pushed[0].id not in self.bound):
             v = st.pushed[0]
             text = self.R.value(v.id)
+            # A literal costs nothing to repeat, so giving it a name adds a line
+            # and says nothing. Only work worth doing once gets a name.
+            if exprmod.is_literal(text):
+                return None
             name = "t%d" % self._tmp
             self._tmp += 1
             self.bound[v.id] = name

@@ -245,10 +245,14 @@ def run(prog, seed=0, mach_every=2):
         else:
             raise ValueError("reference VM: unknown %s" % name)
 
-        if produced is not None:
-            em.produce(produced)
+        # The decryptor runs INSIDE the handler of the instruction that needed a
+        # constant, so its records come before that instruction leaves its own
+        # result pending - which is what a real interpreter's trace looks like,
+        # and what the analysis has to read correctly.
         if name in _CONSTUSERS and steps % mach_every == 0:
             em.machinery(len(stack))
+        if produced is not None:
+            em.produce(produced)
         pc = nxt
         if steps > 40000:
             break

@@ -48,6 +48,11 @@ class Call:
         self.why = why
 
 
+def is_literal(text):
+    """A rendering that is just a value: repeating it duplicates nothing."""
+    return bool(_LIT.match(text.strip()))
+
+
 def _unq(v):
     if v and len(v) >= 2 and v[0] == '"' and v[-1] == '"':
         return v[1:-1]

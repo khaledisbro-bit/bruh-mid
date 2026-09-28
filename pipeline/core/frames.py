@@ -77,6 +77,35 @@ def _pairs(rows, ents, step=1):
     return pairs, abandoned + len(stack)
 
 
+def addresses_unique(rows, bar=0.9):
+    """Whether an instruction number already identifies an instruction.
+
+    Recovering frames only matters when numbers collide. They do not when almost
+    every number carries one opcode and runs once: then the capture is a
+    straight run through distinct instructions, the number is the address, and
+    there is nothing for a call stack to disambiguate. Two signals say so, and
+    both come from the capture."""
+    if not rows:
+        return False, "there are no records", 0.0, 0.0
+    ops = defaultdict(set)
+    hits = Counter()
+    for r in rows:
+        ops[r["pc"]].add(r["opcode"])
+        hits[r["pc"]] += 1
+    n = len(ops)
+    one_op = sum(1 for v in ops.values() if len(v) == 1) / n
+    once = sum(1 for c in hits.values() if c == 1) / n
+    ok = one_op >= bar and once >= 0.5
+    why = ("%.0f%% of instruction numbers carry a single opcode and %.0f%% ran "
+           "exactly once, so a number already identifies an instruction"
+           % (100 * one_op, 100 * once))
+    if not ok:
+        why = ("only %.0f%% of instruction numbers carry a single opcode and "
+               "%.0f%% ran once, so numbers may be shared between functions"
+               % (100 * one_op, 100 * once))
+    return ok, why, one_op, once
+
+
 def reconstruct(rows, min_match=MIN_MATCH):
     """Assign every record a function and a call depth.
 
@@ -85,6 +114,14 @@ def reconstruct(rows, min_match=MIN_MATCH):
     is left in one frame and the report says so."""
     if not rows:
         return _flat(rows, "there are no records to place"), False
+    # Frames only matter when instruction numbers collide. When each number
+    # already identifies one instruction there is nothing to disambiguate, and
+    # inventing a call stack would only add structure the capture does not show.
+    unique, uwhy, _a, _b = addresses_unique(rows)
+    if unique:
+        info = _flat(rows, uwhy + ", so no call stack had to be recovered")
+        info["unique_addresses"] = True
+        return info, True
     # How a build spells a call is not known in advance: how many places have
     # to jump to something before it counts as a function entry, and whether a
     # call resumes at the next instruction or the one after, both vary. Each
@@ -200,7 +237,7 @@ def _flat(rows, why):
     return {"functions": Counter({0: len(rows)}), "callers": {},
             "entries": {0: (rows[0]["pc"] if rows else 0)},
             "pushes": 0, "returns": 0, "rate": 0.0,
-            "why": why, "flat": True}
+            "why": why, "flat": True, "unique_addresses": False}
 
 
 def report(info):
@@ -211,6 +248,12 @@ def report(info):
          "the function they belong to by walking the trace with a stack of",
          "pending returns.", "",
          "  " + info["why"], ""]
+    if info.get("unique_addresses"):
+        L.append("  No frames were needed, and none were invented. Every record")
+        L.append("  keeps its own instruction number as its address, and the")
+        L.append("  blocks, loops and branches reported elsewhere are addressed")
+        L.append("  correctly.")
+        return "\n".join(L)
     if info["flat"]:
         L.append("  Everything is treated as one function. Instruction numbers")
         L.append("  from different functions may collide, so blocks, loops and")

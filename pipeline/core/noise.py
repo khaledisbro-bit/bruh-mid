@@ -3,171 +3,140 @@
 noise.py - separate the interpreter's own machinery from the program it runs.
 
 A VM that decrypts every constant on demand spends most of its instructions
-inside its own helper routines. Those belong to the interpreter, not to the
-program, and folding them away is what makes the later analysis describe the
-program instead of the decryptor.
+inside its own helpers. On a real capture that is not a detail: 22,477 of 24,029
+records belonged to the interpreter and 808 to the program, so measuring
+anything before splitting them describes the decryptor rather than the script.
 
-Frequency cannot decide this: a hot program loop and a hot helper look identical
-in a histogram. The split is made on three properties of the executed stream that
-a called helper has and ordinary program code does not:
+Frequency cannot make the split on its own, because a hot loop in the program
+looks the same in a histogram as a helper. What separates them is where control
+goes afterwards:
 
-  NO FALL-THROUGH   the helper's first instruction is never reached from the
-                    instruction physically before it. Program code is reached by
-                    falling through from its predecessor; a helper is only ever
-                    jumped into.
-  FAN-IN            it is entered from several unrelated instructions. A loop
-                    head is entered from its predecessor and its own back edge.
-  BALANCED RETURN   the burst gives control back to the instruction after its
-                    caller and leaves the program's stack pointer exactly where
-                    it found it. A loop's back edge returns to its own head.
+  A HELPER RETURNS TO ITS CALLERS, so a burst through it is followed by many
+  different instructions - one for each place that needed it. On the capture
+  above, one helper region was entered from 202 instructions and left to 172.
 
-A fourth check, SEALED OUTPUT (no program instruction consumes what the helper
-produced), is applied later by the lifter, which can reclassify a region that
-turns out to feed the program. Nothing here is keyed to a pc range, an opcode
-number, a burst length or a build.
+  A LOOP LEAVES BY ITS EXIT, which is one instruction, or two if it is also
+  broken out of. However often it runs, it does not scatter control on the way
+  out.
+
+That test needs no assumption about how the build spells a call, which matters
+because a flattened program never simply falls through to the next instruction,
+so "returns to the instruction after its caller" is not true there and cannot be
+used.
+
+Folding a burst loses nothing, because of where it ran. The interpreter logs an
+instruction before running it, and the helper is dispatched from inside that
+instruction's handler, so the burst sits between the instruction that asked for
+a constant and the next one. The value the instruction leaves pending when its
+handler finishes - the decrypted constant - is reported by the next PROGRAM
+record, not by the burst. Reading the program's records as a sequence therefore
+gives each instruction its own result and its own effect on the stack, with the
+interpreter's work collapsed into the instruction that caused it.
 """
 from collections import Counter, defaultdict
 
+MIN_BURSTS = 3
 MIN_SITES = 3
-MIN_RETURN = 0.6
-MAX_BURST = 20000
-GAP = 2
+MIN_EXITS = 3
+HOT_FACTOR = 4.0
+HOT_FLOOR = 3
 
 
-def _edges(rows):
-    preds = defaultdict(set)
-    fall = set()
-    for a, b in zip(rows, rows[1:]):
-        preds[b["pc"]].add(a["pc"])
-        if b["pc"] == a["pc"] + 1:
-            fall.add(b["pc"])
-    return preds, fall
+def _regions(hot, gap=2):
+    """Group hot instructions into regions by locality: a routine's instructions
+    are laid out together."""
+    out = []
+    for pc in sorted(hot):
+        if out and pc - out[-1][-1] <= gap:
+            out[-1].append(pc)
+        else:
+            out.append([pc])
+    return [set(r) for r in out]
 
 
-def _near(q, body, gap):
-    return any(abs(q - b) <= gap for b in body)
+def _absorb(reg, preds, gap=2):
+    """Take in the tail of a burst.
 
-
-def _seed_body(h, preds, freq, gap=GAP):
-    """First guess at the helper's body: instructions that are reached only from
-    inside it, run more than once, and sit next to the code already in it.
-
-    The locality test is what keeps the caller's own code out. A routine's
-    instructions are laid out together, so the helper's body is contiguous, while
-    the instruction the helper returns to lives back in the caller - far away in
-    the instruction stream even though the helper is its only predecessor."""
-    body = {h}
+    A helper's last instructions run fewer times than its first ones, because a
+    burst can stop early, so they can fall below the bar that found the region
+    and be left behind in the program's records - where they break the stack
+    replay. An instruction next to the region whose control only ever arrives
+    from inside it belongs to it."""
+    reg = set(reg)
     changed = True
     while changed:
         changed = False
         for q, ps in preds.items():
-            if q in body or freq[q] < 2:
+            if q in reg or not ps or not ps <= reg:
                 continue
-            if ps <= body and _near(q, body, gap):
-                body.add(q)
+            if any(abs(q - p) <= gap for p in reg):
+                reg.add(q)
                 changed = True
-    return body
+    return reg
 
 
-def _rate(rows, body):
-    """How often a burst through `body` hands control back to the instruction
-    after its caller with the stack pointer restored."""
-    pairs = matched = 0
-    for caller, entry, resume in _runs(rows, body):
-        if caller is None or resume is None:
-            continue
-        pairs += 1
-        if (resume["pc"] - caller["pc"] in (1, 2) and
-                (entry["sp"] is None or resume["sp"] is None or
-                 entry["sp"] == resume["sp"])):
-            matched += 1
-    return matched, pairs
-
-
-def _grow_body(h, preds, freq, rows, max_steps=32):
-    """Grow the body until bursts through it return cleanly.
-
-    A burst that stops early was cut short by an instruction that belongs to the
-    helper but was not in the seed. Adding it is accepted only when it makes MORE
-    bursts return to their caller - so program code, which never improves the
-    return rate, cannot be absorbed."""
-    body = _seed_body(h, preds, freq)
-    matched, pairs = _rate(rows, body)
-    best = matched / pairs if pairs else 0.0
-    for _ in range(max_steps):
-        cand = set()
-        for caller, _entry, resume in _runs(rows, body):
-            if caller is None or resume is None:
-                continue
-            if resume["pc"] - caller["pc"] not in (1, 2):
-                cand.add(resume["pc"])
-        cand = {q for q in cand - body if _near(q, body, GAP)}
-        if not cand:
-            break
-        gained = False
-        for pc in sorted(cand, key=lambda q: -freq[q]):
-            m2, p2 = _rate(rows, body | {pc})
-            r2 = m2 / p2 if p2 else 0.0
-            if r2 > best:
-                body.add(pc)
-                best = r2
-                gained = True
-        if not gained:
-            break
-    return body
-
-
-def _runs(rows, body):
-    """Maximal runs of consecutive rows executing inside the body, each with the
-    row that called into it and the row control resumed at."""
-    out, i, n = [], 0, len(rows)
+def _bursts(seq, reg):
+    out, i, n = [], 0, len(seq)
     while i < n:
-        if rows[i]["pc"] not in body:
+        if seq[i] not in reg:
             i += 1
             continue
         j = i
-        while j + 1 < n and rows[j + 1]["pc"] in body:
+        while j + 1 < n and seq[j + 1] in reg:
             j += 1
-        out.append((rows[i - 1] if i > 0 else None, rows[i],
-                    rows[j + 1] if j + 1 < n else None))
+        out.append((i, j))
         i = j + 1
     return out
 
 
-def analyse(rows, min_sites=MIN_SITES, min_return=MIN_RETURN):
-    """Find interpreter helper routines in the executed stream.
+def analyse(rows, min_bursts=MIN_BURSTS, min_sites=MIN_SITES,
+            min_exits=MIN_EXITS):
+    """Find the interpreter's helper regions.
 
-    Returns (machinery_pcs, entries); entries carries the evidence behind every
-    verdict so the report can justify each folded instruction."""
+    Returns (machinery_pcs, regions) with the evidence behind every verdict."""
     if not rows:
         return set(), []
-    preds, fall = _edges(rows)
-    freq = Counter(r["pc"] for r in rows)
+    seq = [r["pc"] for r in rows]
+    freq = Counter(seq)
+    counts = sorted(freq.values())
+    median = counts[len(counts) // 2]
+    hot = {pc for pc, n in freq.items()
+           if n >= max(median * HOT_FACTOR, HOT_FLOOR)}
+    if not hot:
+        return set(), []
 
-    cands = [pc for pc, ps in preds.items()
-             if len(ps) >= min_sites and pc not in fall]
-    cands.sort(key=lambda pc: -freq[pc])
+    preds = defaultdict(set)
+    for a, b in zip(seq, seq[1:]):
+        preds[b].add(a)
 
-    mach, entries, claimed = set(), [], set()
-    for h in cands:
-        if h in claimed:
-            continue
-        body = _grow_body(h, preds, freq, rows)
-        matched, pairs = _rate(rows, body)
-        rate = (matched / pairs) if pairs else 0.0
-        ok = pairs >= min_sites and rate >= min_return
-        info = {"entry": h, "sites": len(preds[h]), "bursts": pairs,
-                "returned": matched, "return_match": rate, "machinery": ok,
-                "body": sorted(body),
-                "why": ("never fallen into from pc %d; entered from %d distinct "
-                        "instruction(s); %d/%d bursts returned to the caller's "
-                        "next instruction with the stack pointer restored (%.0f%%)"
-                        % (h - 1, len(preds[h]), matched, pairs, 100 * rate))}
-        entries.append(info)
+    mach, out = set(), []
+    for reg in _regions(hot):
+        reg = _absorb(reg, preds)
+        bursts = _bursts(seq, reg)
+        ent, ex, restored = Counter(), Counter(), 0
+        for i, j in bursts:
+            if i > 0:
+                ent[seq[i - 1]] += 1
+            if j + 1 < len(rows):
+                ex[seq[j + 1]] += 1
+                if rows[i]["sp"] is not None and rows[j + 1]["sp"] is not None \
+                        and rows[i]["sp"] == rows[j + 1]["sp"]:
+                    restored += 1
+        ok = (len(bursts) >= min_bursts and len(ent) >= min_sites
+              and len(ex) >= min_exits)
+        r = sorted(reg)
+        info = {"pcs": r, "rows": sum(freq[p] for p in reg),
+                "bursts": len(bursts), "sites": len(ent), "exits": len(ex),
+                "restored": restored, "machinery": ok,
+                "why": ("run %d time(s) in %d burst(s); entered from %d "
+                        "instruction(s) and left to %d, and %d burst(s) gave "
+                        "the stack pointer back unchanged"
+                        % (sum(freq[p] for p in reg), len(bursts), len(ent),
+                           len(ex), restored))}
+        out.append(info)
         if ok:
-            mach |= body
-            claimed |= body
-    return mach, entries
+            mach |= reg
+    return mach, out
 
 
 def machinery(rows, **kw):
@@ -175,9 +144,7 @@ def machinery(rows, **kw):
 
 
 def split(rows, mach=None):
-    """Return (program_rows, bursts). bursts[i] holds the machinery rows that ran
-    immediately before program_rows[i]; program rows keep their capture indices so
-    provenance still points at the raw capture lines."""
+    """Kept for callers that want the program records and the bursts separately."""
     if mach is None:
         mach = machinery(rows)
     prog, bursts, pending = [], [], []
@@ -185,35 +152,43 @@ def split(rows, mach=None):
         if r["pc"] in mach:
             pending.append(r)
             continue
+        if pending and prog:
+            # The helper's own instructions leave values pending too, so the
+            # value reported after a burst may be the helper's last intermediate
+            # rather than the result of the program instruction before it. Mark
+            # it, so nothing downstream reads a decryptor's leftover as the
+            # program's own result.
+            prog[-1]["burst_after"] = len(pending)
         prog.append(r)
         bursts.append(pending)
         pending = []
     return prog, bursts
 
 
-def report(rows, reclassified=None):
-    mach, entries = analyse(rows)
+def report(rows):
+    mach, regs = analyse(rows)
     prog, _ = split(rows, mach)
     L = ["INTERPRETER MACHINERY vs PROGRAM CODE",
          "=" * 46,
-         "Helper routines found in the executed control flow, with the evidence",
-         "for each verdict. A helper is only ever jumped into, is entered from",
-         "many unrelated instructions, and returns to its caller with the stack",
-         "pointer restored. A program loop matches none of those.", ""]
-    if not entries:
-        L.append("  no instruction matched the helper shape; the whole stream is")
+         "Hot regions of the capture, and why each one was folded or kept. A",
+         "helper returns to whoever needed it, so control leaves it towards many",
+         "different instructions. A loop leaves by its exit, however often it",
+         "runs. That is the difference the verdicts below are made on.", ""]
+    if not regs:
+        L.append("  no region ran often enough to be a helper; every record is")
         L.append("  treated as program code.")
-    for e in sorted(entries, key=lambda x: -x["bursts"]):
-        L.append("  entry pc %-7d %-22s %d instruction(s) in body"
-                 % (e["entry"], "FOLDED (machinery)" if e["machinery"]
-                    else "KEPT (program)", len(e["body"])))
-        L.append("      " + e["why"])
-    if reclassified:
-        L.append("")
-        L.append("  reclassified after value lifting (their output DID reach the")
-        L.append("  program, so they are program code after all): " +
-                 ", ".join(str(p) for p in sorted(reclassified)))
+    for r in sorted(regs, key=lambda x: -x["rows"]):
+        pcs = r["pcs"]
+        span = "%d..%d" % (pcs[0], pcs[-1]) if len(pcs) > 1 else str(pcs[0])
+        L.append("  pc %-14s %-22s %d instruction(s)"
+                 % (span, "FOLDED (interpreter)" if r["machinery"]
+                    else "KEPT (program)", len(pcs)))
+        L.append("      " + r["why"])
     L.append("")
-    L.append("instructions: %d captured -> %d program, %d folded as machinery"
+    L.append("records: %d captured -> %d program, %d interpreter"
              % (len(rows), len(prog), len(rows) - len(prog)))
+    L.append("")
+    L.append("A folded burst ran inside the handler of the instruction before it,")
+    L.append("so the constant it decrypted is that instruction's own result and is")
+    L.append("reported by the next program record. Nothing is lost by folding it.")
     return "\n".join(L)

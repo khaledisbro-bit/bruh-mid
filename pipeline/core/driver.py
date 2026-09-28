@@ -46,11 +46,19 @@ class Analysis:
         # Instruction numbers restart in every function, so records are placed
         # in the function they belong to before anything is measured. Without
         # this, code from unrelated functions shares an address.
-        self.frames, self.frames_ok = frames.reconstruct(capture.rows)
         self.machinery, self.regions = noise.analyse(capture.rows)
+        # The program's records read as a sequence once the interpreter's
+        # bursts are out of the way: each one then reports the result and the
+        # stack effect of the instruction before it, with the decryption that
+        # instruction triggered already collapsed into it.
         self.program, self.bursts = noise.split(capture.rows, self.machinery)
-        self.models = opsem.measure(capture.rows, machinery=self.machinery)
-        self.lift = stackint.lift(capture.rows, self.program, self.models)
+        # Frames are recovered from the program's records, not the capture's:
+        # the interpreter's helpers jump constantly and would drown the
+        # program's own calls. Where instruction numbers already identify an
+        # instruction, no frames are needed and none are invented.
+        self.frames, self.frames_ok = frames.reconstruct(self.program)
+        self.models = opsem.measure(self.program)
+        self.lift = stackint.lift(self.program, self.program, self.models)
         self.named = opsem.identify(self.models, self.lift.instances())
         self.slots = dataflow.infer_slots(self.lift)
         self.alias = dataflow.alias(self.lift, self.slots)
@@ -82,7 +90,7 @@ class Analysis:
         L = ["SUMMARY - %s" % self.capture.name,
              "=" * 46,
              "captured instructions      %d" % len(self.capture.rows),
-             "interpreter machinery      %d folded away"
+             "interpreter machinery      %d record(s) folded away"
              % (len(self.capture.rows) - len(self.program)),
              "program instructions       %d" % len(self.program),
              "distinct opcodes           %d, arity measured for %d, operation "
@@ -94,9 +102,12 @@ class Analysis:
              % (len(set(list(self.slots.reads.values()) +
                         list(self.slots.writes.values())))
                 if self.slots.active() else "not established"),
-             "functions recovered        %s"
-             % (len(self.frames["functions"]) if self.frames_ok
-                else "not established (instruction numbers may collide)"),
+             "functions / addressing     %s"
+             % ("instruction numbers are already unique; no frames needed"
+                if self.frames.get("unique_addresses") else
+                (("%d recovered" % len(self.frames["functions"]))
+                 if self.frames_ok
+                 else "not established (numbers may be shared between functions)")),
              "basic blocks / loops       %d / %d%s"
              % (len(self.cfg.blocks), len(self.cfg.loops),
                 "" if self.frames_ok else

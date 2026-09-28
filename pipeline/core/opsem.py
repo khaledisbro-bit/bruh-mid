@@ -75,7 +75,9 @@ def measure(rows, machinery=None, agree=AGREE, min_samples=MIN_SAMPLES):
         freq[r["opcode"]] += 1
         operands[r["opcode"]][len(r["operands"])] += 1
         nxt = rows[i + 1] if i + 1 < len(rows) else None
-        if nxt is not None:
+        # After a helper burst the reported value may be the helper's leftover,
+        # so it says nothing about this instruction and is not counted.
+        if nxt is not None and not r.get("burst_after"):
             produces[r["opcode"]][_is_value(nxt["value"])] += 1
 
     # Two records that follow each other in the capture have nothing between

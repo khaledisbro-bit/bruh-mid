@@ -150,6 +150,8 @@ def lift(rows, program_rows, models):
         after = nxt_sp.get(rid)
         m = models.get(r["opcode"])
 
+        if r.get("burst_after"):
+            product = None
         pops, pushes, why, ev = _arity(r, product, after, m)
         st.pops, st.pushes, st.net = pops, pushes, (
             None if after is None or r["sp"] is None else after - r["sp"])
@@ -189,14 +191,22 @@ def lift(rows, program_rows, models):
 
         for n in range(pushes):
             kind = CONST if (pops == 0 and _is_value(product)) else COMPUTED
+            shown = nxt_value.get(rid) if r.get("burst_after") else product
             v = L.new_value(kind, op=r["opcode"], pc=r["pc"], row=rid,
                             inputs=[p.id for p in popped],
-                            runtime=(product if n == pushes - 1 else None),
+                            runtime=(shown if n == pushes - 1 else None),
                             operands=r["operands"])
             v.fact.evidence = ev
             v.fact.note("stackint.lift", why, pcs=(r["pc"],),
                         opcodes=(r["opcode"],), steps=(rid,),
                         inputs=tuple(p.id for p in popped))
+            if r.get("burst_after") and v.runtime is not None:
+                v.fact.evidence = UNKNOWN
+                v.fact.note("stackint.burst",
+                            "a decryptor ran inside this instruction, so the "
+                            "value reported next may be its leftover rather "
+                            "than this instruction's result",
+                            pcs=(r["pc"],), steps=(rid,))
             stack.append(v)
             st.pushed.append(v)
 
@@ -216,6 +226,22 @@ def _arity(row, product, after, model):
     net = None
     if after is not None and row["sp"] is not None:
         net = after - row["sp"]
+
+    # A helper ran inside this instruction's handler, so the value reported next
+    # may be the helper's leftover. Whether this instruction produced anything
+    # is taken from what the same opcode did where no helper intervened.
+    if row.get("burst_after") and model is not None and model.produces is not None:
+        produced = model.produces
+        if net is not None:
+            pushes = max(1, net) if produced else max(0, net)
+            pops = pushes - net
+            if pops >= 0:
+                return (pops, pushes,
+                        "stack pointer moved %+d, and a decryptor ran inside "
+                        "this instruction, so whether it produced a value is "
+                        "taken from OP_%d where none did -> consumed %d, "
+                        "produced %d" % (net, row["opcode"], pops, pushes),
+                        INFERRED)
 
     if net is not None:
         pushes = max(1, net) if produced else max(0, net)
