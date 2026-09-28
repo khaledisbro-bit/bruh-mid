@@ -159,6 +159,23 @@ def main():
               % (os.path.basename(__file__), a.input))
         return 0
 
+    missing = [t for t in a.trace if not os.path.isfile(t)]
+    if missing:
+        print("\n[4/4] ANALYSE : nothing to read.")
+        for t in missing:
+            print("              %s is not here" % t)
+        here = [f for f in sorted(os.listdir("."))
+                if f.lower().endswith((".txt", ".log"))][:12]
+        print("\nA capture file is what your executor printed or wrote out. To")
+        print("make one: run %s in the executor, then either copy its" % harness)
+        print("BEGIN_UNOBF_RESULT..END_UNOBF_RESULT block into a text file, or")
+        print("take unobf_result.txt and opcode_trace.txt from the executor's")
+        print("workspace folder. Each separate run goes in its own file.")
+        if here:
+            print("\nText files in this folder you could mean:")
+            for f in here:
+                print("   " + f)
+        return 1
     captures = tracefmt.load(a.trace, one_run=a.one_run)
     analyses = []
     for cap in captures:
