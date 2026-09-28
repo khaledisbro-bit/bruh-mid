@@ -59,13 +59,24 @@ def detect(src, log):
     return inner_src, inner_data, "base85+Zstd Luau VM"
 
 
-def make_harness(src, outdir, template="unobf.lua"):
-    """Embed the obfuscated source into the given harness template (no readfile)."""
+def make_harness(src, outdir, template="unobf.lua", safe=False):
+    """Embed the obfuscated source into the given harness template (no readfile).
+    The FULL source is embedded verbatim - never truncated. safe=True disables
+    the opcode-dispatch trace so the run finishes without tripping the VM's
+    self-integrity check (constants + behavior only)."""
     tmpl = open(os.path.join(HERE, template), encoding="utf-8").read()
     op, cl = safe_long_bracket(src)
     embedded = "local SOURCE\nSOURCE = " + op + "\n" + src + "\n" + cl
-    tmpl = re.sub(r"local SOURCE\ndo\n.*?\nend", lambda _m: embedded,
-                  tmpl, count=1, flags=re.S)
+    tmpl, n = re.subn(r"local SOURCE\ndo\n.*?\nend", lambda _m: embedded,
+                      tmpl, count=1, flags=re.S)
+    if n != 1:
+        raise RuntimeError("could not embed SOURCE into harness template")
+    if safe:
+        tmpl = tmpl.replace("local TRACE_OPCODES = true",
+                            "local TRACE_OPCODES = false", 1)
+    # prove the whole obfuscated file went in (guards against silent truncation)
+    if src not in tmpl:
+        raise RuntimeError("embedded harness does not contain the full source")
     path = os.path.join(outdir, "harness.lua")
     open(path, "w", encoding="utf-8").write(tmpl)
     return path
@@ -79,6 +90,9 @@ def main():
     ap.add_argument("--trace", nargs="+",
                     help="one or more executor result files; extra runs are merged")
     ap.add_argument("--candidate", help="optional candidate source for the audit")
+    ap.add_argument("--safe", action="store_true",
+                    help="also emit a resolver-only harness that never trips the "
+                         "VM integrity check (constants + behavior, no opcode trace)")
     a = ap.parse_args()
 
     src = open(a.input, encoding="latin1").read()
@@ -127,8 +141,13 @@ def main():
         json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
         print(f"[2/4] STATIC  : unknown family -> universal dynamic trace (behavior, not static source)")
 
-    harness = make_harness(src, a.out, template="universal.lua" if universal else "unobf.lua")
-    print(f"[3/4] HARNESS : {harness}  (paste into your executor, save its output)")
+    tmpl = "universal.lua"  # universal harness handles both known and unknown families here
+    if a.safe:  # write the safe variant first, then move it aside
+        os.replace(make_harness(src, a.out, template=tmpl, safe=True),
+                   os.path.join(a.out, "harness_safe.lua"))
+        print(f"              SAFE harness -> {a.out}/harness_safe.lua  (no opcode trace, runs clean)")
+    harness = make_harness(src, a.out, template=tmpl)
+    print(f"[3/4] HARNESS : {harness}  (full source embedded; run it in your executor)")
 
     if not a.trace:
         print("\nnext:")

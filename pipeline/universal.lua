@@ -130,6 +130,10 @@ env.__OP = function(pc, oc, NO, sp, top)
                   .. ";" .. tostring(sp) .. ";" .. vprev(top)
 end
 
+-- SAFE MODE: when false, the opcode-dispatch trace is not applied at all, so
+-- the VM's self-integrity check is never disturbed and the run finishes clean
+-- (constants + behavior only). deob.py --safe sets this to false.
+local TRACE_OPCODES = true
 local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
 local function patchDispatch(s)
     -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
@@ -190,7 +194,7 @@ env.loadstring = function(src, ...)
     -- crashed the run; one traced chunk gives the program's opcodes while
     -- leaving nested layers untouched (they still get the safe resolver dump).
     local useD = use
-    if not dispatchDone then
+    if TRACE_OPCODES and not dispatchDone then
         local okD, patchedD, dn = pcall(patchDispatch, use)
         if okD and patchedD then
             useD = patchedD

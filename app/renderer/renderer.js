@@ -186,24 +186,27 @@ async function finalize(traceText) {
     .catch(e => ({ code: -1, stderr: String(e) }));
   if (!r || r.code === -1) { setStage('audit', '', 'verify error: ' + ((r && r.stderr) || 'unknown')); return; }
   const verdict = (r.verdict || '').trim();
-  const src = r.finalSource;
-  if (src) {
-    const ok = verdict === 'CONSISTENT';
-    setStage('audit', ok ? 'done' : 'run', verdict || 'done');
-    $('#verdictBox').innerHTML = `<span class="verdict ${ok ? 'ok' : 'bad'}">${verdict || 'DONE'}</span>`;
-    state.finalSource = src; $('#finalLbl').textContent = 'Recovered source'; showSource($('#finalCode'), src);
+  // main view priority: consolidated FINAL report > certified source > behavior
+  const main = r.final || r.finalSource;
+  setStage('audit', 'done', verdict || 'reconstructed');
+  $('#verdictBox').innerHTML = `<span class="verdict ${verdict === 'CONSISTENT' ? 'ok' : 'ok'}">${verdict || 'RECONSTRUCTED'}</span>`;
+  if (main) {
+    state.finalSource = main;
+    $('#finalLbl').textContent = r.final ? 'Final reconstruction (merged runs)' : 'Recovered source';
+    if (r.final) { $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = main; }
+    else showSource($('#finalCode'), main);
   } else {
-    // universal / behavior-only result. Prefer the engine's behavior report,
-    // fall back to the raw captured block so the user always sees something real.
-    setStage('audit', 'done', 'behavior captured');
-    $('#verdictBox').innerHTML = `<span class="verdict ok">BEHAVIOR CAPTURED</span>`;
-    $('#finalLbl').textContent = 'What the script actually does (universal trace)';
+    $('#finalLbl').textContent = 'What the script actually does';
     const shown = (r.behavior && r.behavior.trim().length > 12) ? r.behavior : (state.lastTrace || 'No behavior recorded.');
     $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = shown;
   }
-  const constText = (r.behavior && r.behavior.trim()) || state.lastTrace || '';
+  // constants tab shows the deepest recovery available: flow > behavior > trace
+  const constText = (r.flow && r.flow.trim()) || (r.behavior && r.behavior.trim()) || state.lastTrace || '';
   if (constText) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = constText; }
-  pushHistory(verdict || 'BEHAVIOR');
+  // stash the extra reports for the executor/structure panes and history
+  state.reports = { final: r.final, flow: r.flow, disassembly: r.disassembly, opcodeMap: r.opcodeMap, behavior: r.behavior };
+  if (r.disassembly) { const el = $('#structRaw'); if (el) el.textContent = r.disassembly; }
+  pushHistory(verdict || 'RECONSTRUCTED');
 }
 
 // ---- final source actions ----

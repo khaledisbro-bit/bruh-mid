@@ -274,10 +274,57 @@ ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePa
     stages: parseStages(r.out),
     behavior: readMaybe('BEHAVIOR.txt'),
     reconstructed,
-    // show the reconstruction as the source view unless a certified source exists
-    finalSource: readMaybe('FINAL_SOURCE.lua') || reconstructed,
+    // the richest combined outputs (shown in the UI when present)
+    final: readMaybe('FINAL_RECONSTRUCTION.txt'),
+    flow: readMaybe('FLOW.txt'),
+    disassembly: readMaybe('DISASSEMBLY.txt'),
+    opcodeMap: readMaybe('OPCODE_MAP.txt'),
+    // prefer the consolidated final report as the main "source" view
+    finalSource: readMaybe('FINAL_SOURCE.lua') || readMaybe('FINAL_RECONSTRUCTION.txt') || reconstructed,
     verdict: (parseStages(r.out).audit || '').trim()
   };
+});
+
+// ONE-CLICK: the app runs everything itself - Python stages, the Lua harness
+// (in the executor via MCP), then the Python reconstruction - and returns every
+// report. No manual copy/paste or terminal.
+ipcMain.handle('run-all', async (_e, { filePath, extraTraces }) => {
+  const send = (m) => { try { win.webContents.send('run-progress', m); } catch (_) {} };
+  const outDir = path.join(WORK, 'out_' + Date.now());
+  const readMaybe = (f) => { try { return fs.readFileSync(path.join(outDir, f), 'utf8'); } catch (_) { return null; } };
+  const collect = () => ({
+    outDir,
+    final: readMaybe('FINAL_RECONSTRUCTION.txt'),
+    flow: readMaybe('FLOW.txt'),
+    disassembly: readMaybe('DISASSEMBLY.txt'),
+    opcodeMap: readMaybe('OPCODE_MAP.txt'),
+    behavior: readMaybe('BEHAVIOR.txt'),
+    reconstructed: readMaybe('RECONSTRUCTED.lua'),
+    finalSource: readMaybe('FINAL_SOURCE.lua') || readMaybe('RECONSTRUCTED.lua'),
+    vmStructure: readMaybe('vm_structure.txt')
+  });
+
+  send('detect + static + harness');
+  let r = await runPython([DEOB, filePath, '-o', outDir]);
+  const harness = readMaybe('harness.lua');
+  if (!harness) return { ok: false, error: 'harness not generated', stdout: r.out, stderr: r.err };
+
+  send('running in executor (MCP)');
+  const ex = await mcpExecute(settings.mcpUrl, settings.mcpToken, harness);
+  if (!ex.ok) return { ok: false, error: 'executor: ' + (ex.error || 'no output'), outDir, harness };
+
+  send('reconstructing');
+  const traceFile = path.join(outDir, 'result.txt');
+  fs.writeFileSync(traceFile, normalizeBlock(ex.body || ''));
+  const args = [DEOB, filePath, '-o', outDir, '--trace', traceFile];
+  // also merge any extra trace files the user added (e.g. full opcode_trace.txt
+  // saved from the executor's workspace) so more runs stack into one report.
+  for (const t of (extraTraces || [])) { if (t && fs.existsSync(t)) args.push(t); }
+  r = await runPython(args);
+  send('done');
+  return { ok: true, code: r.code, stdout: r.out, stderr: r.err,
+           stages: parseStages(r.out), verdict: (parseStages(r.out).audit || '').trim(),
+           ...collect() };
 });
 
 ipcMain.handle('copy', (_e, text) => { clipboard.writeText(text || ''); return true; });

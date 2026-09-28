@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('vm', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
   analyze: (filePath) => ipcRenderer.invoke('analyze', filePath),
+  runAll: (args) => ipcRenderer.invoke('run-all', args),
+  onRunProgress: (cb) => ipcRenderer.on('run-progress', (_e, m) => cb(m)),
   runMcp: (harness) => ipcRenderer.invoke('run-mcp', harness),
   finalize: (args) => ipcRenderer.invoke('finalize', args),
   copy: (text) => ipcRenderer.invoke('copy', text),
