@@ -268,11 +268,14 @@ ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePa
   if (candidatePath) args.push('--candidate', candidatePath);
   const r = await runPython(args);
   const readMaybe = (f) => { try { return fs.readFileSync(path.join(outDir, f), 'utf8'); } catch (_) { return null; } };
+  const reconstructed = readMaybe('RECONSTRUCTED.lua');
   return {
     code: r.code, stdout: r.out, stderr: r.err,
     stages: parseStages(r.out),
     behavior: readMaybe('BEHAVIOR.txt'),
-    finalSource: readMaybe('FINAL_SOURCE.lua'),
+    reconstructed,
+    // show the reconstruction as the source view unless a certified source exists
+    finalSource: readMaybe('FINAL_SOURCE.lua') || reconstructed,
     verdict: (parseStages(r.out).audit || '').trim()
   };
 });

@@ -16,7 +16,30 @@ comes from the bytes, nothing is guessed.
 
     python3 lift.py inner_data.bin
 """
+import re
 import sys
+
+# Luau standard vocabulary: base globals + library tables and their members.
+# Used only to separate the VM's genuine primitives from decoded-constant noise
+# in a raw byte scan. This is the language's own surface, not sample data.
+LUAU_NAMES = set("""
+assert error tonumber tostring type typeof select pcall xpcall next pairs ipairs
+rawequal rawget rawset rawlen setmetatable getmetatable unpack require warn print
+collectgarbage newproxy gcinfo loadstring
+string table math bit32 buffer coroutine os debug utf8 task
+byte char sub rep find match gmatch gsub format len lower upper reverse split pack
+unpack packsize concat insert remove sort create freeze isfrozen clone move
+abs ceil floor sqrt sin cos tan asin acos atan atan2 exp log log10 pow fmod modf
+max min random randomseed huge pi noise clamp round sign
+band bor bxor bnot lshift rshift arshift lrotate rrotate btest extract replace countlz countrz
+readu8 readu16 readu32 readi8 readi16 readi32 readf32 readf64 readstring
+writeu8 writeu16 writeu32 writei8 writei16 writei32 writef32 writef64 writestring
+tostring fromstring tobuffer len copy fill
+wait delay spawn defer cancel desynchronize synchronize
+info traceback getinfo profilebegin profileend
+resume yield status wrap isyieldable running close
+time clock date difftime
+""".split())
 
 
 def reader(buf):
@@ -103,13 +126,19 @@ def lift(data):
             report["imports"] = imp
             report["import_segment_len"] = len(s)
             break
-    # readable strings across all segments; keep only meaningful ones (>=5 chars,
-    # majority letters) so encrypted-constant noise is dropped
+    # readable strings across all segments. Encrypted constants decode to
+    # high-entropy byte runs that still land in printable range and can look
+    # identifier-shaped (e.g. "iwoceplti", "dh2VM"), so a shape test is not
+    # enough. Keep only names from the Luau standard vocabulary (library tables,
+    # their members, and base globals). That is language knowledge, not anything
+    # tied to a sample, and it cleanly separates the VM's real primitives from
+    # decoded-constant noise. Program-specific strings are recovered separately
+    # by the dynamic resolver dump, which is where they actually live.
     seen = set()
     for s in segs:
-        for r in readable_strings(s, minlen=5):
-            letters = sum(c.isalpha() for c in r)
-            if r not in seen and letters >= 4 and letters >= len(r) * 0.6:
+        for r in readable_strings(s, minlen=3):
+            base = r.split(".")[0]
+            if r in LUAU_NAMES or base in LUAU_NAMES:
                 seen.add(r)
     report["strings"] = sorted(seen)[:200]
     return report

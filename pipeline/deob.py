@@ -237,6 +237,16 @@ def main():
         lines.append(trace[:4000])
     open(summ, "w").write("\n".join(lines))
     print(f"              behavior -> {summ}")
+    # source-shaped reconstruction from the same evidence (readable .lua)
+    try:
+        import reconstruct
+        lift_imports = (log.get("lift") or {}).get("imports")
+        rlua = reconstruct.reconstruct(tr, lift_imports=lift_imports)
+        rpath = os.path.join(a.out, "RECONSTRUCTED.lua")
+        open(rpath, "w").write(rlua)
+        print(f"              reconstruction -> {rpath}")
+    except Exception as e:
+        print(f"              (reconstruction skipped: {e})")
     if verdict == "CONSISTENT" and cand:
         final = os.path.join(a.out, "FINAL_SOURCE.lua")
         open(final, "w").write(cand)
