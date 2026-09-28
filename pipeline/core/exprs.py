@@ -55,41 +55,100 @@ def _unq(v):
 
 
 def match_calls(L, records):
-    """Attach each observed call record to the instruction that made it."""
+    """Attach each observed call record to the instruction that made it.
+
+    The environment recorded what the program called; the capture recorded which
+    instructions ran. Joining them needs an anchor that appears in both, and
+    which anchor survives depends on the build, so several are tried in order of
+    how much they prove. All of them keep execution order, so a match can never
+    jump backwards past one already made.
+
+      1. the call instruction itself consumed the method name
+      2. the method name appears as a value in the graph, and an instruction
+         downstream of it consumes it
+      3. the receiver's name appears the same way
+      4. an argument value appears the same way
+
+    The first anchor is proof; the later ones place the call by a value it
+    demonstrably used, which is weaker and is marked as inferred. A record no
+    anchor reaches is reported unmatched rather than attached to whatever
+    instruction happened to be nearby."""
     matched, unmatched = [], []
     cursor = 0
-    steps = L.steps
+    consumers = L.consumers()
     for rec in records:
-        name = rec.get("method")
-        want = '"%s"' % name if name else None
         found = None
-        for k in range(cursor, len(steps)):
-            st = steps[k]
-            if st.pushes != 1 or not st.popped:
-                continue
-            hit = [v for v in st.popped if v.runtime == want]
-            if not hit:
-                continue
-            found = (k, st, hit[0])
-            break
+        for tier, anchor, strength, note in _anchors(rec):
+            found = _find(L, consumers, cursor, anchor)
+            if found is not None:
+                k, st, namev = found
+                cursor = k + 1
+                matched.append(_build(rec, st, namev, strength, note, anchor))
+                break
         if found is None:
             unmatched.append(rec)
+    return matched, unmatched
+
+
+def _anchors(rec):
+    name = rec.get("method")
+    out = []
+    if name:
+        out.append(("name", '"%s"' % name, OBSERVED,
+                    "the instruction consumed the method name %r" % name))
+    if rec.get("recv"):
+        out.append(("recv", '"%s"' % rec["recv"], INFERRED,
+                    "the instruction is downstream of the receiver name %r"
+                    % rec["recv"]))
+    for a in rec.get("args") or ():
+        if a.startswith('"') and len(a) > 2:
+            out.append(("arg", a, INFERRED,
+                        "the instruction consumed the argument %s" % a))
+    return out
+
+
+def _find(L, consumers, cursor, anchor):
+    """The first instruction at or after `cursor` that consumes a value equal to
+    `anchor`, or failing that the instruction that produced one."""
+    for k in range(cursor, len(L.steps)):
+        st = L.steps[k]
+        hit = [v for v in st.popped if v.runtime == anchor]
+        if hit:
+            return k, st, hit[0]
+    producer = None
+    for v in L.values:
+        if v.runtime == anchor and v.row is not None:
+            producer = v
+            break
+    if producer is None:
+        return None
+    for k in range(cursor, len(L.steps)):
+        st = L.steps[k]
+        if st.row < producer.row:
             continue
-        k, st, namev = found
-        cursor = k + 1
+        users = consumers.get(producer.id) or []
+        if users and st.row == users[0].row:
+            return k, st, producer
+        if st.row == producer.row and not users:
+            return k, st, producer
+    return None
+
+
+def _build(rec, st, namev, strength, note, anchor):
+    if namev in st.popped:
         idx = st.popped.index(namev)
         recv = st.popped[idx - 1] if idx >= 1 else None
         args = st.popped[idx + 1:]
-        matched.append(Call(
-            rec, st, recv, namev, args, OBSERVED,
-            "the environment recorded %s and this instruction consumed the name "
-            "%s at the matching point in execution order"
-            % (rec.get("raw", ""), want)))
-        st.fact.evidence = OBSERVED
-        st.fact.note("exprs.call",
-                     "makes the recorded call %s" % rec.get("raw", ""),
-                     pcs=(st.pc,), steps=(st.row,), records=(rec.get("raw", ""),))
-    return matched, unmatched
+    else:
+        recv = st.popped[0] if st.popped else None
+        args = st.popped[1:]
+    st.fact.evidence = strength
+    st.fact.note("exprs.call", "makes the recorded call %s; %s"
+                 % (rec.get("raw", ""), note),
+                 pcs=(st.pc,), steps=(st.row,), records=(rec.get("raw", ""),))
+    return Call(rec, st, recv, namev, args, strength,
+                "the environment recorded %s and %s at the matching point in "
+                "execution order" % (rec.get("raw", ""), note))
 
 
 def identify_env(L, models, calls, slots):

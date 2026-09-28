@@ -61,13 +61,10 @@ def measure(rows, machinery=None, agree=AGREE, min_samples=MIN_SAMPLES):
     `rows` must be the RAW rows in capture order, because whether an instruction
     produced a value is read from the record that physically follows it.
 
-    The stack delta is taken between consecutive PROGRAM instructions. Passing
-    the machinery pc set lets a jump be measured too: an interpreter helper was
-    already proved to give the stack pointer back untouched, so a burst between
-    two program instructions does not disturb their difference. Without that set
-    only instructions that ran back to back are measured, and a jump - whose
-    successor is never the next instruction - stays unmeasured rather than
-    guessed."""
+    The stack delta is taken between consecutive records. Passing the machinery
+    pc set removes the interpreter's helper bursts from that sequence first,
+    which is sound because a helper was already proved to give the stack pointer
+    back untouched."""
     machinery = machinery or set()
     deltas = defaultdict(Counter)
     produces = defaultdict(Counter)
@@ -81,11 +78,16 @@ def measure(rows, machinery=None, agree=AGREE, min_samples=MIN_SAMPLES):
         if nxt is not None:
             produces[r["opcode"]][_is_value(nxt["value"])] += 1
 
+    # Two records that follow each other in the capture have nothing between
+    # them: the logger runs at the top of every dispatch, so no other
+    # instruction executed in the gap. The difference in stack pointer across
+    # that gap is therefore the first instruction's own effect, whatever its
+    # successor's instruction number happens to be. Requiring the successor to
+    # be the next instruction would only be measuring code that never jumps,
+    # which throws away every branch, every loop edge and every call.
     prog = [r for r in rows if r["pc"] not in machinery]
     for a, b in zip(prog, prog[1:]):
         if a["sp"] is None or b["sp"] is None:
-            continue
-        if not machinery and b["pc"] - a["pc"] not in (1, 2):
             continue
         deltas[a["opcode"]][b["sp"] - a["sp"]] += 1
 
