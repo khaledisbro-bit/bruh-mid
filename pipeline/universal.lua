@@ -99,17 +99,36 @@ env.__CAP = function() end
 -- the running VM into a disassembler of the paths that actually execute. All
 -- guarded: if the shape does not match, the trace is simply skipped.
 local ops, opn = {}, 0
-env.__OP = function(pc, oc, NO, sp)
+-- compact, safe preview of a runtime value on the VM stack (for value-flow).
+local function vprev(v)
+    local ok, t = pcall(type, v)
+    if not ok then return "?" end
+    if t == "string" then
+        if #v > 28 then v = v:sub(1, 28) .. ".." end
+        return "\"" .. v:gsub("[\r\n\t;]", " ") .. "\""
+    elseif t == "number" or t == "boolean" then
+        return tostring(v)
+    elseif t == "nil" then
+        return "nil"
+    elseif t == "table" then
+        return "{}"
+    end
+    return t   -- function / userdata / thread
+end
+
+env.__OP = function(pc, oc, NO, sp, top)
     opn = opn + 1
     if opn > 15000 then return end
     local a = {}
     if type(NO) == "table" then
         for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
     end
-    -- format: pc;opcode;operands;stackpointer  (sp lets the lifter measure the
-    -- real push/pop effect of each opcode from execution, not from guesses)
+    -- format: pc;opcode;operands;stackpointer;topvalue
+    -- sp gives the push/pop effect; topvalue is the real value on the stack, so
+    -- the lifter can see the actual strings/numbers flowing between opcodes and
+    -- reconstruct real calls/assignments, not just push/pop shapes.
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
-                  .. ";" .. tostring(sp)
+                  .. ";" .. tostring(sp) .. ";" .. vprev(top)
 end
 
 local function patchDispatch(s)
@@ -122,14 +141,18 @@ local function patchDispatch(s)
     -- instruction row NO from the loop top: local NO = ARR[PC];
     local no = s:match("local (%w+)=%w+%[" .. pc .. "%];")
     if not no then return nil end
-    -- stack pointer from the register-write-buffer flush the handlers share:
-    --   if n>=2 then YL[Ym-1]=NN end  -> capture Ym
-    local sp = s:match("if %w+>=2 then %w+%[(%w+)%-1%]=") or "0"
+    -- register array + stack pointer from the register-write-buffer flush the
+    -- handlers share:  if n>=2 then YL[Ym-1]=NN end  -> capture YL and Ym
+    local arr, sp = s:match("if %w+>=2 then (%w+)%[(%w+)%-1%]=")
+    sp = sp or "0"
+    -- top-of-stack value expression (the real value flowing), guarded: only when
+    -- we have both the array and a pointer; else pass nil.
+    local topexpr = (arr and sp ~= "0") and (arr .. "[" .. sp .. "]") or "nil"
     -- inject the logger right after the NL assignment `local NL=...;`
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
     local j = s:find(";", i + #mark, true); if not j then return nil end
-    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. ")end"
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end"
     return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 

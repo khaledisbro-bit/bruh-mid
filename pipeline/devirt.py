@@ -24,39 +24,41 @@ import re
 from collections import Counter
 
 
+# pc;opcode;operands[;stackpointer[;topvalue]]  -- 3, 4 or 5 fields
+_LINE = re.compile(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?(?:;(.*))?$")
+
+
 def parse_ops(text):
     """Return a list of (pc, opcode, [operands]) from an opcode-trace body.
-    Tolerates the newer 4-field form pc;opcode;operands;stackpointer."""
+    Tolerates the 4- and 5-field forms (stackpointer, topvalue)."""
     if "---OPCODES---" in text:
         text = text.split("---OPCODES---", 1)[1]
     text = text.split("END_UNOBF_RESULT", 1)[0]
     out = []
     for ln in text.splitlines():
-        ln = ln.strip()
-        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", ln)
+        m = _LINE.match(ln.strip())
         if not m:
             continue
-        pc, op = int(m.group(1)), int(m.group(2))
-        operands = [x for x in m.group(3).split(",") if x != ""]
-        out.append((pc, op, operands))
+        out.append((int(m.group(1)), int(m.group(2)),
+                    [x for x in m.group(3).split(",") if x != ""]))
     return out
 
 
 def parse_ops_sp(text):
-    """Like parse_ops but also returns the stack pointer per step (or None).
-    Returns list of (pc, opcode, [operands], sp|None)."""
+    """Like parse_ops but also returns stack pointer and top value per step.
+    Returns list of (pc, opcode, [operands], sp|None, val|None)."""
     if "---OPCODES---" in text:
         text = text.split("---OPCODES---", 1)[1]
     text = text.split("END_UNOBF_RESULT", 1)[0]
     out = []
     for ln in text.splitlines():
-        ln = ln.strip()
-        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", ln)
+        m = _LINE.match(ln.strip())
         if not m:
             continue
         sp = int(m.group(4)) if m.group(4) is not None else None
+        val = m.group(5) if m.group(5) not in (None, "") else None
         out.append((int(m.group(1)), int(m.group(2)),
-                    [x for x in m.group(3).split(",") if x != ""], sp))
+                    [x for x in m.group(3).split(",") if x != ""], sp, val))
     return out
 
 
@@ -130,16 +132,23 @@ def summarize(text, max_lines=600, vm_source=None):
     repeated = sum(p * r for _i, p, r in folded if r >= 2)
     skeleton = sum(1 for _i, _p, r in folded if r < 2)
     # opcode semantics, derived from the VM handlers and verified vs this trace
-    sem = {}
+    sem, deltas, produced = {}, {}, {}
+    steps_sp = parse_ops_sp(text)
+    # value each pushing instruction produced = the top value seen at the NEXT
+    # step (that step reads the stack this one just left). Lets us print the
+    # real string/number a LOADK produced next to it.
+    for i in range(len(steps_sp) - 1):
+        produced[i] = steps_sp[i + 1][4]
     if vm_source:
         try:
             import opmap
-            steps_sp = [(pc, op, od, sp) for pc, op, od, sp in parse_ops_sp(text)]
             om = opmap.build_map(vm_source, steps, steps_sp)
             sem = {op: v["semantic"] for op, v in om.items()
                    if v["verdict"] in ("CONFIRMED", "STACK", "LIKELY") and v["semantic"]}
+            deltas = {op: v["stack_delta"] for op, v in om.items()
+                      if v.get("stack_delta") is not None}
         except Exception:
-            sem = {}
+            sem, deltas = {}, {}
 
     out = []
     out.append("VM DEVIRTUALIZATION (from the executed instruction stream)")
@@ -183,10 +192,17 @@ def summarize(text, max_lines=600, vm_source=None):
                        % (p, r))
         else:
             label = sem.get(op)
+            # real value this instruction produced (for pushes), from the trace
+            val = produced.get(i)
+            d = deltas.get(op)
+            vtag = ""
+            if val and val != "nil" and d is not None and d >= 1:
+                vtag = "   => " + val
+            head = "OP_%d %s" % (op, ops)
             if label:
-                out.append("  %6d: %-40s ; %s" % (pc, "OP_%d %s" % (op, ops), label))
+                out.append("  %6d: %-38s ; %s%s" % (pc, head, label, vtag))
             else:
-                out.append("  %6d: OP_%-6d %s" % (pc, op, ops))
+                out.append("  %6d: %-38s%s" % (pc, head, vtag))
         shown += 1
         if shown >= max_lines:
             out.append("  ... (%d more units; full stream in opcode_trace.txt)"

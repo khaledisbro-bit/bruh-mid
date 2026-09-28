@@ -104,8 +104,8 @@ def stack_profile(steps_sp):
     from collections import defaultdict
     deltas = defaultdict(Counter)
     for a, b in zip(steps_sp, steps_sp[1:]):
-        pc, op, _od, sp = a
-        npc, _nop, _nod, nsp = b
+        pc, op, sp = a[0], a[1], a[3]
+        npc, nsp = b[0], b[3]
         if sp is None or nsp is None:
             continue
         # adjacent pc => b is the fall-through of a, so nsp-sp is a's net effect
