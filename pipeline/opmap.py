@@ -95,13 +95,41 @@ def classify(body):
     return None
 
 
-def build_map(src, steps):
-    """steps: list of (pc, op, operands). Returns {op: {...}} with verdicts."""
+def stack_profile(steps_sp):
+    """From steps carrying a stack pointer (pc, op, operands, sp), measure each
+    opcode's real net stack effect. We only trust a delta between two CONSECUTIVE
+    logged instructions whose pc is adjacent (i.e. no decrypt/machinery burst ran
+    in between), so the delta reflects that one handler. Returns {op: net_delta}
+    where the delta is agreed by a strong majority, else absent."""
+    from collections import defaultdict
+    deltas = defaultdict(Counter)
+    for a, b in zip(steps_sp, steps_sp[1:]):
+        pc, op, _od, sp = a
+        npc, _nop, _nod, nsp = b
+        if sp is None or nsp is None:
+            continue
+        # adjacent pc => b is the fall-through of a, so nsp-sp is a's net effect
+        if npc == pc + 1 or npc == pc + 2:
+            deltas[op][nsp - sp] += 1
+    out = {}
+    for op, c in deltas.items():
+        tot = sum(c.values())
+        d, n = c.most_common(1)[0]
+        if tot >= 3 and n >= tot * 0.8:   # a stable, agreed effect
+            out[op] = d
+    return out
+
+
+def build_map(src, steps, steps_sp=None):
+    """steps: list of (pc, op, operands). steps_sp (optional): same with a 4th
+    stack-pointer field, enabling execution-measured push/pop verification.
+    Returns {op: {...}} with verdicts."""
     arity = {}
     freq = Counter()
     for _pc, op, od in steps:
         arity[op] = max(arity.get(op, 0), len(od))
         freq[op] += 1
+    sprof = stack_profile(steps_sp) if steps_sp else {}
     out = {}
     for op in sorted(freq, key=lambda o: -freq[o]):
         cands = candidate_bodies(src, op)
@@ -126,23 +154,40 @@ def build_map(src, steps):
             gsem = {classify(b) for b in cands}; gsem.discard(None)
             if len(gsem) == 1 and matched:
                 sem = next(iter(gsem)); verdict = "LIKELY"
+        # execution-measured stack effect: confirms opcodes the static pass missed,
+        # and cross-checks the ones it found.
+        delta = sprof.get(op)
+        if delta is not None and verdict in ("UNKNOWN", "AMBIGUOUS"):
+            label = {1: "PUSH (+1) produces one value",
+                     0: "NEUTRAL (move / jump / test)",
+                     -1: "POP/STORE (-1) consumes one value"}.get(
+                         delta, "STACK %+d (n-ary combine)" % delta)
+            sem = label
+            verdict = "STACK"  # verified by real execution, semantics coarse
         out[op] = {"freq": freq[op], "operands": a, "candidates": len(cands),
-                   "arity_matched": len(matched), "semantic": sem, "verdict": verdict}
+                   "arity_matched": len(matched), "semantic": sem,
+                   "verdict": verdict, "stack_delta": delta}
     return out
 
 
 def report(opmap):
+    named = [v for v in opmap.values() if v["verdict"] in ("CONFIRMED", "STACK", "LIKELY")]
     conf = sum(1 for v in opmap.values() if v["verdict"] == "CONFIRMED")
+    stk = sum(1 for v in opmap.values() if v["verdict"] == "STACK")
     total = len(opmap)
-    covered = sum(v["freq"] for v in opmap.values() if v["verdict"] == "CONFIRMED")
     allf = sum(v["freq"] for v in opmap.values())
+    covered = sum(v["freq"] for v in named)
     L = []
-    L.append("VM OPCODE MAP (derived from handler bodies, verified vs trace)")
-    L.append("=" * 60)
-    L.append("distinct opcodes: %d   CONFIRMED: %d   (%.0f%% of executed "
-             "instructions covered)" % (total, conf, 100.0 * covered / max(allf, 1)))
-    L.append("semantics come from the VM's own handlers and are kept only when")
-    L.append("the operand count matches real execution. UNKNOWN = not proven.")
+    L.append("VM OPCODE MAP (handler bodies + execution-measured stack effect)")
+    L.append("=" * 62)
+    L.append("distinct opcodes: %d" % total)
+    L.append("CONFIRMED (exact semantic): %d    STACK-verified (push/pop): %d"
+             % (conf, stk))
+    L.append("coverage: %.0f%% of executed instructions have a verified meaning"
+             % (100.0 * covered / max(allf, 1)))
+    L.append("semantics come from the VM's own handlers (operand count matched to")
+    L.append("execution) and from the real per-opcode stack delta. UNKNOWN = not")
+    L.append("proven; never renamed on a guess.")
     L.append("")
     L.append("%-8s %6s %4s %-9s %s" % ("opcode", "freq", "ops", "verdict", "semantic"))
     for op, v in sorted(opmap.items(), key=lambda kv: -kv[1]["freq"]):
@@ -154,10 +199,12 @@ def report(opmap):
 if __name__ == "__main__":
     import sys
     src = open(sys.argv[1], encoding="latin1").read()
-    steps = []
+    steps, steps_sp = [], []
     for l in open(sys.argv[2], encoding="latin1"):
-        m = re.match(r"^(-?\d+);(-?\d+);(.*)$", l.strip())
+        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", l.strip())
         if m:
-            steps.append((int(m.group(1)), int(m.group(2)),
-                          [x for x in m.group(3).split(",") if x]))
-    print(report(build_map(src, steps)))
+            od = [x for x in m.group(3).split(",") if x]
+            steps.append((int(m.group(1)), int(m.group(2)), od))
+            sp = int(m.group(4)) if m.group(4) is not None else None
+            steps_sp.append((int(m.group(1)), int(m.group(2)), od, sp))
+    print(report(build_map(src, steps, steps_sp)))

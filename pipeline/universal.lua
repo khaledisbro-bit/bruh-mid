@@ -99,14 +99,17 @@ env.__CAP = function() end
 -- the running VM into a disassembler of the paths that actually execute. All
 -- guarded: if the shape does not match, the trace is simply skipped.
 local ops, opn = {}, 0
-env.__OP = function(pc, oc, NO)
+env.__OP = function(pc, oc, NO, sp)
     opn = opn + 1
     if opn > 15000 then return end
     local a = {}
     if type(NO) == "table" then
         for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
     end
+    -- format: pc;opcode;operands;stackpointer  (sp lets the lifter measure the
+    -- real push/pop effect of each opcode from execution, not from guesses)
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
+                  .. ";" .. tostring(sp)
 end
 
 local function patchDispatch(s)
@@ -119,12 +122,15 @@ local function patchDispatch(s)
     -- instruction row NO from the loop top: local NO = ARR[PC];
     local no = s:match("local (%w+)=%w+%[" .. pc .. "%];")
     if not no then return nil end
+    -- stack pointer from the register-write-buffer flush the handlers share:
+    --   if n>=2 then YL[Ym-1]=NN end  -> capture Ym
+    local sp = s:match("if %w+>=2 then %w+%[(%w+)%-1%]=") or "0"
     -- inject the logger right after the NL assignment `local NL=...;`
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
     local j = s:find(";", i + #mark, true); if not j then return nil end
-    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. ")end"
-    return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc)
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. ")end"
+    return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 
 local function patchResolver(s)

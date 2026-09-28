@@ -262,13 +262,15 @@ def main():
             print(f"              disassembly -> {dpath}")
             if vmsrc:
                 import opmap, re as _re
-                steps = []
+                steps, steps_sp = [], []
                 for _l in trace.split("---OPCODES---", 1)[-1].splitlines():
-                    _m = _re.match(r"^(-?\d+);(-?\d+);(.*)$", _l.strip())
+                    _m = _re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", _l.strip())
                     if _m:
-                        steps.append((int(_m.group(1)), int(_m.group(2)),
-                                      [x for x in _m.group(3).split(",") if x]))
-                om = opmap.build_map(vmsrc, steps)
+                        _od = [x for x in _m.group(3).split(",") if x]
+                        steps.append((int(_m.group(1)), int(_m.group(2)), _od))
+                        _sp = int(_m.group(4)) if _m.group(4) is not None else None
+                        steps_sp.append((int(_m.group(1)), int(_m.group(2)), _od, _sp))
+                om = opmap.build_map(vmsrc, steps, steps_sp)
                 mpath = os.path.join(a.out, "OPCODE_MAP.txt")
                 open(mpath, "w").write(opmap.report(om))
                 nconf = sum(1 for v in om.values() if v["verdict"] == "CONFIRMED")

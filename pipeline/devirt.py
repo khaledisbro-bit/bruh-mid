@@ -25,19 +25,38 @@ from collections import Counter
 
 
 def parse_ops(text):
-    """Return a list of (pc, opcode, [operands]) from an opcode-trace body."""
+    """Return a list of (pc, opcode, [operands]) from an opcode-trace body.
+    Tolerates the newer 4-field form pc;opcode;operands;stackpointer."""
     if "---OPCODES---" in text:
         text = text.split("---OPCODES---", 1)[1]
     text = text.split("END_UNOBF_RESULT", 1)[0]
     out = []
     for ln in text.splitlines():
         ln = ln.strip()
-        m = re.match(r"^(-?\d+);(-?\d+);(.*)$", ln)
+        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", ln)
         if not m:
             continue
         pc, op = int(m.group(1)), int(m.group(2))
         operands = [x for x in m.group(3).split(",") if x != ""]
         out.append((pc, op, operands))
+    return out
+
+
+def parse_ops_sp(text):
+    """Like parse_ops but also returns the stack pointer per step (or None).
+    Returns list of (pc, opcode, [operands], sp|None)."""
+    if "---OPCODES---" in text:
+        text = text.split("---OPCODES---", 1)[1]
+    text = text.split("END_UNOBF_RESULT", 1)[0]
+    out = []
+    for ln in text.splitlines():
+        ln = ln.strip()
+        m = re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", ln)
+        if not m:
+            continue
+        sp = int(m.group(4)) if m.group(4) is not None else None
+        out.append((int(m.group(1)), int(m.group(2)),
+                    [x for x in m.group(3).split(",") if x != ""], sp))
     return out
 
 
@@ -115,9 +134,10 @@ def summarize(text, max_lines=600, vm_source=None):
     if vm_source:
         try:
             import opmap
-            om = opmap.build_map(vm_source, steps)
+            steps_sp = [(pc, op, od, sp) for pc, op, od, sp in parse_ops_sp(text)]
+            om = opmap.build_map(vm_source, steps, steps_sp)
             sem = {op: v["semantic"] for op, v in om.items()
-                   if v["verdict"] == "CONFIRMED"}
+                   if v["verdict"] in ("CONFIRMED", "STACK", "LIKELY") and v["semantic"]}
         except Exception:
             sem = {}
 
