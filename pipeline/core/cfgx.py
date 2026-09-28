@@ -300,12 +300,17 @@ def _branches(g, succ_pcs, seq, known, slots=None):
             g.unexplored.append((pc, m, why))
 
 
-def report(g):
+def report(g, addressed=True):
     L = ["CONTROL FLOW (reconstructed from the executed transitions)",
          "=" * 56,
          "Blocks start at the entry, at jump targets, and after branches. A loop",
          "is an edge back to a block that dominates it. Branch targets that never",
-         "ran are listed as unexplored, not removed.", "",
+         "ran are listed as unexplored, not removed.", ""] + ([] if addressed else [
+         "CAUTION: the call stack could not be recovered for this capture, so",
+         "every record is treated as one function. If this build runs more than",
+         "one function, their instruction numbers collide and the blocks, loops",
+         "and branches below merge code that is not related. Read them as a",
+         "lower bound on structure, not as the program's shape.", ""]) + [
          "basic blocks: %d   edges: %d   loops: %d   unexplored branches: %d"
          % (len(g.blocks), sum(len(v) for v in g.succ.values()),
             len(g.loops), len(g.unexplored)), ""]

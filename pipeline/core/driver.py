@@ -97,8 +97,10 @@ class Analysis:
              "functions recovered        %s"
              % (len(self.frames["functions"]) if self.frames_ok
                 else "not established (instruction numbers may collide)"),
-             "basic blocks / loops       %d / %d"
-             % (len(self.cfg.blocks), len(self.cfg.loops)),
+             "basic blocks / loops       %d / %d%s"
+             % (len(self.cfg.blocks), len(self.cfg.loops),
+                "" if self.frames_ok else
+                "  (unreliable: instruction numbers may collide)"),
              "calls matched to code      %d of %d recorded"
              % (len(self.calls), len(self.calls) + len(self.unmatched)),
              "unexplored branch targets  %d" % len(self.cfg.unexplored),
@@ -131,7 +133,7 @@ class Analysis:
             "VARIABLES.txt": dataflow.report(self.lift, self.slots) +
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
                              self.tables.why,
-            "CONTROL_FLOW.txt": cfgx.report(self.cfg),
+            "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg),
             "VERIFICATION.txt": self.verification,
             "behaviour_check.lua": verify.behaviour_harness(self.source),

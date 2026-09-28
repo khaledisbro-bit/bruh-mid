@@ -36,21 +36,22 @@ MIN_MATCH = 0.5
 MAX_DEPTH = 256
 
 
-def entries(rows):
+def entries(rows, min_sites=1):
     """Instructions that can begin a function: control reaches them by a jump
     and never by falling through from the instruction before them. A loop head
     is reached by falling in the first time round, so it is not one of these,
     which is what keeps a loop from being mistaken for a call."""
-    jumped, fall = set(), set()
+    jumped, fall = defaultdict(set), set()
     for a, b in zip(rows, rows[1:]):
         if b["pc"] == a["pc"] + 1:
             fall.add(b["pc"])
         else:
-            jumped.add(b["pc"])
-    return jumped - fall
+            jumped[b["pc"]].add(a["pc"])
+    return {pc for pc, srcs in jumped.items()
+            if pc not in fall and len(srcs) >= min_sites}
 
 
-def _pairs(rows, ents):
+def _pairs(rows, ents, step=1):
     """Calls that were seen to return, as (call record, return record, entry).
 
     A jump into a function entry is only a guess until control comes back to the
@@ -70,9 +71,9 @@ def _pairs(rows, ents):
             _exp, ci, ent = stack.pop()
             pairs.append((ci, i, ent))
             continue
-        if b["pc"] in ents and b["pc"] != rows[i - 1]["pc"] + 1 \
+        if b["pc"] in ents and b["pc"] != rows[i - 1]["pc"] + step \
                 and len(stack) < MAX_DEPTH:
-            stack.append((rows[i - 1]["pc"] + 1, i, b["pc"]))
+            stack.append((rows[i - 1]["pc"] + step, i, b["pc"]))
     return pairs, abandoned + len(stack)
 
 
@@ -84,18 +85,37 @@ def reconstruct(rows, min_match=MIN_MATCH):
     is left in one frame and the report says so."""
     if not rows:
         return _flat(rows, "there are no records to place"), False
-    ents = entries(rows)
-    if not ents:
+    # How a build spells a call is not known in advance: how many places have
+    # to jump to something before it counts as a function entry, and whether a
+    # call resumes at the next instruction or the one after, both vary. Each
+    # combination is tried and the one whose calls actually return is kept. The
+    # measurement picks the reading; nothing here assumes one.
+    best = None
+    tried = []
+    for step in (1, 2):
+        for min_sites in (1, 2, 3, 5, 10, 20):
+            ents = entries(rows, min_sites)
+            if not ents:
+                continue
+            pairs, unreturned = _pairs(rows, ents, step)
+            total = len(pairs) + unreturned
+            if not total:
+                continue
+            rate = len(pairs) / total
+            tried.append((step, min_sites, len(pairs), total, rate))
+            if best is None or (rate, len(pairs)) > (best[0], len(best[1])):
+                best = (rate, pairs, total, step, min_sites)
+    if best is None:
         return _flat(rows, "no instruction is reached only by a jump, so there "
                            "is nothing that behaves like a function entry"), False
-    pairs, unreturned = _pairs(rows, ents)
-    total = len(pairs) + unreturned
-    rate = (len(pairs) / total) if total else 0.0
+    rate, pairs, total, step, min_sites = best
     if not pairs or rate < min_match:
-        return _flat(rows, "%d jump(s) looked like a call and %d of them "
-                           "returned to the instruction after their caller "
-                           "(%.0f%%) - too few for the call stack to be trusted"
-                     % (total, len(pairs), 100 * rate)), False
+        detail = "; ".join("resume +%d, entered from %d+ site(s): %d/%d (%.0f%%)"
+                           % (s2, m2, p2, t2, 100 * r2)
+                           for s2, m2, p2, t2, r2 in sorted(
+                               tried, key=lambda x: -x[4])[:4])
+        return _flat(rows, "no way of reading calls in this build had enough of "
+                           "them return: %s" % detail), False
 
     root = rows[0]["pc"]
     opened = defaultdict(list)
@@ -161,11 +181,13 @@ def reconstruct(rows, min_match=MIN_MATCH):
     callers = {g + 1: v for g, v in callers.items()}
     return {"functions": fns, "callers": callers, "entries": entry_of,
             "pushes": total, "returns": len(pairs), "rate": rate,
-            "why": ("%d jump(s) looked like a call; %d returned to the "
-                    "instruction after their caller (%.0f%%), and only those "
+            "why": ("read as: a call resumes %d instruction(s) after its "
+                    "caller, and an entry is jumped to from at least %d place(s)"
+                    " - the reading whose calls actually returned. %d jump(s) "
+                    "looked like a call; %d returned (%.0f%%), and only those "
                     "became frames; frames running the same instructions were "
                     "grouped into one function"
-                    % (total, len(pairs), 100 * rate)),
+                    % (step, min_sites, total, len(pairs), 100 * rate)),
             "flat": False}, True
 
 

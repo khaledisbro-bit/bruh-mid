@@ -29,6 +29,7 @@ import exprs as exprmod
 
 
 MAX_BRANCH_NOTES = 12
+MAX_STATEMENTS = 6000
 
 
 class Line:
@@ -61,8 +62,40 @@ class Emitter:
         self.decoys = decoys or {}
         self.consumed = self._consumed()
         self.consumers = L.consumers()
+        self.needs_name = self._needs_name()
         self.first_write = {}
         self.lines = []
+
+    def _needs_name(self):
+        """Values that have to become named statements rather than stay inside
+        another expression.
+
+        A stack machine builds an expression by pushing its parts, so most
+        values are just part of the instruction that consumes them and belong
+        inline. Two kinds do not. A value used more than once was computed once
+        and reused, which is a variable in the program whatever the VM calls it.
+        A value produced in one block and consumed in another outlives the
+        block, so writing it inline would move the work into a branch it was not
+        in. Both get a name, which is what turns a value graph back into
+        statements."""
+        owner = getattr(self.g, "_owner", {})
+        out = {}
+        for st in self.L.steps:
+            if len(st.pushed) != 1:
+                continue
+            v = st.pushed[0]
+            users = self.consumers.get(v.id) or []
+            if not users:
+                continue
+            if len(users) > 1:
+                out[v.id] = ("its result is used %d times, so it was computed "
+                             "once and reused" % len(users))
+                continue
+            u = users[0]
+            if owner.get(u.key()) != owner.get(st.key()):
+                out[v.id] = ("its result is used in a different block, so it "
+                             "outlives the one it was computed in")
+        return out
 
     def _consumed(self):
         used = set()
@@ -92,6 +125,17 @@ class Emitter:
             return self._line("local %s = %s" % (name, text), OBSERVED, st,
                               "an observed call whose result is used later; "
                               "bound to a name so the later use can refer to it")
+        if (st.pushes == 1 and st.pushed[0].id in self.needs_name
+                and self.slots.writes.get(st.row) is None
+                and st.pushed[0].id not in self.bound):
+            v = st.pushed[0]
+            text = self.R.value(v.id)
+            name = "t%d" % self._tmp
+            self._tmp += 1
+            self.bound[v.id] = name
+            ev = exprmod.evidence_of(self.L, v.id, self.amap)
+            return self._line("local %s = %s" % (name, text), ev, st,
+                              self.needs_name[v.id])
         key = self.slots.writes.get(st.row)
         if key is not None and st.popped:
             src = st.popped[0]
@@ -188,6 +232,7 @@ class Emitter:
                                                 min(st.row for st in g.blocks[h])))
         shown_branches = [0]
         current_fn = [None]
+        dropped = [0]
         emitted_heads = set()
         out, depth = [], 0
         open_loops = []
@@ -223,6 +268,9 @@ class Emitter:
                 ln = self.statement(st)
                 if ln is None:
                     continue
+                if len(out) >= MAX_STATEMENTS:
+                    dropped[0] += 1
+                    continue
                 ln.indent = depth
                 out.append(ln)
             for b in g.branches:
@@ -241,6 +289,12 @@ class Emitter:
             out.append(Line("end", OBSERVED, lp2["head"],
                             "closes the loop whose head is pc %d" % lp2["head"],
                             depth))
+        if dropped[0]:
+            out.append(Line(
+                "-- %d further statement(s) were recovered and left out here to "
+                "keep the file readable; PROVENANCE.txt lists every one"
+                % dropped[0], UNKNOWN, (0, 0),
+                "the capture is larger than one readable file", 0))
         extra = sum(1 for b in self.g.branches if b["untaken"]) - shown_branches[0]
         if extra > 0:
             out.append(Line(
