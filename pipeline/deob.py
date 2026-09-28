@@ -332,6 +332,14 @@ def main():
         print(f"              LOGIC report -> {lpath}")
     except Exception as e:
         print(f"              (logic report skipped: {e})")
+    # control-flow reconstruction (basic blocks, loops) from the opcode stream
+    try:
+        import cfg
+        cpath = os.path.join(a.out, "CONTROL_FLOW.txt")
+        open(cpath, "w").write(cfg.report(trace))
+        print(f"              CONTROL-FLOW -> {cpath}")
+    except Exception as e:
+        print(f"              (control-flow skipped: {e})")
 
     # a plain index so you can see everything produced in one place
     print("\n== all results in %s ==" % a.out)

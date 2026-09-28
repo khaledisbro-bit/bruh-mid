@@ -277,6 +277,7 @@ ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePa
     // the richest combined outputs (shown in the UI when present)
     final: readMaybe('FINAL_RECONSTRUCTION.txt'),
     logic: readMaybe('LOGIC.txt'),
+    controlFlow: readMaybe('CONTROL_FLOW.txt'),
     flow: readMaybe('FLOW.txt'),
     disassembly: readMaybe('DISASSEMBLY.txt'),
     opcodeMap: readMaybe('OPCODE_MAP.txt'),
