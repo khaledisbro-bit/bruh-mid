@@ -276,6 +276,7 @@ ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePa
     reconstructed,
     // the richest combined outputs (shown in the UI when present)
     final: readMaybe('FINAL_RECONSTRUCTION.txt'),
+    logic: readMaybe('LOGIC.txt'),
     flow: readMaybe('FLOW.txt'),
     disassembly: readMaybe('DISASSEMBLY.txt'),
     opcodeMap: readMaybe('OPCODE_MAP.txt'),
@@ -295,6 +296,7 @@ ipcMain.handle('run-all', async (_e, { filePath, extraTraces }) => {
   const collect = () => ({
     outDir,
     final: readMaybe('FINAL_RECONSTRUCTION.txt'),
+    logic: readMaybe('LOGIC.txt'),
     flow: readMaybe('FLOW.txt'),
     disassembly: readMaybe('DISASSEMBLY.txt'),
     opcodeMap: readMaybe('OPCODE_MAP.txt'),

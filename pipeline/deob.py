@@ -324,6 +324,14 @@ def main():
         print(f"              FINAL report -> {frecon}  (merged {len(merged)} source(s))")
     except Exception as e:
         print(f"              (final report skipped: {e})")
+    # evidence-tagged logic reconstruction (OBSERVED/INFERRED/UNRESOLVED/DECOY)
+    try:
+        import logic
+        lpath = os.path.join(a.out, "LOGIC.txt")
+        open(lpath, "w").write(logic.reconstruct(all_traces))
+        print(f"              LOGIC report -> {lpath}")
+    except Exception as e:
+        print(f"              (logic report skipped: {e})")
 
     # a plain index so you can see everything produced in one place
     print("\n== all results in %s ==" % a.out)

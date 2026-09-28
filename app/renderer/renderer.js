@@ -200,11 +200,15 @@ async function finalize(traceText) {
     const shown = (r.behavior && r.behavior.trim().length > 12) ? r.behavior : (state.lastTrace || 'No behavior recorded.');
     $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = shown;
   }
-  // constants tab shows the deepest recovery available: flow > behavior > trace
-  const constText = (r.flow && r.flow.trim()) || (r.behavior && r.behavior.trim()) || state.lastTrace || '';
+  // constants tab shows the deepest recovery: logic (evidence-tagged) + flow
+  const parts = [];
+  if (r.logic && r.logic.trim()) parts.push(r.logic.trim());
+  if (r.flow && r.flow.trim()) parts.push(r.flow.trim());
+  if (!parts.length) parts.push((r.behavior && r.behavior.trim()) || state.lastTrace || '');
+  const constText = parts.join('\n\n' + '='.repeat(46) + '\n\n');
   if (constText) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = constText; }
   // stash the extra reports for the executor/structure panes and history
-  state.reports = { final: r.final, flow: r.flow, disassembly: r.disassembly, opcodeMap: r.opcodeMap, behavior: r.behavior };
+  state.reports = { final: r.final, logic: r.logic, flow: r.flow, disassembly: r.disassembly, opcodeMap: r.opcodeMap, behavior: r.behavior };
   if (r.disassembly) { const el = $('#structRaw'); if (el) el.textContent = r.disassembly; }
   pushHistory(verdict || 'RECONSTRUCTED');
 }
