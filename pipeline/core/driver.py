@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""
+driver.py - run the whole analysis over one or more captures.
+
+Each capture is analysed on its own, from scratch. Nothing measured in one
+sample is carried into another: opcode numbering, variable slots, machinery
+boundaries and operation meanings are all properties of the run they were
+measured in, and reusing them across samples would be assuming the answer.
+
+Where several captures of the SAME program are given, they are merged at the
+level of facts rather than text. The obfuscator takes a different path each run,
+so a later run can only ever add: an instruction explained in any run counts as
+explained, and a branch target counts as unexplored only when no run took it.
+A fact is never weakened by a run that did not reach it.
+
+    python3 driver.py capture.txt [more.txt ...] -o out
+    python3 driver.py --selftest
+"""
+import argparse
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+import cfgx            # noqa: E402
+import dataflow        # noqa: E402
+import decoy           # noqa: E402
+import emit            # noqa: E402
+import evidence        # noqa: E402
+import exprs           # noqa: E402
+import noise           # noqa: E402
+import opsem           # noqa: E402
+import stackint        # noqa: E402
+import tracefmt        # noqa: E402
+import verify          # noqa: E402
+
+
+class Analysis:
+    """Everything one capture supports, and the reports that explain it."""
+
+    def __init__(self, capture):
+        self.capture = capture
+        self.machinery, self.regions = noise.analyse(capture.rows)
+        self.program, self.bursts = noise.split(capture.rows, self.machinery)
+        self.models = opsem.measure(capture.rows, machinery=self.machinery)
+        self.lift = stackint.lift(capture.rows, self.program, self.models)
+        self.named = opsem.identify(self.models, self.lift.instances())
+        self.slots = dataflow.infer_slots(self.lift)
+        self.alias = dataflow.alias(self.lift, self.slots)
+        self.tables = dataflow.infer_tables(self.lift)
+        self.calls, self.unmatched = exprs.match_calls(
+            self.lift, capture.calls)
+        self.cfg = cfgx.build(self.lift, self.slots)
+        self.env_ops, self.env_why = exprs.identify_env(
+            self.lift, self.models, self.calls, self.slots)
+        self.verdicts = decoy.classify(
+            self.lift, self.cfg, self.calls, self.slots, self.alias,
+            self.env_ops)
+        self.emitter = emit.Emitter(
+            self.lift, self.cfg, self.models, self.slots, self.alias,
+            self.calls, {pc: v.why for pc, v in self.verdicts.items()
+                         if v.verdict == evidence.DECOY})
+        self.emitter.run()
+        self.source = self.emitter.text()
+        self.verification, self.consistent = verify.report(
+            self.lift, self.models, self.verdicts)
+
+    def summary(self):
+        cov, explained, total = verify.coverage(self.lift, self.verdicts)
+        named = sum(1 for m in self.models.values() if m.operation)
+        arity = sum(1 for m in self.models.values() if m.pops is not None)
+        counts = {}
+        for v in self.verdicts.values():
+            counts[v.verdict] = counts.get(v.verdict, 0) + 1
+        L = ["SUMMARY - %s" % self.capture.name,
+             "=" * 46,
+             "captured instructions      %d" % len(self.capture.rows),
+             "interpreter machinery      %d folded away"
+             % (len(self.capture.rows) - len(self.program)),
+             "program instructions       %d" % len(self.program),
+             "distinct opcodes           %d, arity measured for %d, operation "
+             "proved for %d" % (len(self.models), arity, named),
+             "values recovered           %d (%d consumed from outside the "
+             "capture)" % (len(self.lift.values), self.lift.externals),
+             "stack desynchronisations   %d" % len(self.lift.divergences),
+             "variables                  %s"
+             % (len(set(list(self.slots.reads.values()) +
+                        list(self.slots.writes.values())))
+                if self.slots.active() else "not established"),
+             "basic blocks / loops       %d / %d"
+             % (len(self.cfg.blocks), len(self.cfg.loops)),
+             "calls matched to code      %d of %d recorded"
+             % (len(self.calls), len(self.calls) + len(self.unmatched)),
+             "unexplored branch targets  %d" % len(self.cfg.unexplored),
+             "instructions explained     %d of %d (%.0f%%)"
+             % (explained, total, 100 * cov),
+             "verdicts                   real %d, unproven %d, decoy %d"
+             % (counts.get(evidence.OBSERVED, 0),
+                counts.get(evidence.UNKNOWN, 0),
+                counts.get(evidence.DECOY, 0)),
+             "value checks               %s"
+             % ("all agreed with the VM" if self.consistent
+                else "DISAGREEMENTS FOUND - see the verification report"),
+             "",
+             "What this is: the program that ran, rebuilt from the VM's own",
+             "execution. What it is not: the original file. Text the compiler",
+             "discarded - names, comments, formatting - is gone for good, and",
+             "code that never ran is marked, not invented."]
+        return "\n".join(L)
+
+    def write(self, outdir):
+        os.makedirs(outdir, exist_ok=True)
+        files = {
+            "SUMMARY.txt": self.summary(),
+            "RECONSTRUCTED.lua": self.source,
+            "PROVENANCE.txt": self.emitter.provenance(),
+            "MACHINERY.txt": noise.report(self.capture.rows),
+            "OPCODES.txt": opsem.report(self.models),
+            "VALUES.txt": stackint.report(self.lift, self.models),
+            "VARIABLES.txt": dataflow.report(self.lift, self.slots) +
+                             "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
+                             self.tables.why,
+            "CONTROL_FLOW.txt": cfgx.report(self.cfg),
+            "DECOY.txt": decoy.report(self.verdicts, self.cfg),
+            "VERIFICATION.txt": self.verification,
+            "behaviour_check.lua": verify.behaviour_harness(self.source),
+        }
+        for name, body in files.items():
+            with open(os.path.join(outdir, name), "w", encoding="utf-8") as f:
+                f.write(body if body.endswith("\n") else body + "\n")
+        return sorted(files)
+
+
+def merge_summary(analyses):
+    """What several runs of the same program add up to."""
+    explained, unexplored, taken = set(), {}, set()
+    for a in analyses:
+        for pc, v in a.verdicts.items():
+            if v.verdict == evidence.OBSERVED:
+                explained.add(pc)
+        for b in a.cfg.branches:
+            for t in b["taken"]:
+                taken.add((b["pc"], t))
+            for t in b["untaken"]:
+                unexplored.setdefault((b["pc"], t), 0)
+                unexplored[(b["pc"], t)] += 1
+    still = sorted(k for k in unexplored if k not in taken)
+    L = ["ACROSS %d RUN(S)" % len(analyses),
+         "=" * 46,
+         "The obfuscator takes a different path each run, so runs can only add.",
+         "An instruction explained in any run counts as explained; a branch",
+         "target counts as unexplored only when no run took it.", "",
+         "instructions explained in at least one run: %d" % len(explained)]
+    for a in analyses:
+        cov, ex, tot = verify.coverage(a.lift, a.verdicts)
+        L.append("  %-28s %d of %d (%.0f%%)" % (a.capture.name, ex, tot, 100 * cov))
+    L.append("")
+    if still:
+        L.append("branch targets no run has entered (%d):" % len(still))
+        for pc, t in still[:40]:
+            L.append("  pc %d -> pc %d" % (pc, t))
+        L.append("")
+        L.append("Driving those paths in another capture is what would resolve")
+        L.append("them. They are not missing from the program; they are missing")
+        L.append("from the evidence.")
+    else:
+        L.append("every branch target seen in these captures was entered by some")
+        L.append("run.")
+    return "\n".join(L)
+
+
+def selftest():
+    """Round-trip the engine against programs whose source is known.
+
+    The reference VM compiles a known program, randomises its opcode numbering,
+    hides its constants behind a resolver and buries it in machinery. The engine
+    then gets only the capture. What it rebuilds is compared with the program
+    that produced it."""
+    import refvm
+    ok = True
+    print("SELF-TEST - reconstructing programs whose source is known")
+    print("=" * 62)
+    for name in ("rich", "loop", "calls", "branch"):
+        prog = refvm.FIXTURES[name]()
+        text, em = refvm.run(prog)
+        a = Analysis(tracefmt.Capture(text, name))
+        truth = {v: k for k, v in em.opnum.items()}
+        wrong = []
+        for op, m in a.models.items():
+            t = truth.get(op, "")
+            if t.startswith("MACH") or t == "HALT" or m.pops is None:
+                continue
+            want = refvm.ISA.get(t)
+            if want is None:
+                continue
+            if isinstance(want[0], str):
+                if m.pushes != 1:
+                    wrong.append("%s arity" % t)
+            elif (m.pops, m.pushes) != want:
+                wrong.append("%s arity %d->%d, expected %d->%d"
+                             % (t, m.pops, m.pushes, want[0], want[1]))
+        for op, m in a.models.items():
+            if m.operation and truth.get(op) != m.operation:
+                wrong.append("OP named %s but it is %s"
+                             % (m.operation, truth.get(op)))
+        truth_decoys = {i for i, ins in enumerate(prog.code) if ins[0] == "DECOY"}
+        found = {pc for pc, v in a.verdicts.items()
+                 if v.verdict == evidence.DECOY and pc < len(prog.code)}
+        missed = truth_decoys - found
+        false = found - truth_decoys
+        if missed:
+            wrong.append("missed decoy at pc %s" % sorted(missed))
+        if false:
+            wrong.append("called real code a decoy at pc %s" % sorted(false))
+        if not a.consistent:
+            wrong.append("value checks disagreed with the VM")
+        if a.lift.divergences:
+            wrong.append("%d stack desynchronisation(s)" % len(a.lift.divergences))
+        status = "PASS" if not wrong else "FAIL"
+        ok = ok and not wrong
+        print("\n[%s] %s" % (status, name))
+        for w in wrong:
+            print("       %s" % w)
+        print("  ---- original ----")
+        for ln in prog.source.rstrip().splitlines():
+            print("  | " + ln)
+        print("  ---- rebuilt from the capture alone ----")
+        for ln in a.source.splitlines():
+            if ln.startswith("--") or not ln.strip():
+                continue
+            print("  | " + ln)
+    print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
+    return 0 if ok else 1
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("captures", nargs="*")
+    ap.add_argument("-o", "--out", default="out")
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    if not a.captures:
+        ap.error("give at least one capture file, or --selftest")
+    analyses = []
+    for cap in tracefmt.load(a.captures):
+        an = Analysis(cap)
+        sub = os.path.join(a.out, os.path.splitext(cap.name)[0])
+        names = an.write(sub)
+        analyses.append(an)
+        print(an.summary())
+        print("\nwritten to %s: %s\n" % (sub, ", ".join(names)))
+    if len(analyses) > 1:
+        body = merge_summary(analyses)
+        os.makedirs(a.out, exist_ok=True)
+        with open(os.path.join(a.out, "ACROSS_RUNS.txt"), "w") as f:
+            f.write(body + "\n")
+        print(body)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

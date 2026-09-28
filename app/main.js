@@ -265,24 +265,27 @@ ipcMain.handle('finalize', async (_e, { filePath, outDir, traceText, candidatePa
   const traceFile = path.join(outDir, 'result.txt');
   fs.writeFileSync(traceFile, traceText);
   const args = [DEOB, filePath, '-o', outDir, '--trace', traceFile];
-  if (candidatePath) args.push('--candidate', candidatePath);
   const r = await runPython(args);
   const readMaybe = (f) => { try { return fs.readFileSync(path.join(outDir, f), 'utf8'); } catch (_) { return null; } };
   const reconstructed = readMaybe('RECONSTRUCTED.lua');
   return {
     code: r.code, stdout: r.out, stderr: r.err,
     stages: parseStages(r.out),
-    behavior: readMaybe('BEHAVIOR.txt'),
+    behavior: readMaybe('DECOY.txt'),
     reconstructed,
-    // the richest combined outputs (shown in the UI when present)
-    final: readMaybe('FINAL_RECONSTRUCTION.txt'),
-    logic: readMaybe('LOGIC.txt'),
+    // every report the analysis writes
+    final: readMaybe('SUMMARY.txt'),
+    logic: readMaybe('PROVENANCE.txt'),
     controlFlow: readMaybe('CONTROL_FLOW.txt'),
-    flow: readMaybe('FLOW.txt'),
-    disassembly: readMaybe('DISASSEMBLY.txt'),
-    opcodeMap: readMaybe('OPCODE_MAP.txt'),
-    // prefer the consolidated final report as the main "source" view
-    finalSource: readMaybe('FINAL_SOURCE.lua') || readMaybe('FINAL_RECONSTRUCTION.txt') || reconstructed,
+    flow: readMaybe('VARIABLES.txt'),
+    disassembly: readMaybe('VALUES.txt'),
+    opcodeMap: readMaybe('OPCODES.txt'),
+    machinery: readMaybe('MACHINERY.txt'),
+    verification: readMaybe('VERIFICATION.txt'),
+    behaviourCheck: readMaybe('behaviour_check.lua'),
+    acrossRuns: readMaybe('ACROSS_RUNS.txt'),
+    // the reconstruction is the source view; the summary explains it
+    finalSource: reconstructed,
     verdict: (parseStages(r.out).audit || '').trim()
   };
 });
@@ -296,14 +299,19 @@ ipcMain.handle('run-all', async (_e, { filePath, extraTraces }) => {
   const readMaybe = (f) => { try { return fs.readFileSync(path.join(outDir, f), 'utf8'); } catch (_) { return null; } };
   const collect = () => ({
     outDir,
-    final: readMaybe('FINAL_RECONSTRUCTION.txt'),
-    logic: readMaybe('LOGIC.txt'),
-    flow: readMaybe('FLOW.txt'),
-    disassembly: readMaybe('DISASSEMBLY.txt'),
-    opcodeMap: readMaybe('OPCODE_MAP.txt'),
-    behavior: readMaybe('BEHAVIOR.txt'),
+    final: readMaybe('SUMMARY.txt'),
+    logic: readMaybe('PROVENANCE.txt'),
+    flow: readMaybe('VARIABLES.txt'),
+    controlFlow: readMaybe('CONTROL_FLOW.txt'),
+    disassembly: readMaybe('VALUES.txt'),
+    opcodeMap: readMaybe('OPCODES.txt'),
+    machinery: readMaybe('MACHINERY.txt'),
+    verification: readMaybe('VERIFICATION.txt'),
+    behaviourCheck: readMaybe('behaviour_check.lua'),
+    acrossRuns: readMaybe('ACROSS_RUNS.txt'),
+    behavior: readMaybe('DECOY.txt'),
     reconstructed: readMaybe('RECONSTRUCTED.lua'),
-    finalSource: readMaybe('FINAL_SOURCE.lua') || readMaybe('RECONSTRUCTED.lua'),
+    finalSource: readMaybe('RECONSTRUCTED.lua'),
     vmStructure: readMaybe('vm_structure.txt')
   });
 

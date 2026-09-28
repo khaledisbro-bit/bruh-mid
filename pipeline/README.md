@@ -1,60 +1,62 @@
-# VmSmart deobfuscation pipeline
+# pipeline
 
-One program does every stage. It reads the **whole** obfuscated file (nothing is
-truncated) and never fabricates: everything in the reports is derived from the
-bytes or observed at runtime.
-
-## One command
+From an obfuscated Luau file to a reconstruction, in four stages.
 
 ```
-python3 deob.py <obf.lua>
+python3 deob.py obf.lua                       # detect, unwrap, write the harness
+#   run out/harness.lua in your executor, save its BEGIN..END block
+python3 deob.py obf.lua --trace capture.txt   # analyse
 ```
 
-This runs:
-1. DETECT  - identify the obfuscator family and per-build knobs.
-2. STATIC  - unwrap layer 1, dump inner VM source/data, lift the import table.
-3. HARNESS - write `out/harness.lua` with the full obfuscated script embedded.
+| stage | what happens |
+|---|---|
+| 1 DETECT | identify the outer layer and unwrap it (`unobf.py`) |
+| 2 STATIC | dump the inner interpreter and what the bytes give up without running (`lift.py`) |
+| 3 HARNESS | embed the **whole** file in a harness that captures the interpreter's own execution (`universal.lua`) |
+| 4 ANALYSE | lift the capture into a value graph and rebuild the program from it (`core/`) |
 
-Then run `out/harness.lua` in your executor and save everything it prints (or the
-`opcode_trace.txt` / `resolved_constants.txt` files it writes) and feed them back:
+Stage 4 is the deobfuscator. It is documented in [`core/README.md`](core/README.md),
+and it is built under one rule: nothing is reconstructed from recognition. No
+stage matches a known string, API or sample and emits prepared output. Everything
+is measured from the capture in front of it, because this obfuscator randomises
+opcode numbering per run, decrypts constants only at runtime, duplicates handlers
+and mixes decoy work into real work.
+
+Check it yourself:
 
 ```
-python3 deob.py <obf.lua> --trace result.txt
+python3 core/driver.py --selftest
 ```
 
-You can pass **several** traces from different runs; the obfuscator takes a
-different path each run, so more runs reveal more of the program and they are
-merged into one report:
+That compiles programs whose source is known through a reference VM which
+randomises the opcode numbering, hides the constants behind a resolver and buries
+everything in interpreter machinery, hands the engine only the capture, and
+compares what comes back with what went in.
 
-```
-python3 deob.py <obf.lua> --trace run1.txt run2.txt opcode_trace.txt resolved_constants.txt
-```
+## Files
 
-## What you get in `out/`
+| file | role |
+|---|---|
+| `deob.py` | the driver for all four stages |
+| `unobf.py` | outer-layer unwrapping and interpreter structure detection |
+| `lift.py` | static recovery from the inner data block, without executing |
+| `universal.lua` | the capture harness (resolver and dispatch instrumentation) |
+| `unobf.lua` | the earlier family-specific harness, kept for comparison |
+| `core/` | the analysis engine |
 
-- `FINAL_RECONSTRUCTION.txt` - the combined picture: what the script is, the API
-  surface grouped by area, a reconstructed Lua skeleton, merged across all runs.
-- `FLOW.txt`         - real program operations with the actual values that flowed.
-- `DISASSEMBLY.txt`  - the executed instruction stream, machinery folded, opcodes
-  named where their stack effect is verified.
-- `OPCODE_MAP.txt`   - each opcode's verified meaning (measured stack effect).
-- `RECONSTRUCTED.lua`- source-shaped rebuild from one run's evidence.
-- `BEHAVIOR.txt`     - REAL vs DECOY (anti-tamper) split + coverage audit.
-- `vm_structure.txt`, `vm_imports.txt`, `inner_source.lua`, `inner_data.bin`.
+## Reports it writes
 
-## Modules (each stage, importable)
-
-- `unobf.py`  layer-1 unwrap + inner-VM static analysis
-- `lift.py`   static import-table / string recovery from the VM bytes
-- `ai.py`     decoy classifier, constant filter, coverage audit
-- `devirt.py` opcode-trace disassembly + machinery folding
-- `opmap.py`  opcode semantics from handler bodies, verified vs the trace
-- `flow.py`   value-flow: attach real decoded values to the program ops
-- `final.py`  merge every run into one reconstruction
-- `universal.lua` the executor harness (embeds the full obf, hooks resolver +
-  dispatch; dispatch trace is applied to one chunk only, integrity-safe)
-
-Honesty: this recovers the program's real constant + behaviour surface. It is not
-byte-exact source - the VM discards the original text and randomizes opcodes per
-run, so unrun branches and exact statement structure are left unrecovered rather
-than guessed.
+| file | contents |
+|---|---|
+| `RECONSTRUCTED.lua` | the program, every line tagged with its evidence class |
+| `PROVENANCE.txt` | why each emitted line exists, and from which instructions |
+| `SUMMARY.txt` | what was recovered, and what was not |
+| `VERIFICATION.txt` | every named operation and value recomputed against the VM's record |
+| `behaviour_check.lua` | run the reconstruction under the same watched environment and compare call sequences |
+| `MACHINERY.txt` | which instructions are the interpreter's own, and why |
+| `OPCODES.txt` | each opcode's measured arity and proved operation |
+| `VALUES.txt` | the value graph, and any place the replay disagreed with the VM |
+| `VARIABLES.txt` | the variables found, and the proof that found them |
+| `CONTROL_FLOW.txt` | blocks, loops, and branch targets nothing entered |
+| `DECOY.txt` | what influences the program's behaviour and what does not |
+| `ACROSS_RUNS.txt` | what several runs of the same program add up to |

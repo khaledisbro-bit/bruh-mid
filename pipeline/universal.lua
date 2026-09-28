@@ -29,7 +29,7 @@ local rtask = realenv.task
 -- rebuilds opcodes the same way). Instead we capture constants where they are
 -- HIGH SIGNAL: the real arguments passed to API calls (logProxy / logForward
 -- below). Those are the program's genuine strings/numbers, e.g.
--- GetDataStore("PlayerStats_V2") and captured argument tables.
+-- the real receiver, method and argument values of every call made.
 
 -- executor-sim stubs so executor scripts run in Studio too
 local genv = {}
@@ -216,7 +216,7 @@ env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return 
 
 -- Server-only services throw on a client executor and stop the trace. Proxy
 -- `game` so GetService returns LOGGING PROXIES: every method call and its
--- arguments are recorded (e.g. GetDataStore("PlayerStats_V2"),
+-- arguments are recorded exactly as the program passed them,
 -- SetAsync(key, {...})), which recovers real names/keys/values, much closer to
 -- source than bare service names. typeof(game) ~= "DataModel" here, an accepted
 -- limit of universal mode.

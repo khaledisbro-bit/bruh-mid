@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""
+stackint.py - lift the instruction stream into a value graph.
+
+The VM is a stack machine, so the program's expressions are implicit in the
+order values are pushed and popped. Replaying that stack symbolically turns the
+flat instruction list back into a graph: every instruction consumes the values
+its predecessors produced, and the edges of that graph are the program's
+expressions.
+
+Arity is decided per instruction, not per opcode. Every record carries the stack
+pointer before the instruction ran and the value the instruction left pending, so
+for that one instruction:
+
+    pushes = 1 if it left a value, else 0
+    pops   = pushes - (stack pointer after - stack pointer before)
+
+The opcode-level model from opsem is used as a cross-check and as the fallback
+when an instance has no measurement of its own. When the two disagree the
+instruction is lifted from what was observed and both readings are recorded, so
+the disagreement stays visible instead of being smoothed away.
+
+The replay is checked against the VM as it goes: after each instruction the
+simulated stack height must equal the stack pointer the VM reported next. Where
+it does not, the lifter says so, resynchronises from the VM's own value, and
+marks the values involved UNKNOWN. A silent desynchronisation would invent
+expressions, which is the one thing this must never do.
+"""
+from evidence import OBSERVED, INFERRED, UNKNOWN, Fact
+
+CONST = "const"
+COMPUTED = "computed"
+EXTERNAL = "external"
+
+
+class Value:
+    """One value produced by one instruction (an SSA definition)."""
+
+    __slots__ = ("id", "kind", "op", "pc", "row", "inputs", "runtime",
+                 "operands", "fact", "uses", "slot")
+
+    def __init__(self, vid, kind, op=None, pc=None, row=None, inputs=(),
+                 runtime=None, operands=()):
+        self.id = vid
+        self.kind = kind
+        self.op = op
+        self.pc = pc
+        self.row = row
+        self.inputs = list(inputs)
+        self.runtime = runtime
+        self.operands = list(operands)
+        self.uses = []
+        self.slot = None
+        self.fact = Fact("value", UNKNOWN)
+
+    def __repr__(self):
+        return "v%d" % self.id
+
+
+class Step:
+    """One lifted instruction."""
+
+    __slots__ = ("row", "pc", "op", "pops", "pushes", "popped", "pushed",
+                 "operands", "sp", "net", "fact", "aligned")
+
+    def __init__(self, row, pc, op, operands, sp):
+        self.row = row
+        self.pc = pc
+        self.op = op
+        self.operands = operands
+        self.sp = sp
+        self.pops = self.pushes = 0
+        self.popped = []
+        self.pushed = []
+        self.net = None
+        self.aligned = True
+        self.fact = Fact("instruction", OBSERVED)
+
+    def __repr__(self):
+        return "pc%d:OP_%d" % (self.pc, self.op)
+
+
+class Lift:
+    def __init__(self):
+        self.values = []
+        self.steps = []
+        self.divergences = []
+        self.externals = 0
+
+    def new_value(self, *a, **kw):
+        v = Value(len(self.values), *a, **kw)
+        self.values.append(v)
+        return v
+
+    def instances(self):
+        """Per-opcode (input runtime values, result runtime value), for the
+        value-algebra pass in opsem."""
+        out = {}
+        for st in self.steps:
+            if len(st.pushed) != 1:
+                continue
+            res = st.pushed[0].runtime
+            ins = tuple(self.values[i].runtime for i in st.pushed[0].inputs)
+            out.setdefault(st.op, []).append((ins, res))
+        return out
+
+    def consumers(self):
+        c = {}
+        for st in self.steps:
+            for v in st.popped:
+                c.setdefault(v.id, []).append(st)
+        return c
+
+
+def _is_value(v):
+    return v is not None and v != "nil"
+
+
+def lift(rows, program_rows, models):
+    """Replay the program's stack symbolically.
+
+    `rows` is the raw capture (needed to read the value each instruction left
+    pending, which is reported on the record that follows it). `program_rows` is
+    the same list with interpreter machinery removed."""
+    nxt_value = {}
+    nxt_sp = {}
+    for i, r in enumerate(rows):
+        if i + 1 < len(rows):
+            nxt_value[r["i"]] = rows[i + 1]["value"]
+    order = [r["i"] for r in program_rows]
+    pos = {rid: k for k, rid in enumerate(order)}
+    for k, r in enumerate(program_rows):
+        if k + 1 < len(program_rows):
+            nxt_sp[r["i"]] = program_rows[k + 1]["sp"]
+
+    L = Lift()
+    stack = []
+    for r in program_rows:
+        rid = r["i"]
+        st = Step(rid, r["pc"], r["opcode"], r["operands"], r["sp"])
+        product = nxt_value.get(rid)
+        after = nxt_sp.get(rid)
+        m = models.get(r["opcode"])
+
+        pops, pushes, why, ev = _arity(r, product, after, m)
+        st.pops, st.pushes, st.net = pops, pushes, (
+            None if after is None or r["sp"] is None else after - r["sp"])
+
+        # align the simulated stack with what the VM reported before this
+        # instruction; a mismatch means an earlier arity was wrong.
+        if r["sp"] is not None and len(stack) != r["sp"]:
+            L.divergences.append((rid, r["pc"], len(stack), r["sp"]))
+            st.aligned = False
+            while len(stack) < r["sp"]:
+                ext = L.new_value(EXTERNAL, pc=r["pc"], row=rid)
+                ext.fact.evidence = UNKNOWN
+                ext.fact.note("stackint.resync",
+                              "the VM reported a deeper stack than the replay "
+                              "had built, so this slot was produced by an "
+                              "instruction the capture does not cover",
+                              pcs=(r["pc"],), steps=(rid,))
+                L.externals += 1
+                stack.insert(0, ext)
+            while len(stack) > r["sp"]:
+                stack.pop()
+
+        popped = []
+        for _ in range(pops):
+            if stack:
+                popped.append(stack.pop())
+            else:
+                ext = L.new_value(EXTERNAL, pc=r["pc"], row=rid)
+                ext.fact.evidence = UNKNOWN
+                ext.fact.note("stackint.underflow",
+                              "consumed a value the traced window never saw "
+                              "produced", pcs=(r["pc"],), steps=(rid,))
+                L.externals += 1
+                popped.append(ext)
+        popped.reverse()
+        st.popped = popped
+
+        for n in range(pushes):
+            kind = CONST if (pops == 0 and _is_value(product)) else COMPUTED
+            v = L.new_value(kind, op=r["opcode"], pc=r["pc"], row=rid,
+                            inputs=[p.id for p in popped],
+                            runtime=(product if n == pushes - 1 else None),
+                            operands=r["operands"])
+            v.fact.evidence = ev
+            v.fact.note("stackint.lift", why, pcs=(r["pc"],),
+                        opcodes=(r["opcode"],), steps=(rid,),
+                        inputs=tuple(p.id for p in popped))
+            stack.append(v)
+            st.pushed.append(v)
+
+        st.fact.note("stackint.arity", why, pcs=(r["pc"],),
+                     opcodes=(r["opcode"],), steps=(rid,))
+        L.steps.append(st)
+
+    for st in L.steps:
+        for v in st.popped:
+            v.uses.append(st.row)
+    return L
+
+
+def _arity(row, product, after, model):
+    """Decide how many values this one instruction consumed and produced."""
+    produced = _is_value(product)
+    net = None
+    if after is not None and row["sp"] is not None:
+        net = after - row["sp"]
+
+    if net is not None:
+        pushes = max(1, net) if produced else max(0, net)
+        pops = pushes - net
+        if pops < 0:
+            pushes, pops = max(net, 0), 0
+        why = ("stack pointer moved %+d and the instruction left %s pending, so "
+               "it consumed %d and produced %d"
+               % (net, "a value" if produced else "nothing", pops, pushes))
+        ev = OBSERVED
+        if model is not None and model.pops is not None and \
+                (model.pops, model.pushes) != (pops, pushes):
+            why += ("; this run of OP_%d disagrees with the opcode's usual "
+                    "%d->%d, so the measurement here is used"
+                    % (row["opcode"], model.pops, model.pushes))
+            ev = UNKNOWN
+        return pops, pushes, why, ev
+
+    if model is not None and model.pops is not None:
+        return (model.pops, model.pushes,
+                "no stack pointer follows this instruction, so OP_%d's measured "
+                "%d->%d is used" % (row["opcode"], model.pops, model.pushes),
+                INFERRED)
+
+    return (0, 1 if produced else 0,
+            "neither this instruction nor OP_%d has a measured stack effect; "
+            "assumed to consume nothing" % row["opcode"], UNKNOWN)
+
+
+def report(L, models):
+    L2 = ["VALUE GRAPH (symbolic replay of the VM stack)",
+          "=" * 46,
+          "Each instruction was replayed against the stack pointer the VM itself",
+          "reported. Arity is taken from that measurement per instruction, not",
+          "from an opcode table.", "",
+          "instructions lifted: %d" % len(L.steps),
+          "values defined: %d" % len(L.values),
+          "values consumed from outside the traced window: %d" % L.externals,
+          "stack desynchronisations: %d" % len(L.divergences)]
+    if L.divergences:
+        L2.append("")
+        L2.append("where the replay disagreed with the VM (resynchronised from")
+        L2.append("the VM, values there marked UNKNOWN):")
+        for rid, pc, got, want in L.divergences[:20]:
+            L2.append("  row %-6d pc %-6d replay had %d slot(s), VM reported %d"
+                      % (rid, pc, got, want))
+        if len(L.divergences) > 20:
+            L2.append("  ... %d more" % (len(L.divergences) - 20))
+    return "\n".join(L2)

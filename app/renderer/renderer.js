@@ -113,7 +113,7 @@ async function analyzeFile(filePath) {
     setStage('detect', 'done', 'unknown family');
     setStage('static', 'done', 'universal dynamic trace');
     setStage('harness', 'run', 'ready (behavior mode)');
-    $('#finalLbl').textContent = 'Universal mode: recovering behavior (no static plugin for this family)';
+    $('#finalLbl').textContent = 'Universal mode: the capture carries the analysis for this family';
   } else {
     setStage('detect', 'done', family);
     setStage('static', 'done', r.stages.static || 'unwrapped');
@@ -186,29 +186,39 @@ async function finalize(traceText) {
     .catch(e => ({ code: -1, stderr: String(e) }));
   if (!r || r.code === -1) { setStage('audit', '', 'verify error: ' + ((r && r.stderr) || 'unknown')); return; }
   const verdict = (r.verdict || '').trim();
-  // main view priority: consolidated FINAL report > certified source > behavior
-  const main = r.final || r.finalSource;
+  // main view: the reconstruction itself, with the summary beside it
+  const main = r.finalSource || r.final;
   setStage('audit', 'done', verdict || 'reconstructed');
   $('#verdictBox').innerHTML = `<span class="verdict ${verdict === 'CONSISTENT' ? 'ok' : 'ok'}">${verdict || 'RECONSTRUCTED'}</span>`;
   if (main) {
     state.finalSource = main;
-    $('#finalLbl').textContent = r.final ? 'Final reconstruction (merged runs)' : 'Recovered source';
-    if (r.final) { $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = main; }
+    $('#finalLbl').textContent = r.finalSource ? 'Reconstruction (evidence-tagged)' : 'Analysis summary';
+    if (main) { $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = main; }
     else showSource($('#finalCode'), main);
   } else {
     $('#finalLbl').textContent = 'What the script actually does';
-    const shown = (r.behavior && r.behavior.trim().length > 12) ? r.behavior : (state.lastTrace || 'No behavior recorded.');
+    const shown = (r.verification && r.verification.trim().length > 12) ? r.verification
+              : ((r.behavior && r.behavior.trim().length > 12) ? r.behavior
+              : (state.lastTrace || 'Nothing captured yet.'));
     $('#finalCode').classList.remove('empty'); $('#finalCode').textContent = shown;
   }
-  // constants tab shows the deepest recovery: logic (evidence-tagged) + flow
+  // detail tab: why every line exists, then the variables and the machinery split
   const parts = [];
+  if (r.final && r.final.trim()) parts.push(r.final.trim());
   if (r.logic && r.logic.trim()) parts.push(r.logic.trim());
   if (r.flow && r.flow.trim()) parts.push(r.flow.trim());
+  if (r.machinery && r.machinery.trim()) parts.push(r.machinery.trim());
+  if (r.controlFlow && r.controlFlow.trim()) parts.push(r.controlFlow.trim());
+  if (r.acrossRuns && r.acrossRuns.trim()) parts.push(r.acrossRuns.trim());
   if (!parts.length) parts.push((r.behavior && r.behavior.trim()) || state.lastTrace || '');
   const constText = parts.join('\n\n' + '='.repeat(46) + '\n\n');
   if (constText) { $('#constCode').classList.remove('empty'); $('#constCode').textContent = constText; }
   // stash the extra reports for the executor/structure panes and history
-  state.reports = { final: r.final, logic: r.logic, flow: r.flow, disassembly: r.disassembly, opcodeMap: r.opcodeMap, behavior: r.behavior };
+  state.reports = { summary: r.final, provenance: r.logic, variables: r.flow,
+                    values: r.disassembly, opcodes: r.opcodeMap,
+                    machinery: r.machinery, controlFlow: r.controlFlow,
+                    decoy: r.behavior, verification: r.verification,
+                    behaviourCheck: r.behaviourCheck, acrossRuns: r.acrossRuns };
   if (r.disassembly) { const el = $('#structRaw'); if (el) el.textContent = r.disassembly; }
   pushHistory(verdict || 'RECONSTRUCTED');
 }
