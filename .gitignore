@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 app/node_modules/
 app/dist/
+
+# packaged build, rebuilt on demand from pipeline/ and app/
+VmSmart.zip
