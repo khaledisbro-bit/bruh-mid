@@ -159,10 +159,14 @@ def summarize(text, max_lines=600, vm_source=None):
     out.append("skeleton is visible - nothing is invented.")
     out.append("")
     if sem:
-        out.append("verified opcode semantics: %d of %d opcodes CONFIRMED from the"
-                   % (len(sem), len(hist)))
-        out.append("VM's own handlers (see OPCODE_MAP.txt). Confirmed ops are named")
-        out.append("below; the rest stay OP_<n> - never renamed on a guess.")
+        covered = sum(hist[op] for op in sem)
+        allf = sum(hist.values())
+        out.append("verified opcode semantics: %d of %d opcodes, covering %.0f%% of"
+                   % (len(sem), len(hist), 100.0 * covered / max(allf, 1)))
+        out.append("executed instructions. Opcode numbers RANDOMIZE per run, so")
+        out.append("meaning is taken from the MEASURED stack effect of each opcode")
+        out.append("in this run (push/pop), cross-checked with the VM's handlers.")
+        out.append("Named below; the rest stay OP_<n> - never renamed on a guess.")
         out.append("")
     out.append("opcode histogram (top 30 by frequency; * = confirmed semantic):")
     for op, n in hist.most_common(30):

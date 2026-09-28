@@ -120,10 +120,86 @@ def stack_profile(steps_sp):
     return out
 
 
+def _operand_kind(steps, op):
+    """Dominant operand shape for an opcode across the trace: does it carry a
+    constant key (huge int), a slot/upvalue ref (small negative), or plain
+    register/count operands? Used to refine the stack-delta semantic."""
+    huge = neg = small = none = 0
+    for _pc, o, od in steps:
+        if o != op:
+            continue
+        if not od:
+            none += 1; continue
+        vals = []
+        for x in od:
+            try:
+                vals.append(int(x))
+            except ValueError:
+                pass
+        if any(abs(v) > 100000 for v in vals):
+            huge += 1
+        elif any(-16 <= v < 0 for v in vals):
+            neg += 1
+        else:
+            small += 1
+    best = max((huge, "const"), (neg, "slot"), (small, "reg"), (none, "none"))
+    return best[1]
+
+
+def _delta_semantic(delta, kind):
+    """Honest, run-independent label from the MEASURED stack effect plus the
+    operand shape. Coarse but never fabricated - it states what the instruction
+    provably does to the stack."""
+    if delta == 1:
+        if kind == "const":
+            return "LOADK    push a constant"
+        if kind == "slot":
+            return "GETUPVAL push an upvalue / env slot"
+        if kind == "none":
+            return "PUSH     push new value (table/nil/bool)"
+        return "PUSH     push one value"
+    if delta == 2:
+        return "PUSH2    produce two values (e.g. key+value / iterator)"
+    if delta == -1:
+        return "STORE    consume one (setglobal/settable/move-out)"
+    if delta == -2:
+        return "BINOP    consume two (arith / compare / concat / call)"
+    if delta == -3:
+        return "REDUCE   consume three (call / 3-arg op)"
+    if delta == 0:
+        if kind == "none":
+            return "JMP/NOP  no stack change"
+        return "MOVE/TEST neutral (move / compare / jump)"
+    if delta and delta > 2:
+        return "PUSHN    produce %d values" % delta
+    return "STACK %+d" % delta
+
+
+# a static handler label implies a net stack delta; used only to CROSS-CHECK
+# the measured delta (they must agree, or the static label is stale/wrong).
+_IMPLIED_DELTA = {
+    "PUSHK": 1, "PUSH": 1, "NEWTABLE": 1, "NEWTABLE+PUSH slot/upvalue": 1,
+    "ADDK": 0, "ADD": -1, "SUB": -1, "MUL": -1, "DIV": -1, "MOD": -1,
+    "RETURN": None, "CALL/UNPACK": None, "JUMP/branch": 0,
+    "IF_NE": 0, "IF_EQ": 0, "IF_LT": 0, "TEST_SUB": 0, "MULMOD": -1,
+}
+
+
+def _implied(sem):
+    if not sem:
+        return None
+    for key, d in _IMPLIED_DELTA.items():
+        if sem.startswith(key):
+            return d
+    return None
+
+
 def build_map(src, steps, steps_sp=None):
     """steps: list of (pc, op, operands). steps_sp (optional): same with a 4th
     stack-pointer field, enabling execution-measured push/pop verification.
-    Returns {op: {...}} with verdicts."""
+    Returns {op: {...}} with verdicts. The MEASURED stack delta is the source of
+    truth (run-independent); a static handler label is kept only when it agrees
+    with that delta."""
     arity = {}
     freq = Counter()
     for _pc, op, od in steps:
@@ -154,16 +230,26 @@ def build_map(src, steps, steps_sp=None):
             gsem = {classify(b) for b in cands}; gsem.discard(None)
             if len(gsem) == 1 and matched:
                 sem = next(iter(gsem)); verdict = "LIKELY"
-        # execution-measured stack effect: confirms opcodes the static pass missed,
-        # and cross-checks the ones it found.
+        # MEASURED stack delta is the source of truth (run-independent). Opcode
+        # numbers randomize per run, so a static handler label is trusted only
+        # when its implied delta matches the measured one; otherwise it is stale.
         delta = sprof.get(op)
-        if delta is not None and verdict in ("UNKNOWN", "AMBIGUOUS"):
-            label = {1: "PUSH (+1) produces one value",
-                     0: "NEUTRAL (move / jump / test)",
-                     -1: "POP/STORE (-1) consumes one value"}.get(
-                         delta, "STACK %+d (n-ary combine)" % delta)
-            sem = label
-            verdict = "STACK"  # verified by real execution, semantics coarse
+        if delta is not None:
+            kind = _operand_kind(steps, op)
+            measured = _delta_semantic(delta, kind)
+            imp = _implied(sem) if verdict in ("CONFIRMED", "LIKELY") else None
+            if sem and imp is not None and imp == delta:
+                sem = "%s  [static: %s]" % (measured, sem.split("  ")[0])
+                verdict = "CONFIRMED"     # measured + static agree
+            else:
+                sem = measured            # trust the measurement
+                verdict = "STACK"
+        elif steps_sp:
+            # a stack pointer was logged but this opcode got no stable delta
+            # (too rare, or never on an adjacent-pc pair). Opcode numbers
+            # randomize per run, so an unverified static label would be a guess.
+            sem, verdict = None, "UNKNOWN"
+        # else: old 3-field trace with no stack data -> keep the static verdict
         out[op] = {"freq": freq[op], "operands": a, "candidates": len(cands),
                    "arity_matched": len(matched), "semantic": sem,
                    "verdict": verdict, "stack_delta": delta}
