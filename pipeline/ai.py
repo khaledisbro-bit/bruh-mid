@@ -121,19 +121,41 @@ def confidence(cls, tr):
     """Score how much we trust the separation, with a plain reason."""
     real, decoy = len(cls.get("REAL", [])), len(cls.get("DECOY", []))
     gauntlet = decoy > 0 and any("anti-tamper probe" in w or "gauntlet" in w for _, w in cls.get("DECOY", []))
+    meaningful_print = any(p.strip() for p in tr.get("prints", []))
     if tr.get("run_ok") is False:
         return "LOW", "the VM did not finish (anti-tamper or error); behavior is partial"
-    if real == 0 and not tr.get("prints") and not tr.get("ops"):
-        return "LOW", "no real behavior isolated; the program may be event-gated or bytecode-only"
     if gauntlet and real >= 3:
         return "HIGH", "anti-tamper gauntlet identified and filtered; real API surface captured"
     if real >= 1:
         return "MEDIUM", "real behavior captured; decoy separation partial"
+    if meaningful_print:
+        return "MEDIUM", "program produced printed output; that output is its real result"
+    if not tr.get("ops"):
+        return "LOW", "no real behavior isolated; the program may be event-gated or bytecode-only"
     return "LOW", "little signal captured"
+
+
+# Harness / executor bookkeeping that is not program behavior: the duplicated
+# PRINT: lines (already shown as program output), the wait-loop guard, executor
+# stack traces, result markers, and bare timestamp lines (Latin or Arabic-Indic
+# digits). These must never be classified as REAL or clutter "uncertain".
+_NOISE_TOK = ("WAIT_BUDGET", "Stack Begin", "Stack End", "Script '",
+              "UNOBF_RESULT", "resolved=", "[patched resolver")
+_TS = re.compile(r"^[\d٠-٩]{1,2}[:٫۱-۹\d]")
+
+
+def _is_noise(l):
+    s = l.strip()
+    if not s or s.startswith("PRINT:"):
+        return True
+    if any(t in l for t in _NOISE_TOK):
+        return True
+    return bool(_TS.match(s))
 
 
 def classify_behavior(lines):
     """Return dict with REAL / DECOY / LOADER / UNKNOWN lists of (line, reason)."""
+    lines = [l for l in lines if not _is_noise(l)]
     gauntlet = any(looks_random(_instance_arg(l) or "") for l in lines)
     out = {"REAL": [], "DECOY": [], "LOADER": [], "UNKNOWN": []}
     for l in lines:
@@ -169,6 +191,7 @@ def parse_trace(text):
     body = m.group(1) if m else text
     lines = body.splitlines()
     tr = {"run_ok": None, "ops": [], "strings": [], "behavior": [], "module": [], "prints": []}
+    tr["wait_budget"] = "WAIT_BUDGET" in text
     section = None
     for ln in lines:
         if ln.startswith("run_ok:"):
@@ -187,6 +210,13 @@ def parse_trace(text):
         if ln.startswith("K: "):
             tr.setdefault("consts", []).append(ln[3:])
     tr.setdefault("consts", [])
+    # the same line can be echoed by both the executor console and the harness;
+    # dedup prints while preserving first-seen order.
+    seen_p, uniq = set(), []
+    for p in tr["prints"]:
+        if p not in seen_p:
+            seen_p.add(p); uniq.append(p)
+    tr["prints"] = uniq
     return tr
 
 
@@ -383,6 +413,10 @@ def coverage_check(tr, log):
         detail = ", ".join(ev_consts) if ev_consts else "%d" % len(events)
         notes.append("[event-gated] event handlers present (%s); their bodies run only when the "
                      "event fires, so that logic is not exercised by a passive trace" % detail)
+    if tr.get("wait_budget"):
+        complete = False
+        notes.append("[loop-capped] a wait/heartbeat loop hit the trace's iteration guard; "
+                     "output produced BEFORE it is real, code gated behind more iterations is not reached")
     verdict = "FULL" if complete else "PARTIAL"
     return verdict, notes
 

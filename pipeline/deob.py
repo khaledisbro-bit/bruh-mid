@@ -205,6 +205,10 @@ def main():
         if cls["REAL"]:
             for l, _w in cls["REAL"]:
                 lines.append("  " + l)
+        elif tr["prints"]:
+            lines.append("  the program's real result is its printed output (see top):")
+            for p in tr["prints"][:20]:
+                lines.append("    " + p)
         else:
             lines.append("  (none isolated)")
         lines.append("")
