@@ -48,6 +48,18 @@ class Call:
         self.why = why
 
 
+_PLAIN = re.compile(r"^(-?\d+(\.\d+)?|true|false|nil|table|function)$")
+
+
+def _as_written(arg):
+    """An argument the environment recorded as bare text is a string unless it
+    reads as one of the values that are written without quotes."""
+    a = arg.strip()
+    if a.startswith(('"', "{", "[")) or _PLAIN.match(a):
+        return a
+    return '"%s"' % a
+
+
 def is_literal(text):
     """A rendering that is just a value: repeating it duplicates nothing."""
     return bool(_LIT.match(text.strip()))
@@ -88,7 +100,7 @@ def match_calls(L, records):
             if found is not None:
                 k, st, namev = found
                 cursor = k + 1
-                matched.append(_build(rec, st, namev, strength, note, anchor))
+                matched.append(_build(rec, st, namev, strength, note, tier))
                 break
         if found is None:
             unmatched.append(rec)
@@ -96,8 +108,17 @@ def match_calls(L, records):
 
 
 def _anchors(rec):
-    name = rec.get("method")
+    """What to look for in the value graph to find the instruction that made a
+    recorded call, best evidence first.
+
+    An argument is worth as much as a method name and often more. A VM resolves
+    the name of a host function through its import table, so the name itself
+    never appears as a value, while the argument the program passed is a
+    constant it decrypted and pushed - and that does appear. The environment
+    records an argument as text, quoted or not depending on its type, so a plain
+    word is also tried as the string it stands for."""
     out = []
+    name = rec.get("method")
     if name:
         out.append(("name", '"%s"' % name, OBSERVED,
                     "the instruction consumed the method name %r" % name))
@@ -106,8 +127,17 @@ def _anchors(rec):
                     "the instruction is downstream of the receiver name %r"
                     % rec["recv"]))
     for a in rec.get("args") or ():
-        if a.startswith('"') and len(a) > 2:
+        a = a.strip()
+        if not a:
+            continue
+        if a.startswith('"'):
             out.append(("arg", a, INFERRED,
+                        "the instruction consumed the argument %s" % a))
+        elif not a.startswith(("{", "[")):
+            out.append(("arg", '"%s"' % a, INFERRED,
+                        "the instruction consumed the argument %r, which the "
+                        "environment recorded without quoting" % a))
+            out.append(("argraw", a, INFERRED,
                         "the instruction consumed the argument %s" % a))
     return out
 
@@ -139,11 +169,22 @@ def _find(L, consumers, cursor, anchor):
     return None
 
 
-def _build(rec, st, namev, strength, note, anchor):
+def _build(rec, st, namev, strength, note, tier):
+    """Split the instruction's inputs into a receiver and arguments, using where
+    the anchor sat among them. A stack machine pushes the callee, then the name,
+    then the arguments, so the anchor's position says which is which - and the
+    anchor is not always the name."""
     if namev in st.popped:
         idx = st.popped.index(namev)
-        recv = st.popped[idx - 1] if idx >= 1 else None
-        args = st.popped[idx + 1:]
+        if tier in ("arg", "argraw"):
+            args = st.popped[idx:]
+            recv = st.popped[0] if idx > 0 else None
+        elif tier == "recv":
+            recv = namev
+            args = st.popped[idx + 1:]
+        else:
+            recv = st.popped[idx - 1] if idx >= 1 else None
+            args = st.popped[idx + 1:]
     else:
         recv = st.popped[0] if st.popped else None
         args = st.popped[1:]
@@ -284,7 +325,7 @@ class Renderer:
             recv = rec.get("recv") or "?"
         args = [self.value(a.id, depth + 1) for a in call.arg_values]
         if not args and rec.get("args"):
-            args = list(rec["args"])
+            args = [_as_written(a) for a in rec["args"]]
         if rec.get("recv") is None:
             return "%s(%s)" % (name, ", ".join(args))
         return "%s:%s(%s)" % (recv, name, ", ".join(args))
