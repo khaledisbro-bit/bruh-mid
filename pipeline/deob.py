@@ -247,14 +247,32 @@ def main():
         print(f"              reconstruction -> {rpath}")
     except Exception as e:
         print(f"              (reconstruction skipped: {e})")
-    # devirtualization: lift the opcode trace (dispatch hook) into a disassembly
+    # devirtualization: lift the opcode trace (dispatch hook) into a disassembly,
+    # and derive+verify opcode semantics from the inner VM source when we have it.
     if "---OPCODES---" in trace:
         try:
             import devirt
-            disasm = devirt.summarize(trace)
+            vmsrc = None
+            isp = os.path.join(a.out, "inner_source.lua")
+            if os.path.exists(isp):
+                vmsrc = open(isp, encoding="latin1").read()
+            disasm = devirt.summarize(trace, vm_source=vmsrc)
             dpath = os.path.join(a.out, "DISASSEMBLY.txt")
             open(dpath, "w").write(disasm)
             print(f"              disassembly -> {dpath}")
+            if vmsrc:
+                import opmap, re as _re
+                steps = []
+                for _l in trace.split("---OPCODES---", 1)[-1].splitlines():
+                    _m = _re.match(r"^(-?\d+);(-?\d+);(.*)$", _l.strip())
+                    if _m:
+                        steps.append((int(_m.group(1)), int(_m.group(2)),
+                                      [x for x in _m.group(3).split(",") if x]))
+                om = opmap.build_map(vmsrc, steps)
+                mpath = os.path.join(a.out, "OPCODE_MAP.txt")
+                open(mpath, "w").write(opmap.report(om))
+                nconf = sum(1 for v in om.values() if v["verdict"] == "CONFIRMED")
+                print(f"              opcode map -> {mpath}  ({nconf}/{len(om)} confirmed)")
         except Exception as e:
             print(f"              (disassembly skipped: {e})")
     if verdict == "CONSISTENT" and cand:

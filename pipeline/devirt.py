@@ -100,7 +100,7 @@ def blocks(steps):
     return bl, loop_edges
 
 
-def summarize(text, max_lines=600):
+def summarize(text, max_lines=600, vm_source=None):
     steps = parse_ops(text)
     if not steps:
         return "no opcode trace found (the dispatch hook may not have matched " \
@@ -110,6 +110,16 @@ def summarize(text, max_lines=600):
     _bl, loops = blocks(steps)
     repeated = sum(p * r for _i, p, r in folded if r >= 2)
     skeleton = sum(1 for _i, _p, r in folded if r < 2)
+    # opcode semantics, derived from the VM handlers and verified vs this trace
+    sem = {}
+    if vm_source:
+        try:
+            import opmap
+            om = opmap.build_map(vm_source, steps)
+            sem = {op: v["semantic"] for op, v in om.items()
+                   if v["verdict"] == "CONFIRMED"}
+        except Exception:
+            sem = {}
 
     out = []
     out.append("VM DEVIRTUALIZATION (from the executed instruction stream)")
@@ -128,9 +138,16 @@ def summarize(text, max_lines=600):
     out.append("constant-decrypt and hash-loop machinery so the real program")
     out.append("skeleton is visible - nothing is invented.")
     out.append("")
-    out.append("opcode histogram (top 30 by frequency):")
+    if sem:
+        out.append("verified opcode semantics: %d of %d opcodes CONFIRMED from the"
+                   % (len(sem), len(hist)))
+        out.append("VM's own handlers (see OPCODE_MAP.txt). Confirmed ops are named")
+        out.append("below; the rest stay OP_<n> - never renamed on a guess.")
+        out.append("")
+    out.append("opcode histogram (top 30 by frequency; * = confirmed semantic):")
     for op, n in hist.most_common(30):
-        out.append("  OP_%-6d %6d" % (op, n))
+        mark = " *" if op in sem else ""
+        out.append("  OP_%-6d %6d%s" % (op, n, mark))
     out.append("")
     out.append("folded instruction skeleton (machinery collapsed as xN):")
     shown = 0
@@ -141,7 +158,11 @@ def summarize(text, max_lines=600):
             out.append("  [ machinery block: %d instr x%d  (decrypt/hash, skipped) ]"
                        % (p, r))
         else:
-            out.append("  %6d: OP_%-6d %s" % (pc, op, ops))
+            label = sem.get(op)
+            if label:
+                out.append("  %6d: %-40s ; %s" % (pc, "OP_%d %s" % (op, ops), label))
+            else:
+                out.append("  %6d: OP_%-6d %s" % (pc, op, ops))
         shown += 1
         if shown >= max_lines:
             out.append("  ... (%d more units; full stream in opcode_trace.txt)"
