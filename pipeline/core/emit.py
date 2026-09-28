@@ -24,6 +24,7 @@ produced it.
 """
 from evidence import OBSERVED, INFERRED, UNKNOWN, DECOY, TAG
 
+import cfgx
 import exprs as exprmod
 
 
@@ -74,7 +75,7 @@ class Emitter:
     def statement(self, st):
         """The statement this instruction is, or None if it only contributes to
         another instruction's expression."""
-        d = self.decoys.get(st.pc)
+        d = self.decoys.get(st.key())
         if st.row in self.by_step:
             call = self.by_step[st.row]
             text = self.R.call_text(call)
@@ -151,24 +152,24 @@ class Emitter:
         are jumps: they are the control flow, not statements."""
         out = set()
         for a, b in zip(self.L.steps, self.L.steps[1:]):
-            if b.pc != a.pc + 1:
-                out.add(a.pc)
+            if b.key() != (a.fn, a.pc + 1):
+                out.add(a.key())
         return out
 
     def _is_control(self, st):
-        return st.pc in self._jumps or \
-            any(b["pc"] == st.pc for b in self.g.branches) or \
-            any(lp["back"] == st.pc for lp in self.g.loops)
+        return st.key() in self._jumps or \
+            any(b["pc"] == st.key() for b in self.g.branches) or \
+            any(lp["back"] == st.key() for lp in self.g.loops)
 
     def _line(self, text, ev, st, why):
-        return Line(text, ev, st.pc, why)
+        return Line(text, ev, st.key(), why)
 
     # -- structure -----------------------------------------------------------
     def run(self):
         g = self.g
         first_pc = {}
         for st in self.L.steps:
-            first_pc.setdefault(st.pc, st)
+            first_pc.setdefault(st.key(), st)
 
         loop_by_head = {lp["head"]: lp for lp in g.loops}
         loop_bodies = {}
@@ -176,9 +177,17 @@ class Emitter:
             for b in lp["body"]:
                 loop_bodies.setdefault(b, lp["head"])
 
-        order = sorted(g.blocks, key=lambda h: min(
-            st.row for st in g.blocks[h]))
+        # one function at a time, in the order each first ran
+        seen_fn, fn_order = set(), []
+        for st in self.L.steps:
+            if st.fn not in seen_fn:
+                seen_fn.add(st.fn)
+                fn_order.append(st.fn)
+        rank = {f: i for i, f in enumerate(fn_order)}
+        order = sorted(g.blocks, key=lambda h: (rank.get(h[0], 0),
+                                                min(st.row for st in g.blocks[h])))
         shown_branches = [0]
+        current_fn = [None]
         emitted_heads = set()
         out, depth = [], 0
         open_loops = []
@@ -188,9 +197,10 @@ class Emitter:
             if lp is not None and head not in emitted_heads:
                 cond = self._loop_condition(head)
                 out.append(Line("while %s do" % cond, OBSERVED, head,
-                                "block at pc %d is the head of a loop; the back "
-                                "edge from pc %d was taken %d time(s)"
-                                % (head, lp["back"], lp["iterations"]), depth))
+                                "the block at %s is the head of a loop; the back "
+                                "edge from %s was taken %d time(s)"
+                                % (cfgx._fmt(head), cfgx._fmt(lp["back"]),
+                                   lp["iterations"]), depth))
                 depth += 1
                 open_loops.append((lp, depth))
                 emitted_heads.add(head)
@@ -199,10 +209,16 @@ class Emitter:
                 lp2, d2 = open_loops.pop()
                 depth = d2 - 1
                 out.append(Line("end", OBSERVED, lp2["head"],
-                                "closes the loop whose head is pc %d" % lp2["head"],
-                                depth))
+                                "closes the loop whose head is %s"
+                                % cfgx._fmt(lp2["head"]), depth))
+            if head[0] != current_fn[0]:
+                current_fn[0] = head[0]
+                out.append(Line(
+                    "-- function fn%d" % head[0], OBSERVED, head,
+                    "records placed in this function by matching calls with "
+                    "their returns", 0))
             for st in g.blocks[head]:
-                if first_pc.get(st.pc) is not st:
+                if first_pc.get(st.key()) is not st:
                     continue
                 ln = self.statement(st)
                 if ln is None:
@@ -215,8 +231,9 @@ class Emitter:
                 if not b["untaken"]:
                     continue
                 out.append(Line(
-                    "-- branch at pc %d: the path to pc %s was never taken in "
-                    "this capture" % (b["pc"], ", ".join(str(t) for t in b["untaken"])),
+                    "-- branch at %s: the path to %s was never taken in this "
+                    "capture" % (cfgx._fmt(b["pc"]),
+                                 ", ".join(cfgx._fmt(t) for t in b["untaken"])),
                     UNKNOWN, b["pc"], b["why"], depth))
         while open_loops:
             lp2, d2 = open_loops.pop()
@@ -243,10 +260,11 @@ class Emitter:
                 body = set(lp["body"]) | {head}
         if body is None:
             return "true"
+        inside = {st.key() for h in body for st in self.g.blocks.get(h, [])}
         for b in self.g.branches:
-            if b["pc"] not in [st.pc for h in body for st in self.g.blocks.get(h, [])]:
+            if b["pc"] not in inside:
                 continue
-            st = next((s for s in self.L.steps if s.pc == b["pc"]), None)
+            st = next((s for s in self.L.steps if s.key() == b["pc"]), None)
             if st is None or not st.popped:
                 continue
             return self.R.value(st.popped[0].id)
@@ -279,7 +297,9 @@ class Emitter:
                "Each emitted line, the instruction it came from, and the reason",
                "the analysis produced it.", ""]
         for ln in self.lines:
-            out.append("  pc %-6s [%s] %s" % (ln.pc, TAG.get(ln.evidence, "?"),
-                                              ln.text.strip()))
+            out.append("  %-12s [%s] %s"
+                       % (cfgx._fmt(ln.pc) if isinstance(ln.pc, tuple)
+                          else str(ln.pc),
+                          TAG.get(ln.evidence, "?"), ln.text.strip()))
             out.append("        %s" % ln.prov)
         return "\n".join(out)

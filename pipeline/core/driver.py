@@ -30,6 +30,7 @@ import decoy           # noqa: E402
 import emit            # noqa: E402
 import evidence        # noqa: E402
 import exprs           # noqa: E402
+import frames          # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
 import stackint        # noqa: E402
@@ -42,6 +43,10 @@ class Analysis:
 
     def __init__(self, capture):
         self.capture = capture
+        # Instruction numbers restart in every function, so records are placed
+        # in the function they belong to before anything is measured. Without
+        # this, code from unrelated functions shares an address.
+        self.frames, self.frames_ok = frames.reconstruct(capture.rows)
         self.machinery, self.regions = noise.analyse(capture.rows)
         self.program, self.bursts = noise.split(capture.rows, self.machinery)
         self.models = opsem.measure(capture.rows, machinery=self.machinery)
@@ -89,6 +94,9 @@ class Analysis:
              % (len(set(list(self.slots.reads.values()) +
                         list(self.slots.writes.values())))
                 if self.slots.active() else "not established"),
+             "functions recovered        %s"
+             % (len(self.frames["functions"]) if self.frames_ok
+                else "not established (instruction numbers may collide)"),
              "basic blocks / loops       %d / %d"
              % (len(self.cfg.blocks), len(self.cfg.loops)),
              "calls matched to code      %d of %d recorded"
@@ -116,6 +124,7 @@ class Analysis:
             "SUMMARY.txt": self.summary(),
             "RECONSTRUCTED.lua": self.source,
             "PROVENANCE.txt": self.emitter.provenance(),
+            "FUNCTIONS.txt": frames.report(self.frames),
             "MACHINERY.txt": noise.report(self.capture.rows),
             "OPCODES.txt": opsem.report(self.models),
             "VALUES.txt": stackint.report(self.lift, self.models),
@@ -182,7 +191,7 @@ def selftest():
     ok = True
     print("SELF-TEST - reconstructing programs whose source is known")
     print("=" * 62)
-    for name in ("rich", "loop", "calls", "branch"):
+    for name in ("rich", "loop", "calls", "branch", "funcs"):
         prog = refvm.FIXTURES[name]()
         text, em = refvm.run(prog)
         a = Analysis(tracefmt.Capture(text, name))
@@ -191,6 +200,8 @@ def selftest():
         for op, m in a.models.items():
             t = truth.get(op, "")
             if t.startswith("MACH") or t == "HALT" or m.pops is None:
+                continue
+            if t in refvm.CONTEXTUAL:
                 continue
             want = refvm.ISA.get(t)
             if want is None:
@@ -205,9 +216,12 @@ def selftest():
             if m.operation and truth.get(op) != m.operation:
                 wrong.append("OP named %s but it is %s"
                              % (m.operation, truth.get(op)))
+        # the decoy sits in the program's own function, so compare inside it
+        main_fn = a.lift.steps[0].fn if a.lift.steps else 0
         truth_decoys = {i for i, ins in enumerate(prog.code) if ins[0] == "DECOY"}
-        found = {pc for pc, v in a.verdicts.items()
-                 if v.verdict == evidence.DECOY and pc < len(prog.code)}
+        found = {pc for (fn, pc), v in a.verdicts.items()
+                 if v.verdict == evidence.DECOY and fn == main_fn
+                 and pc < len(prog.code)}
         missed = truth_decoys - found
         false = found - truth_decoys
         if missed:

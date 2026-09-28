@@ -54,10 +54,10 @@ def sinks(L, calls, g, slots, env_ops=()):
             mark(a.id, "argument of the recorded call %s"
                  % c.record.get("raw", ""))
     for b in g.branches:
-        st = next((s for s in L.steps if s.pc == b["pc"] and s.popped), None)
+        st = next((s for s in L.steps if s.key() == b["pc"] and s.popped), None)
         if st is not None:
-            mark(st.popped[0].id, "the condition the branch at pc %d tested"
-                 % b["pc"])
+            mark(st.popped[0].id, "the condition the branch at %s tested"
+                 % (b["pc"],))
     last = next((st for st in reversed(L.steps)
                  if st.pops >= 1 and st.pushes == 0), None)
     if last is not None and last.popped:
@@ -68,7 +68,7 @@ def sinks(L, calls, g, slots, env_ops=()):
         if key is not None and key in read_slots and st.popped:
             mark(st.popped[0].id,
                  "stored into variable slot%s, which the program reads again"
-                 % key)
+                 % (key[1] if isinstance(key, tuple) else key,))
             continue
         # An instruction that consumes values and produces none has an effect we
         # cannot see. Its inputs are therefore not provably irrelevant, so they
@@ -76,8 +76,9 @@ def sinks(L, calls, g, slots, env_ops=()):
         # module exists to avoid.
         if st.pushes == 0 and st.pops >= 1 and key is None:
             for v in st.popped:
-                mark(v.id, "consumed by the instruction at pc %d, whose effect "
-                           "this capture cannot observe" % st.pc)
+                mark(v.id, "consumed by the instruction at fn%d:%d, whose "
+                           "effect this capture cannot observe"
+                     % (st.fn, st.pc))
     # A call whose callee was resolved from a name is a call even when the
     # environment did not record it, so its arguments are observable too.
     for st in L.steps:
@@ -86,8 +87,9 @@ def sinks(L, calls, g, slots, env_ops=()):
         head = st.popped[0]
         if head.op in env_ops:
             for v in st.popped[1:]:
-                mark(v.id, "argument of the call made at pc %d" % st.pc)
-            mark(head.id, "the thing called at pc %d" % st.pc)
+                mark(v.id, "argument of the call made at fn%d:%d"
+                     % (st.fn, st.pc))
+            mark(head.id, "the thing called at fn%d:%d" % (st.fn, st.pc))
     return out, why
 
 
@@ -111,42 +113,45 @@ def classify(L, g, calls, slots, amap, env_ops=()):
     seeds, why_seed = sinks(L, calls, g, slots, env_ops)
     live = influence(L, seeds, amap)
     call_rows = {c.step.row for c in calls}
-    jumps = {a.pc for a, b in zip(L.steps, L.steps[1:]) if b.pc != a.pc + 1}
+    jumps = {a.key() for a, b in zip(L.steps, L.steps[1:])
+             if b.key() != (a.fn, a.pc + 1)}
     unexplored_from = {b["pc"] for b in g.branches if b["untaken"]}
     reachable_unknown = bool(g.unexplored)
 
     out = {}
     for st in L.steps:
-        if st.pc in out:
+        if st.key() in out:
             continue
         if st.row in call_rows:
-            out[st.pc] = Verdict(st.pc, OBSERVED,
+            out[st.key()] = Verdict(
+                st.key(), OBSERVED,
                                  "makes a call the environment recorded")
             continue
         if any(v.id in live for v in st.pushed):
             reason = next((why_seed[v.id] for v in st.pushed
                            if v.id in why_seed), None)
-            out[st.pc] = Verdict(
-                st.pc, OBSERVED,
+            out[st.key()] = Verdict(
+                st.key(), OBSERVED,
                 reason or "its result is used, directly or through other "
                           "instructions, by something the program observably did")
             continue
         if st.pushes == 0 and st.pops == 0:
-            if (st.pc in jumps or st.pc in unexplored_from
-                    or any(b["pc"] == st.pc for b in g.branches)):
-                out[st.pc] = Verdict(st.pc, OBSERVED,
+            if (st.key() in jumps or st.key() in unexplored_from
+                    or any(b["pc"] == st.key() for b in g.branches)):
+                out[st.key()] = Verdict(
+                st.key(), OBSERVED,
                                      "control did not fall through after it, so "
                                      "it decides where execution goes")
                 continue
-            out[st.pc] = Verdict(
-                st.pc, DECOY,
+            out[st.key()] = Verdict(
+                st.key(), DECOY,
                 "it executed, moved nothing on the stack, produced no value and "
                 "made no recorded call, so nothing about the program can depend "
                 "on it")
             continue
         if not st.pushed:
-            out[st.pc] = Verdict(
-                st.pc, UNKNOWN,
+            out[st.key()] = Verdict(
+                st.key(), UNKNOWN,
                 "it consumed values and produced none; what it did with them was "
                 "not observable, so its effect is unproven either way")
             continue
@@ -158,8 +163,8 @@ def classify(L, g, calls, slots, amap, env_ops=()):
         extra = (" this capture also left %d branch target(s) unexplored, so a "
                  "path that was not taken may consume it" % len(g.unexplored)
                  ) if reachable_unknown else ""
-        out[st.pc] = Verdict(
-            st.pc, UNKNOWN,
+        out[st.key()] = Verdict(
+                st.key(), UNKNOWN,
             "it produced a value that nothing consumed on the path that ran;" +
             (extra or " whether anything consumes it elsewhere is not settled "
                       "by this capture"),
@@ -169,7 +174,8 @@ def classify(L, g, calls, slots, amap, env_ops=()):
 
 def report(verdicts, g):
     order = {OBSERVED: 0, UNKNOWN: 1, DECOY: 2}
-    rows = sorted(verdicts.values(), key=lambda v: (order.get(v.verdict, 3), v.pc))
+    rows = sorted(verdicts.values(),
+                  key=lambda v: (order.get(v.verdict, 3), v.pc))
     n = {}
     for v in rows:
         n[v.verdict] = n.get(v.verdict, 0) + 1
@@ -190,7 +196,9 @@ def report(verdicts, g):
         L.append("Driving those branches in another run is what would settle them.")
         L.append("")
     for v in rows:
-        L.append("  pc %-8d %-9s %s" % (v.pc, v.verdict, v.why))
+        L.append("  %-12s %-9s %s"
+                 % ("fn%d:%d" % v.pc if isinstance(v.pc, tuple) else v.pc,
+                    v.verdict, v.why))
         if v.alternative:
             L.append("  %-8s %-9s rival reading kept: %s" % ("", "", v.alternative))
     return "\n".join(L)

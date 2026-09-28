@@ -199,16 +199,25 @@ class Renderer:
         self._cache = {}
 
     def _assign_names(self):
-        order = []
+        """A variable is named per function and slot, so the same local seen on
+        two calls of one function reads as one variable, while the same slot
+        number in a different function does not."""
+        order, byfn = [], {}
         for st in self.L.steps:
             key = self.slots.writes.get(st.row, self.slots.reads.get(st.row))
-            if key is not None and key not in order:
-                order.append(key)
-        for i, key in enumerate(order):
-            self.names[key] = "v%d" % i
+            if key is None:
+                continue
+            group = (st.fn, key[1] if isinstance(key, tuple) else key)
+            if group not in byfn:
+                byfn[group] = "v%d" % len(byfn)
+            order.append((key, group))
+        for key, group in order:
+            self.names[key] = byfn[group]
 
     def var(self, key):
-        return self.names.get(key, "slot%s" % key)
+        if key in self.names:
+            return self.names[key]
+        return "slot%s" % (key[1] if isinstance(key, tuple) else key,)
 
     def value(self, vid, depth=0):
         if vid in self.bound:

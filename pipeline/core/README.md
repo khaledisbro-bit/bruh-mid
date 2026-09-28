@@ -12,11 +12,18 @@ Everything is measured per capture, because this obfuscator changes it per
 capture: opcode numbers are randomised per run, constants are decrypted only at
 runtime, handlers are duplicated, and decoy work is mixed into real work.
 
+The first thing recovered is the call stack. A VM numbers instructions per
+function, so instruction 2 means a different instruction in every function it
+runs. Until calls are matched with their returns, an instruction number is only
+half an address, and every block, loop and branch built on it merges code from
+functions that have nothing to do with each other.
+
 ## The stages
 
 | stage | file | what it derives, and from what |
 |---|---|---|
 | read the capture | `tracefmt.py` | sections and records, classified by shape alone |
+| functions | `frames.py` | calls matched with their returns, so an instruction number means something |
 | split interpreter from program | `noise.py` | helper routines, from call/return shape in the executed flow |
 | opcode arity | `opsem.py` | pushes from the pending-value report, pops from the stack-pointer delta |
 | opcode meaning | `opsem.py` | candidate operations tested against every instance's real values |

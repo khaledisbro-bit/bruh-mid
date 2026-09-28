@@ -40,18 +40,34 @@ ISA = {
     "LT":       (2, 1),
     "CALL":     ("n+1", 1),   # callee, args... -> result
     "SELFCALL": ("n+2", 1),   # object, name, args... -> result
+    # CALLP only transfers control. The value the call produces is left by the
+    # callee's RETURN, so the calling instruction itself moves nothing, and that
+    # is what a trace shows.
+    "CALLP":    (0, 0),
     "JMP":      (0, 0),
     "JMPIFNOT": (1, 0),
-    "RETURN":   (1, 0),
+    "RETURN":   (1, 0),   # at the root; see CONTEXTUAL
     "DECOY":    (0, 0),
 }
+
+# Instructions whose stack effect depends on where they run rather than on
+# what they are. RETURN drops a value at the end of the program, but hands one
+# to the caller when a call is waiting, so there is no single right answer to
+# check a measurement against.
+CONTEXTUAL = {"RETURN"}
 
 _CONSTUSERS = ("PUSHK", "INDEX", "SETINDEX", "SELFCALL", "GETENV")
 
 
 class Program:
-    def __init__(self, source, code, consts):
+    """A program is one or more functions. Each function numbers its own
+    instructions from zero, exactly as a real VM does, so instruction 2 of one
+    function and instruction 2 of another are different instructions that look
+    identical in a trace."""
+
+    def __init__(self, source, code, consts, protos=None):
         self.source = source
+        self.protos = [code] + list(protos or [])
         self.code = code
         self.consts = consts
 
@@ -146,10 +162,14 @@ def run(prog, seed=0, mach_every=2):
         v = prog.consts[idx]
         em.resolved.append(("S:%s" if isinstance(v, str) else "N:%s") % (v,))
 
-    stack, local, glob = [], {}, {}
+    stack, glob = [], {}
+    locals_stack = [{}]
+    frames = []
+    cur = 0
     pc, steps = 0, 0
-    while 0 <= pc < len(prog.code):
-        ins = prog.code[pc]
+    while 0 <= pc < len(prog.protos[cur]):
+        local = locals_stack[-1]
+        ins = prog.protos[cur][pc]
         name, operands = ins[0], list(ins[1:])
         em.emit(pc, name, operands, len(stack))
         steps += 1
@@ -206,8 +226,20 @@ def run(prog, seed=0, mach_every=2):
         elif name == "JMPIFNOT":
             if not stack.pop():
                 nxt = operands[0]
+        elif name == "CALLP":
+            frames.append((cur, pc + 1))
+            locals_stack.append({})
+            cur = operands[0]
+            nxt = 0
         elif name == "RETURN":
-            stack.pop(); break
+            v = stack.pop()
+            if frames:
+                cur, nxt = frames.pop()
+                locals_stack.pop()
+                stack.append(v)
+                produced = v
+            else:
+                break
         elif name == "DECOY":
             pass
         else:
@@ -220,7 +252,7 @@ def run(prog, seed=0, mach_every=2):
         pc = nxt
         if steps > 40000:
             break
-    em.emit(len(prog.code), "HALT", [], len(stack))
+    em.emit(len(prog.protos[cur]), "HALT", [], len(stack))
     return em.text(), em
 
 
@@ -329,6 +361,45 @@ def fixture_rich():
     return Program(src, code, c)
 
 
+def fixture_funcs():
+    """Two helper functions called from several places. Each numbers its own
+    instructions from zero, so their instruction numbers collide with the main
+    function's and with each other's - which is what a trace of a real program
+    looks like, and what the frame reconstruction has to undo."""
+    c = {1: 2, 2: 3, 3: 10, 4: "Service", 5: "report", 6: 0, 7: 1}
+    double = asm([
+        ("GETLOCAL", 0), ("GETLOCAL", 0), ("ADD",), ("RETURN",),
+    ])
+    shout = asm([
+        ("PUSHK", 4), ("GETENV",), ("PUSHK", 5), ("GETLOCAL", 0),
+        ("SELFCALL", 1), ("RETURN",),
+    ])
+    main = asm([
+        ("PUSHK", 1), ("SETLOCAL", 0),
+        ("PUSHK", 6), ("SETLOCAL", 1),
+        "top",
+        ("GETLOCAL", 1), ("PUSHK", 2), ("LT",), ("JMPIFNOT", "done"),
+        ("GETLOCAL", 0), ("SETLOCAL", 0),
+        ("CALLP", 1), ("SETLOCAL", 2),
+        ("CALLP", 2), ("SETLOCAL", 3),
+        ("GETLOCAL", 1), ("PUSHK", 7), ("ADD",), ("SETLOCAL", 1),
+        ("JMP", "top"),
+        "done",
+        ("GETLOCAL", 0), ("RETURN",),
+    ])
+    src = ('local function double(x) return x + x end\n'
+           'local function shout(x) return Service:report(x) end\n'
+           'local acc = 2\n'
+           'local i = 0\n'
+           'while i < 3 do\n'
+           '    local a = double(acc)\n'
+           '    local b = shout(acc)\n'
+           '    i = i + 1\n'
+           'end\n'
+           'return acc\n')
+    return Program(src, main, c, protos=[double, shout])
+
+
 def fixture_branch():
     """A branch where one side never runs on this input, so the analyser must
     report the untaken side as unknown rather than delete it."""
@@ -357,7 +428,8 @@ def fixture_branch():
 
 
 FIXTURES = {"calls": fixture_calls, "loop": fixture_loop,
-            "rich": fixture_rich, "branch": fixture_branch}
+            "rich": fixture_rich, "branch": fixture_branch,
+            "funcs": fixture_funcs}
 
 
 if __name__ == "__main__":

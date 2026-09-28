@@ -66,9 +66,9 @@ def replay(L, models):
             r.agreed += 1
         else:
             r.failures.append(
-                "pc %d: OP_%d was read as %s, but %s %s %s gave %s while the VM "
-                "reported %s" % (st.pc, st.op, m.operation, a, m.operation, b,
-                                 got, want))
+                "fn%d:%d: OP_%d was read as %s, but %s %s %s gave %s while the VM "
+                "reported %s" % (st.fn, st.pc, st.op, m.operation, a, m.operation,
+                                 b, got, want))
     return r
 
 
@@ -107,8 +107,8 @@ def coverage(L, verdicts):
     if not total:
         return 0.0, 0, 0
     explained = sum(1 for st in L.steps
-                    if verdicts.get(st.pc) and
-                    verdicts[st.pc].verdict == OBSERVED)
+                    if verdicts.get(st.key()) and
+                    verdicts[st.key()].verdict == OBSERVED)
     return explained / total, explained, total
 
 

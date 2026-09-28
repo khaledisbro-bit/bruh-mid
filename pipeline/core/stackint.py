@@ -61,11 +61,15 @@ class Step:
     """One lifted instruction."""
 
     __slots__ = ("row", "pc", "op", "pops", "pushes", "popped", "pushed",
-                 "operands", "sp", "net", "fact", "aligned")
+                 "operands", "sp", "net", "fact", "aligned", "fn", "depth",
+                 "frame")
 
-    def __init__(self, row, pc, op, operands, sp):
+    def __init__(self, row, pc, op, operands, sp, fn=0, depth=0, frame=-1):
         self.row = row
         self.pc = pc
+        self.fn = fn
+        self.depth = depth
+        self.frame = frame
         self.op = op
         self.operands = operands
         self.sp = sp
@@ -77,7 +81,10 @@ class Step:
         self.fact = Fact("instruction", OBSERVED)
 
     def __repr__(self):
-        return "pc%d:OP_%d" % (self.pc, self.op)
+        return "fn%d:pc%d:OP_%d" % (self.fn, self.pc, self.op)
+
+    def key(self):
+        return (self.fn, self.pc)
 
 
 class Lift:
@@ -137,7 +144,8 @@ def lift(rows, program_rows, models):
     stack = []
     for r in program_rows:
         rid = r["i"]
-        st = Step(rid, r["pc"], r["opcode"], r["operands"], r["sp"])
+        st = Step(rid, r["pc"], r["opcode"], r["operands"], r["sp"],
+                  r.get("fn", 0), r.get("depth", 0), r.get("frame", -1))
         product = nxt_value.get(rid)
         after = nxt_sp.get(rid)
         m = models.get(r["opcode"])

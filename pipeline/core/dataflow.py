@@ -124,13 +124,13 @@ def _test_pair(L, wop, wi, rop, ri):
         if st.op == wop:
             if wi >= len(st.operands) or not st.popped:
                 return None
-            key = st.operands[wi]
+            key = (st.frame, st.operands[wi])
             env[key] = st.popped[0]
             writes[st.row] = key
         elif st.op == rop:
             if ri >= len(st.operands) or not st.pushed:
                 return None
-            key = st.operands[ri]
+            key = (st.frame, st.operands[ri])
             reads[st.row] = key
             src = env.get(key)
             if src is None:
@@ -149,6 +149,8 @@ def _test_pair(L, wop, wi, rop, ri):
 
 
 def _name(key):
+    if isinstance(key, tuple):
+        return "slot%s" % (key[1],)
     return "slot%s" % key
 
 

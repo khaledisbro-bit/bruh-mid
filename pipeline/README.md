@@ -57,6 +57,7 @@ compares what comes back with what went in.
 | `OPCODES.txt` | each opcode's measured arity and proved operation |
 | `VALUES.txt` | the value graph, and any place the replay disagreed with the VM |
 | `VARIABLES.txt` | the variables found, and the proof that found them |
+| `FUNCTIONS.txt` | the functions that ran, recovered by matching calls with returns |
 | `CONTROL_FLOW.txt` | blocks, loops, and branch targets nothing entered |
 | `DECOY.txt` | what influences the program's behaviour and what does not |
 | `ACROSS_RUNS.txt` | what several runs of the same program add up to |
