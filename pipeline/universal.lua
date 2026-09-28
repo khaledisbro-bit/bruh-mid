@@ -118,7 +118,7 @@ end
 
 env.__OP = function(pc, oc, NO, sp, top)
     opn = opn + 1
-    if opn > 15000 then return end
+    if opn > 40000 then return end
     local a = {}
     if type(NO) == "table" then
         for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
@@ -145,9 +145,12 @@ local function patchDispatch(s)
     -- handlers share:  if n>=2 then YL[Ym-1]=NN end  -> capture YL and Ym
     local arr, sp = s:match("if %w+>=2 then (%w+)%[(%w+)%-1%]=")
     sp = sp or "0"
-    -- top-of-stack value expression (the real value flowing), guarded: only when
-    -- we have both the array and a pointer; else pass nil.
-    local topexpr = (arr and sp ~= "0") and (arr .. "[" .. sp .. "]") or "nil"
+    -- This VM DEFERS register writes: a handler leaves its produced value in a
+    -- pending slot (NY) and the NEXT handler flushes it to YL[Ym]. So YL[Ym] is
+    -- stale at the loop top (nil most of the time); the freshly produced value
+    -- lives in NY. Capture NY and log THAT as the value flowing.
+    local ny = s:match("if %w+>=1 then %w+%[%w+%]=(%w+) end")
+    local topexpr = ny or ((arr and sp ~= "0") and (arr .. "[" .. sp .. "]")) or "nil"
     -- inject the logger right after the NL assignment `local NL=...;`
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
@@ -300,7 +303,7 @@ say("resolved="..#resolved)
 say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
 pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
 -- devirtualization: the executed instruction stream (pc;opcode;operands)
-say("opcodes="..#ops.."  (logged, cap 15000; total executed may be higher)")
+say("opcodes="..#ops.."  (logged, cap 40000; total executed may be higher)")
 say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
 pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)
 
