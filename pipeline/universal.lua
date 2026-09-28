@@ -183,12 +183,21 @@ env.loadstring = function(src, ...)
         use = patched
         behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
     end
-    -- on top of that, try to patch the dispatch loop so it traces opcodes
+    -- on top of that, try to patch the dispatch loop so it traces opcodes.
+    -- HARDENING: trace only the FIRST chunk we can patch. Patching a second,
+    -- nested interpreter is what tripped the VM's self-integrity check and
+    -- crashed the run; one traced chunk gives the program's opcodes while
+    -- leaving nested layers untouched (they still get the safe resolver dump).
     local useD = use
-    local okD, patchedD, dn = pcall(patchDispatch, use)
-    if okD and patchedD then
-        useD = patchedD
-        behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn) .. " -> tracing opcodes]"
+    if not _G.__DISPATCH_DONE then
+        local okD, patchedD, dn = pcall(patchDispatch, use)
+        if okD and patchedD then
+            useD = patchedD
+            _G.__DISPATCH_DONE = true
+            behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn) .. " -> tracing opcodes]"
+        end
+    else
+        behavior[#behavior+1] = "  [dispatch trace skipped for nested chunk (integrity-safe)]"
     end
     -- compile, degrading gracefully: full (resolver+dispatch) -> resolver-only
     -- -> original. A broken dispatch patch never costs us the constant dump.

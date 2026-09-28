@@ -76,7 +76,8 @@ def main():
     ap.add_argument("input")
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--detect", action="store_true")
-    ap.add_argument("--trace")
+    ap.add_argument("--trace", nargs="+",
+                    help="one or more executor result files; extra runs are merged")
     ap.add_argument("--candidate", help="optional candidate source for the audit")
     a = ap.parse_args()
 
@@ -136,7 +137,9 @@ def main():
         print(f"  3) python3 {os.path.basename(__file__)} {a.input} --trace result.txt")
         return
 
-    trace = open(a.trace, encoding="latin1").read()
+    trace_files = a.trace if isinstance(a.trace, list) else [a.trace]
+    all_traces = [open(t, encoding="latin1").read() for t in trace_files]
+    trace = all_traces[0]  # primary trace drives the behavior/flow report
     cand = a.candidate and open(a.candidate, encoding="latin1").read() or ""
     verdict, findings, tr, cf = ai.audit(log, trace, cand)
     print(f"[4/4] AUDIT   : verdict={verdict}")
@@ -249,7 +252,8 @@ def main():
         print(f"              (reconstruction skipped: {e})")
     # devirtualization: lift the opcode trace (dispatch hook) into a disassembly,
     # and derive+verify opcode semantics from the inner VM source when we have it.
-    if "---OPCODES---" in trace:
+    has_opcodes = "---OPCODES---" in trace or re.search(r"(?m)^-?\d+;-?\d+;[^;]*;-?\d+", trace)
+    if has_opcodes:
         try:
             import devirt
             vmsrc = None
@@ -270,15 +274,10 @@ def main():
             except Exception as e:
                 print(f"              (value-flow skipped: {e})")
             if vmsrc:
-                import opmap, re as _re
-                steps, steps_sp = [], []
-                for _l in trace.split("---OPCODES---", 1)[-1].splitlines():
-                    _m = _re.match(r"^(-?\d+);(-?\d+);([^;]*)(?:;(-?\d+))?$", _l.strip())
-                    if _m:
-                        _od = [x for x in _m.group(3).split(",") if x]
-                        steps.append((int(_m.group(1)), int(_m.group(2)), _od))
-                        _sp = int(_m.group(4)) if _m.group(4) is not None else None
-                        steps_sp.append((int(_m.group(1)), int(_m.group(2)), _od, _sp))
+                import opmap
+                sp_rows = devirt.parse_ops_sp(trace)   # tolerant 3..6 field parse
+                steps = [(pc, op, od) for pc, op, od, _sp, _v in sp_rows]
+                steps_sp = [(pc, op, od, sp) for pc, op, od, sp, _v in sp_rows]
                 om = opmap.build_map(vmsrc, steps, steps_sp)
                 mpath = os.path.join(a.out, "OPCODE_MAP.txt")
                 open(mpath, "w").write(opmap.report(om))
@@ -290,6 +289,31 @@ def main():
         final = os.path.join(a.out, "FINAL_SOURCE.lua")
         open(final, "w").write(cand)
         print(f"              CERTIFIED -> {final}")
+
+    # ONE combined report: merge every trace given now with any earlier traces
+    # kept in the out dir, so multiple runs (which expose different code paths)
+    # add up into a single picture of the whole script.
+    try:
+        import final as finalmod
+        merged = list(all_traces)
+        # also fold in any resolver-constant dumps saved beside the traces
+        rc = os.path.join(a.out, "resolved_constants.txt")
+        if os.path.exists(rc):
+            merged.append(open(rc, encoding="latin1").read())
+        frecon = os.path.join(a.out, "FINAL_RECONSTRUCTION.txt")
+        open(frecon, "w").write(finalmod.consolidate(merged))
+        print(f"              FINAL report -> {frecon}  (merged {len(merged)} source(s))")
+    except Exception as e:
+        print(f"              (final report skipped: {e})")
+
+    # a plain index so you can see everything produced in one place
+    print("\n== all results in %s ==" % a.out)
+    for name in ("FINAL_RECONSTRUCTION.txt", "BEHAVIOR.txt", "RECONSTRUCTED.lua",
+                 "FLOW.txt", "DISASSEMBLY.txt", "OPCODE_MAP.txt", "vm_structure.txt",
+                 "vm_imports.txt", "inner_source.lua", "inner_data.bin"):
+        p = os.path.join(a.out, name)
+        if os.path.exists(p):
+            print("   %-26s %8d bytes" % (name, os.path.getsize(p)))
 
 
 if __name__ == "__main__":

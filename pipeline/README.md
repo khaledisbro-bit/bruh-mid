@@ -1,64 +1,60 @@
-# Deobfuscation pipeline
+# VmSmart deobfuscation pipeline
 
-A hybrid static + dynamic pipeline for the base85 + Zstd Luau VM obfuscator
-family (obf2, obf3, and siblings). It recovers the genuine program logic, not
-just readable code, and it refuses to fabricate.
+One program does every stage. It reads the **whole** obfuscated file (nothing is
+truncated) and never fabricates: everything in the reports is derived from the
+bytes or observed at runtime.
 
-## Why hybrid
-The outer layers are deterministic and yield to pure static analysis. The inner
-VM is not: its constant pool is decrypted by a key built at run time, and each
-instruction is decrypted per-pc by an LCG. There is no static key. So the
-runtime-keyed layer is handed to a dynamic oracle that runs in a real executor,
-and the results are reconciled by an audit layer that rejects failed runs.
+## One command
 
-## Stages
-1. unobf.py (static). Unwraps Layer 1 (base85, Zstd, header split), auto-detects
-   every per-build knob (resolver, decoder, constant table, LCG, integrity),
-   inventories functions, and classifies constructs REAL / SUSPICIOUS / DECOY /
-   UNKNOWN with a reason each. Nothing is hardcoded per sample. Nothing is
-   deleted on looks alone.
-2. unobf.lua (dynamic oracle). Runs in your executor. Unwraps at runtime,
-   auto-patches the detected resolver with capture hooks, runs the inner VM under
-   an executor-sim env, taint-tracks arithmetic, captures the returned module,
-   and probes each action with tracked arguments. Emits a structured result
-   block.
-3. ai.py (semantic audit). Compares the candidate source against the trace and
-   the static log. Enforces: the VM actually ran (run_ok), operation coverage,
-   string coverage, no leftover decode layers, no unresolved dynamic dispatch.
-   A failed trace is a BLOCKER, so guesses from anti-tamper noise are rejected.
-
-## Run (one command)
 ```
-# stages 1-3: detect, unwrap, and generate a ready executor harness
-python3 pipeline/deob.py obf.lua
-
-#   run out/harness.lua in your executor (the obfuscated source is EMBEDDED,
-#   so no readfile and no folder hassle), save its printed
-#   BEGIN_UNOBF_RESULT..END block to result.txt
-
-# stage 4: verify and finalize
-python3 pipeline/deob.py obf.lua --trace result.txt --candidate deobfuscated.lua
-#   -> out/FINAL_SOURCE.lua when the verdict is CONSISTENT
-
-# just identify the obfuscator:
-python3 pipeline/deob.py obf.lua --detect
+python3 deob.py <obf.lua>
 ```
 
-## Run (stages by hand)
+This runs:
+1. DETECT  - identify the obfuscator family and per-build knobs.
+2. STATIC  - unwrap layer 1, dump inner VM source/data, lift the import table.
+3. HARNESS - write `out/harness.lua` with the full obfuscated script embedded.
+
+Then run `out/harness.lua` in your executor and save everything it prints (or the
+`opcode_trace.txt` / `resolved_constants.txt` files it writes) and feed them back:
+
 ```
-python3 pipeline/unobf.py obf.lua -o out          # static
-# run pipeline/unobf.lua in your executor -> unobf_result.txt
-python3 pipeline/ai.py --static out/analysis_log.json \
-    --trace unobf_result.txt --candidate deobfuscated.lua
+python3 deob.py <obf.lua> --trace result.txt
 ```
 
-ai.py exits 0 and prints CONSISTENT only when the candidate matches a real run.
-Set ANTHROPIC_API_KEY and ANTHROPIC_MODEL to add an LLM audit pass on top of the
-deterministic checks.
+You can pass **several** traces from different runs; the obfuscator takes a
+different path each run, so more runs reveal more of the program and they are
+merged into one report:
 
-## Multi-sample, proven
-- obf3: resolver Nv / decoder BE / table Yd, LCG add 1522986580.
-- obf2: resolver Ro / decoder Qe / table Ks, LCG add 1616593069.
-- 25ms build: correctly flagged as a different obfuscator family.
+```
+python3 deob.py <obf.lua> --trace run1.txt run2.txt opcode_trace.txt resolved_constants.txt
+```
 
-See REPORT_obf3.md for the full six-section result on obf3.
+## What you get in `out/`
+
+- `FINAL_RECONSTRUCTION.txt` - the combined picture: what the script is, the API
+  surface grouped by area, a reconstructed Lua skeleton, merged across all runs.
+- `FLOW.txt`         - real program operations with the actual values that flowed.
+- `DISASSEMBLY.txt`  - the executed instruction stream, machinery folded, opcodes
+  named where their stack effect is verified.
+- `OPCODE_MAP.txt`   - each opcode's verified meaning (measured stack effect).
+- `RECONSTRUCTED.lua`- source-shaped rebuild from one run's evidence.
+- `BEHAVIOR.txt`     - REAL vs DECOY (anti-tamper) split + coverage audit.
+- `vm_structure.txt`, `vm_imports.txt`, `inner_source.lua`, `inner_data.bin`.
+
+## Modules (each stage, importable)
+
+- `unobf.py`  layer-1 unwrap + inner-VM static analysis
+- `lift.py`   static import-table / string recovery from the VM bytes
+- `ai.py`     decoy classifier, constant filter, coverage audit
+- `devirt.py` opcode-trace disassembly + machinery folding
+- `opmap.py`  opcode semantics from handler bodies, verified vs the trace
+- `flow.py`   value-flow: attach real decoded values to the program ops
+- `final.py`  merge every run into one reconstruction
+- `universal.lua` the executor harness (embeds the full obf, hooks resolver +
+  dispatch; dispatch trace is applied to one chunk only, integrity-safe)
+
+Honesty: this recovers the program's real constant + behaviour surface. It is not
+byte-exact source - the VM discards the original text and randomizes opcodes per
+run, so unrun branches and exact statement structure are left unrecovered rather
+than guessed.
