@@ -95,6 +95,13 @@ def main():
                          "console block plus the instruction dump beside it), "
                          "so fold them together instead of treating each as a "
                          "separate run")
+    ap.add_argument("--collect", nargs="?", type=int, const=1, metavar="RUNS",
+                    help="watch the executor's workspace and pick each run's "
+                         "files up automatically, then analyse them. Give the "
+                         "number of runs to collect (default 1)")
+    ap.add_argument("--workspace",
+                    help="the executor's output folder, if --collect cannot "
+                         "find it")
     ap.add_argument("--safe", action="store_true",
                     help="also write a harness that does not trace opcodes, for "
                          "builds whose integrity check reacts to the trace")
@@ -153,12 +160,40 @@ def main():
     harness = make_harness(src, a.out)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
 
+    if a.collect:
+        import collect as collector
+        try:
+            spaces = collector.find_workspaces(a.workspace)
+        except SystemExit as e:
+            print(str(e))
+            return 1
+        if not spaces:
+            print("\n[4/4] COLLECT : could not find where your executor writes "
+                  "its output.")
+            print("              It is looking for a folder holding %s or %s."
+                  % (collector.BLOCK, collector.DUMP))
+            print("              Run the harness once, then pass that folder "
+                  "with --workspace.")
+            return 1
+        print("")
+        runs = collector.watch(spaces, a.collect,
+                               os.path.join(a.out, "captures"))
+        if not runs:
+            print("\nnothing was collected.")
+            return 1
+        a.trace = runs
+        print("")
+
     if not a.trace:
         print("\nnext:")
         print("  1) run %s in your executor" % harness)
         print("  2) save its BEGIN_UNOBF_RESULT..END block to capture.txt")
         print("  3) python3 %s %s --trace capture.txt"
               % (os.path.basename(__file__), a.input))
+        print("")
+        print("or skip the copying: python3 %s %s --collect 3"
+              % (os.path.basename(__file__), a.input))
+        print("  then just run the harness in your executor three times.")
         return 0
 
     missing = [t for t in tracefmt.expand(a.trace) if not os.path.isfile(t)]

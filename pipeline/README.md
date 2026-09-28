@@ -3,9 +3,30 @@
 From an obfuscated Luau file to a reconstruction, in four stages.
 
 ```
+python3 deob.py obf.lua --collect 3    # writes the harness, then waits
+#   run out/harness.lua in your executor three times; that is all
+```
+
+`--collect` watches the folder your executor writes to, picks each run's files
+up as it finishes them, and analyses the lot. It takes the files rather than the
+printed block, because an executor prints only the first few thousand
+instructions and writes all of them. A run counts as finished when its files stop
+changing, so a capture is never taken half-written. Pass `--workspace PATH` if it
+cannot find the folder.
+
+Doing it by hand works too:
+
+```
 python3 deob.py obf.lua                       # detect, unwrap, write the harness
 #   run out/harness.lua in your executor, save its BEGIN..END block
 python3 deob.py obf.lua --trace capture.txt   # analyse
+```
+
+Several runs are given as several arguments, and a run written out in two files
+is one argument with the pieces joined by `+`:
+
+```
+python3 deob.py obf.lua --trace "r1_block.txt+r1_dump.txt" "r2_block.txt+r2_dump.txt"
 ```
 
 | stage | what happens |
