@@ -196,14 +196,20 @@ def _branchers(seq, succ_pcs, slots):
         for nxt in succ_pcs.get(pc, ()):
             offsets.setdefault(st.op, set()).add(nxt - pc)
     proved = {op for op, offs in offsets.items() if len(offs) > 1}
-    excluded = set(slots.write_ops) | set(slots.read_ops) if slots else set()
-    cands = set()
-    for _pc, st in seq:
-        if st.op in excluded:
-            continue
-        if st.pops >= 1 and st.pushes == 0 and st.operands:
-            cands.add(st.op)
-    return proved, (cands - excluded)
+    return proved, targets(seq, succ_pcs)
+
+
+def targets(seq, succ_pcs):
+    """Instructions that were actually jumped to. An operand only names a branch
+    destination if some instruction in this run really sent control there;
+    otherwise it is a register number, a count or a constant key that happens to
+    fall inside the range of valid instruction numbers."""
+    out = set()
+    for pc, nxts in succ_pcs.items():
+        for n in nxts:
+            if n != pc + 1:
+                out.add(n)
+    return out
 
 
 def _branches(g, succ_pcs, seq, known, slots=None):
@@ -211,8 +217,7 @@ def _branches(g, succ_pcs, seq, known, slots=None):
     by_pc = {}
     for pc, st in seq:
         by_pc.setdefault(pc, st)
-    proved, cands = _branchers(seq, succ_pcs, slots)
-    lo, hi = min(known), max(known)
+    proved, jumped_to = _branchers(seq, succ_pcs, slots)
     for pc, outs in sorted(succ_pcs.items()):
         st = by_pc[pc]
         targets = set(outs)
@@ -221,25 +226,27 @@ def _branches(g, succ_pcs, seq, known, slots=None):
                                "row": st.row, "op": st.op, "evidence": OBSERVED,
                                "why": "both destinations were taken in this run"})
             continue
-        if st.op not in proved and st.op not in cands:
+        # Only an opcode this run PROVED to be a branch can have an untaken
+        # side. Reading any operand that lands in the instruction range as a
+        # destination turns every register number into a phantom branch, which
+        # buries the real ones.
+        if st.op not in proved:
             continue
         possible = set(targets)
         for o in st.operands:
-            if isinstance(o, int) and lo <= o <= hi and o != pc:
+            if isinstance(o, int) and o in jumped_to and o != pc:
                 possible.add(o)
         if pc + 1 in known:
             possible.add(pc + 1)
         missed = sorted(possible - targets)
         if not missed:
             continue
-        ev = OBSERVED if st.op in proved else UNKNOWN
         why = ("OP_%d was seen sending control to more than one place elsewhere "
-               "in this run" % st.op) if st.op in proved else \
-              ("OP_%d consumes a value and produces none, and carries an operand "
-               "that names a valid instruction, so it reads as a condition whose "
-               "other side was not taken" % st.op)
+               "in this run, and pc %s was reached by a jump elsewhere, so this "
+               "instruction has a side that was not taken here"
+               % (st.op, ", ".join(str(m) for m in missed)))
         g.branches.append({"pc": pc, "taken": sorted(targets), "untaken": missed,
-                           "row": st.row, "op": st.op, "evidence": ev,
+                           "row": st.row, "op": st.op, "evidence": OBSERVED,
                            "why": why})
         for m in missed:
             g.unexplored.append((pc, m, why))

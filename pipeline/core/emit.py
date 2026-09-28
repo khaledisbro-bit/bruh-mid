@@ -27,6 +27,9 @@ from evidence import OBSERVED, INFERRED, UNKNOWN, DECOY, TAG
 import exprs as exprmod
 
 
+MAX_BRANCH_NOTES = 12
+
+
 class Line:
     __slots__ = ("text", "evidence", "pc", "prov", "indent")
 
@@ -175,6 +178,7 @@ class Emitter:
 
         order = sorted(g.blocks, key=lambda h: min(
             st.row for st in g.blocks[h]))
+        shown_branches = [0]
         emitted_heads = set()
         out, depth = [], 0
         open_loops = []
@@ -220,6 +224,12 @@ class Emitter:
             out.append(Line("end", OBSERVED, lp2["head"],
                             "closes the loop whose head is pc %d" % lp2["head"],
                             depth))
+        extra = sum(1 for b in self.g.branches if b["untaken"]) - shown_branches[0]
+        if extra > 0:
+            out.append(Line(
+                "-- %d more branch(es) have a side this capture never entered; "
+                "they are listed in CONTROL_FLOW.txt" % extra,
+                UNKNOWN, 0, "kept out of the source so it stays readable; none are discarded", 0))
         self.lines = out
         return out
 
