@@ -156,33 +156,53 @@ class Analysis:
 
 
 def merge_summary(analyses):
-    """What several runs of the same program add up to."""
-    explained, unexplored, taken = set(), {}, set()
+    """What several runs of the same program add up to.
+
+    Counted in instructions, not in records: a run that goes round a loop more
+    times covers no new code, so records would flatter it. What matters is which
+    distinct instructions any run explained, and which branch targets no run
+    entered."""
+    explained, seen, unexplored, taken = set(), set(), {}, set()
+    per_run = []
     for a in analyses:
+        mine_ok, mine_all = set(), set()
         for pc, v in a.verdicts.items():
+            mine_all.add(pc)
             if v.verdict == evidence.OBSERVED:
-                explained.add(pc)
+                mine_ok.add(pc)
+        explained |= mine_ok
+        seen |= mine_all
+        per_run.append((a.capture.name, len(mine_ok), len(mine_all),
+                        len(a.capture.rows)))
         for b in a.cfg.branches:
             for t in b["taken"]:
                 taken.add((b["pc"], t))
             for t in b["untaken"]:
-                unexplored.setdefault((b["pc"], t), 0)
-                unexplored[(b["pc"], t)] += 1
+                unexplored[(b["pc"], t)] = unexplored.get((b["pc"], t), 0) + 1
     still = sorted(k for k in unexplored if k not in taken)
+    new_any = len(explained) > max((p[1] for p in per_run), default=0)
     L = ["ACROSS %d RUN(S)" % len(analyses),
          "=" * 46,
          "The obfuscator takes a different path each run, so runs can only add.",
          "An instruction explained in any run counts as explained; a branch",
          "target counts as unexplored only when no run took it.", "",
-         "instructions explained in at least one run: %d" % len(explained)]
-    for a in analyses:
-        cov, ex, tot = verify.coverage(a.lift, a.verdicts)
-        L.append("  %-28s %d of %d (%.0f%%)" % (a.capture.name, ex, tot, 100 * cov))
+         "distinct instructions explained by at least one run: %d of %d seen"
+         % (len(explained), len(seen)), ""]
+    for name, ok, allp, rows in per_run:
+        L.append("  %-28s %4d of %4d instruction(s)   %6d record(s)"
+                 % (name, ok, allp, rows))
     L.append("")
+    if not new_any and len(analyses) > 1:
+        L.append("No run explained an instruction the others did not, so these")
+        L.append("captures cover the same path. Extra runs only add when they go")
+        L.append("somewhere new; if they were taken from the same output, or the")
+        L.append("script takes the same branch every time, merging them changes")
+        L.append("nothing.")
+        L.append("")
     if still:
         L.append("branch targets no run has entered (%d):" % len(still))
         for pc, t in still[:40]:
-            L.append("  pc %d -> pc %d" % (pc, t))
+            L.append("  %s -> %s" % (cfgx._fmt(pc), cfgx._fmt(t)))
         L.append("")
         L.append("Driving those paths in another capture is what would resolve")
         L.append("them. They are not missing from the program; they are missing")

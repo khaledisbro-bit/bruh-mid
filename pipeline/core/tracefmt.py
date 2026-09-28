@@ -220,16 +220,35 @@ def _union(a, b, key):
 
 
 def load(paths, one_run=False):
-    """Read captures. Each file is a separate run unless one_run says they are
-    pieces of the same one, in which case they are folded together first."""
+    """Read captures.
+
+    Each argument is one run. A run written out in pieces - the printed block
+    and the instruction dump beside it - is given as those pieces joined by +,
+    so several runs each in two files stay separate runs:
+
+        --trace run1a.txt+run1b.txt run2a.txt+run2b.txt
+
+    one_run treats every argument as a piece of a single run instead."""
     import os
     caps = []
     for p in paths:
-        with open(p, encoding="latin1") as f:
-            caps.append(Capture(f.read(), os.path.basename(p)))
+        parts = [q for q in p.split("+") if q]
+        group = []
+        for q in parts:
+            with open(q, encoding="latin1") as f:
+                group.append(Capture(f.read(), os.path.basename(q)))
+        caps.append(combine(group) if len(group) > 1 else group[0])
     if one_run and len(caps) > 1:
         return [combine(caps)]
     return caps
+
+
+def expand(paths):
+    """The actual files behind the arguments, for checking they exist."""
+    out = []
+    for p in paths:
+        out += [q for q in p.split("+") if q]
+    return out
 
 
 if __name__ == "__main__":

@@ -87,7 +87,9 @@ def main():
     ap.add_argument("-o", "--out", default="out")
     ap.add_argument("--detect", action="store_true")
     ap.add_argument("--trace", nargs="+",
-                    help="one or more captures; extra runs can only add")
+                    help="one capture per run; extra runs can only add. A run "
+                         "written out in two files is given as one argument "
+                         "with the pieces joined by + (block.txt+dump.txt)")
     ap.add_argument("--one-run", action="store_true",
                     help="the trace files are pieces of a SINGLE run (the "
                          "console block plus the instruction dump beside it), "
@@ -159,7 +161,7 @@ def main():
               % (os.path.basename(__file__), a.input))
         return 0
 
-    missing = [t for t in a.trace if not os.path.isfile(t)]
+    missing = [t for t in tracefmt.expand(a.trace) if not os.path.isfile(t)]
     if missing:
         print("\n[4/4] ANALYSE : nothing to read.")
         for t in missing:
