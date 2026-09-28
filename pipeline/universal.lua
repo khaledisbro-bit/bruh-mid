@@ -89,6 +89,44 @@ env.__SL = function(r)
 end
 env.__CAP = function() end
 
+-- Devirtualization trace. The inner VM's dispatch loop looks like
+--   while true do local NO = ARR[PC]  ...
+--     local NU = ((PC-1)*<num>+<h>) % 2147483647
+--     local NL = (NQ+NU) % 2147483647     -- opcode = (NL-NU) % 0x7fffffff
+--   ... nested if-tree on (NL-NU)%0x7fffffff picks the handler
+-- We inject a log call right after NL is computed, so every executed
+-- instruction (program counter, opcode, operand row) is recorded. This turns
+-- the running VM into a disassembler of the paths that actually execute. All
+-- guarded: if the shape does not match, the trace is simply skipped.
+local ops, opn = {}, 0
+env.__OP = function(pc, oc, NO)
+    opn = opn + 1
+    if opn > 15000 then return end
+    local a = {}
+    if type(NO) == "table" then
+        for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
+    end
+    ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
+end
+
+local function patchDispatch(s)
+    -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
+    local nl, nu = s:match("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
+    if not nl then return nil end
+    -- program counter from NU's own assignment: local NU=((PC-1)*<digits>...
+    local pc = s:match("local " .. nu .. "=%(%((%w+)%-1%)%*%d+")
+    if not pc then return nil end
+    -- instruction row NO from the loop top: local NO = ARR[PC];
+    local no = s:match("local (%w+)=%w+%[" .. pc .. "%];")
+    if not no then return nil end
+    -- inject the logger right after the NL assignment `local NL=...;`
+    local mark = "local " .. nl .. "="
+    local i = s:find(mark, 1, true); if not i then return nil end
+    local j = s:find(";", i + #mark, true); if not j then return nil end
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. ")end"
+    return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc)
+end
+
 local function patchResolver(s)
     local rn, ra, rg, rd, rt = s:match("local function (%w+)%((%w+)%)if %2<0 then %2=%-%2%-(%w+) end;return (%w+)%((%w+)%[%2%]%)end")
     if not rn then return nil end
@@ -114,8 +152,18 @@ env.loadstring = function(src, ...)
         use = patched
         behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
     end
-    local f = realLoad(use, ...)
-    if not f then f = realLoad(src, ...) end  -- fallback if patched won't compile
+    -- on top of that, try to patch the dispatch loop so it traces opcodes
+    local useD = use
+    local okD, patchedD, dn = pcall(patchDispatch, use)
+    if okD and patchedD then
+        useD = patchedD
+        behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn) .. " -> tracing opcodes]"
+    end
+    -- compile, degrading gracefully: full (resolver+dispatch) -> resolver-only
+    -- -> original. A broken dispatch patch never costs us the constant dump.
+    local f = realLoad(useD, ...)
+    if not f and useD ~= use then f = realLoad(use, ...) end
+    if not f then f = realLoad(src, ...) end
     if f then pcall(setfenv, f, env) end
     return f
 end
@@ -222,6 +270,10 @@ say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
 say("resolved="..#resolved)
 say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
 pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
+-- devirtualization: the executed instruction stream (pc;opcode;operands)
+say("opcodes="..#ops.."  (logged, cap 15000; total executed may be higher)")
+say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
+pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R, "\n").."\nEND_UNOBF_RESULT"
 print(body)

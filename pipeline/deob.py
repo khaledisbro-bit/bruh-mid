@@ -247,6 +247,16 @@ def main():
         print(f"              reconstruction -> {rpath}")
     except Exception as e:
         print(f"              (reconstruction skipped: {e})")
+    # devirtualization: lift the opcode trace (dispatch hook) into a disassembly
+    if "---OPCODES---" in trace:
+        try:
+            import devirt
+            disasm = devirt.summarize(trace)
+            dpath = os.path.join(a.out, "DISASSEMBLY.txt")
+            open(dpath, "w").write(disasm)
+            print(f"              disassembly -> {dpath}")
+        except Exception as e:
+            print(f"              (disassembly skipped: {e})")
     if verdict == "CONSISTENT" and cand:
         final = os.path.join(a.out, "FINAL_SOURCE.lua")
         open(final, "w").write(cand)
