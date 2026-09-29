@@ -131,7 +131,12 @@ class Emitter:
         that ran without being in the program."""
         for code in protos:
             for pc, ins in enumerate(code):
-                ops = [str(o) for o in ins[1:]]
+                # The real harness dumps every field of the instruction row:
+                # the instruction's own word first, then its operands. Writing
+                # only the operands here made the fixture a different shape from
+                # anything the engine sees in practice, and the pass that lines
+                # the trace up against the array had nothing to match on.
+                ops = [str(self.op(ins[0]))] + [str(o) for o in ins[1:]]
                 self.code_rows.append("%d:%s" % (pc, ",".join(ops)))
             self.code_rows.append("%d:" % len(code))
 

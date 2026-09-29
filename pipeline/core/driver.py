@@ -127,7 +127,14 @@ class Analysis:
             fns = {st.fn for st in self.lift.steps}
             if len(fns) == 1:
                 fn = next(iter(fns))
-                universe = {(fn, pc) for pc in self.capture.code}
+                # in the trace's own numbering: the array counts its rows the
+                # way the interpreter stores them, which is not obliged to be
+                # the way the program counter reports them. Handing the graph
+                # the raw indices offers it fall-through targets that are one
+                # instruction out - phantom branches, from arithmetic.
+                code, _k, _n, _w = staticcode.aligned(self.capture.code,
+                                                      self.program)
+                universe = {(fn, pc) for pc in code}
                 universe |= {st.key() for st in self.lift.steps}
         self.cfg = cfgx.build(self.lift, self.slots, universe)
         # One slot is not one variable. A compiler reuses a slot, so the reads
@@ -483,6 +490,16 @@ def selftest():
                 except Exception as e:
                     wrong.append("%s is not valid Lua: %s"
                                  % (what, str(e)[:120]))
+        # The array and the trace need not count the same way. Shift the
+        # trace and the measured offset must follow it, or every figure taken
+        # against the array is silently out by that much.
+        import staticcode as _sc2
+        for _shift in (1, -1):
+            _rows = [dict(_r, pc=_r["pc"] + _shift) for _r in a.capture.rows]
+            _k, _n, _ = _sc2.offset(a.capture.code, _rows)
+            if _k != _shift:
+                wrong.append("a trace shifted by %+d was measured as %+d"
+                             % (_shift, _k))
         if not verify.statement_lines(a.runnable):
             wrong.append("the runnable rendering has no statements, so there "
                          "is nothing to run or compare")

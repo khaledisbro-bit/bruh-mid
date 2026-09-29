@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 30
+VERSION = 31
 
 STAGES = (
     "captures read by shape",
@@ -69,6 +69,8 @@ STAGES = (
     "program cannot be what stops it",
     "a run that raised early said so at the top of the report, rather than its "
     "first few steps being described as the program",
+    "the trace's instruction numbers lined up against the array's by matching "
+    "the operands both report, rather than assumed to be the same",
 )
 
 

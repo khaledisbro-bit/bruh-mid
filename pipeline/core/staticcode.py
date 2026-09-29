@@ -28,6 +28,8 @@ so an instruction that never executed has no opcode to read, and nothing here
 guesses one. Unreached code is reported as present and unexplained, which is what
 the evidence supports.
 """
+from collections import Counter
+
 
 
 def report(code, rows, cfg=None):
@@ -41,6 +43,7 @@ def report(code, rows, cfg=None):
                 "The harness writes the array to code_array.txt when it can\n"
                 "patch the dispatch loop; passing that file alongside the trace\n"
                 "is what makes the figures below possible.")
+    code, _shift, _wit, _alignwhy = aligned(code, rows)
     ran = {r["pc"] for r in rows}
     total = len(code)
     covered = len(ran & set(code))
@@ -49,6 +52,8 @@ def report(code, rows, cfg=None):
     L = ["THE PROGRAM'S OWN INSTRUCTION ARRAY",
          "=" * 46,
          "Measured against the program, not against the run.", "",
+         "How the two were lined up:",
+         "  " + _alignwhy, "",
          "instructions in the program      %d" % total,
          "instructions this capture ran    %d (%.0f%% of the program)"
          % (covered, 100.0 * covered / max(total, 1)),
@@ -85,11 +90,89 @@ def report(code, rows, cfg=None):
     return "\n".join(L)
 
 
+def aligned(code, rows):
+    """The array re-keyed into the trace's numbering, so the two can be
+    compared at all. Returns (code, shift, witnesses, why)."""
+    k, n, why = offset(code, rows)
+    if not code or not k:
+        return code, k, n, why
+    return {pc + k: row for pc, row in code.items()}, k, n, why
+
+
 def coverage(code, rows):
     """(instructions in the program, how many ran). Zeros when the array is
     absent, so a caller can tell the difference between full coverage and no
     measurement."""
     if not code:
         return 0, 0
+    code, _k, _n, _why = aligned(code, rows)
     ran = {r["pc"] for r in rows}
     return len(code), len(ran & set(code))
+
+
+# ---------------------------------------------------------------- alignment
+# The trace numbers an instruction the way the interpreter's program counter
+# does. The array is indexed the way the interpreter stores it. Those are not
+# obliged to agree, and in at least one build they do not: an executed
+# instruction reported at 4 carries the operands of array row 3.
+#
+# Comparing the two directly then shifts every coverage figure by one and, worse,
+# offers the graph a fall-through target that is really the next instruction's
+# neighbour - a phantom branch, from arithmetic rather than from evidence.
+#
+# The offset is not assumed. It is measured, by lining the operands the trace
+# reported against the operands the array holds, and it is only used when
+# enough instructions agree on the same answer.
+MIN_WITNESSES = 3
+MAX_SHIFT = 4
+
+
+def _row_matches(row, ops):
+    """Whether an array row carries exactly these operands after its first
+    field, which is the instruction's own word rather than an operand."""
+    if row is None or not ops:
+        return False
+    have = [x for x in row[1:1 + len(ops)]]
+    return len(have) == len(ops) and have == list(ops)
+
+
+def offset(code, rows, max_shift=MAX_SHIFT, min_witnesses=MIN_WITNESSES):
+    """(shift, witnesses, why) - how far the trace's numbers sit from the
+    array's, measured from the operands both of them report."""
+    if not code or not rows:
+        return 0, 0, ("there is no instruction array to line the trace up "
+                      "against, so nothing is assumed about the numbering")
+    votes = Counter()
+    usable = 0
+    for r in rows:
+        ops = r.get("operands") or []
+        if not ops:
+            continue
+        usable += 1
+        for k in range(-max_shift, max_shift + 1):
+            if _row_matches(code.get(r["pc"] - k), ops):
+                votes[k] += 1
+    if not votes:
+        return 0, 0, ("no instruction reported operands that appear in the "
+                      "array, so the two numberings could not be lined up; "
+                      "they are treated as the same, which is what they "
+                      "usually are")
+    best, n = votes.most_common(1)[0]
+    rival = max((v for k, v in votes.items() if k != best), default=0)
+    if n < min_witnesses or n == rival:
+        return 0, n, ("only %d instruction(s) of %d with operands could be "
+                      "matched against the array%s, which is not enough to "
+                      "establish the numbering. The two are treated as the "
+                      "same and every figure measured against the array is "
+                      "worth that much less"
+                      % (n, usable,
+                         " and another shift fits equally well" if n == rival
+                         else ""))
+    if best == 0:
+        return 0, n, ("%d instruction(s) carried the operands of the array row "
+                      "with the same number, so the trace and the array count "
+                      "the same way" % n)
+    return best, n, ("%d instruction(s) carried the operands of the array row "
+                     "%d before their own number, so the trace counts %d ahead "
+                     "of the array and is shifted back before anything is "
+                     "measured against it" % (n, best, best))
