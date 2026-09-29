@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 22
+VERSION = 23
 
 STAGES = (
     "captures read by shape",
@@ -51,6 +51,8 @@ STAGES = (
     "walking the globals does not list them",
     "the harness interrogating itself before it runs the payload, so what a "
     "traced script could notice is measured on the run rather than assumed",
+    "a call written where it was made, not where its receiver was resolved, "
+    "and a direct call written as one rather than as __call",
 )
 
 

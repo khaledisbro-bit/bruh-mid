@@ -114,6 +114,7 @@ def match_calls(L, records):
             found = _find(L, consumers, cursor, anchor)
             if found is not None:
                 k, st, namev = found
+                k, st = _advance_to_call(L, consumers, k, st, rec)
                 cursor = k + 1
                 matched.append(_build(rec, st, namev, strength, note, tier))
                 break
@@ -182,6 +183,39 @@ def _find(L, consumers, cursor, anchor):
         if st.row == producer.row and not users:
             return k, st, producer
     return None
+
+
+def _advance_to_call(L, consumers, k, st, rec):
+    """Move a match from the instruction that merely produced the receiver to
+    the one that actually performed the call.
+
+    A stack machine resolves a name first and calls second. Anchoring on the
+    receiver can land on the resolve: it consumed the name, so it looks like
+    the match, but all it did was turn a name into an object. Rendering that as
+    the call writes the call twice - once where the object was made, and again
+    where it was used.
+
+    The call is the instruction downstream that consumes what the resolve
+    produced AND takes at least as many other values as the environment
+    recorded arguments. That second half is what keeps this from moving a
+    genuine one-instruction call: there the anchor already takes the
+    arguments, so nothing downstream qualifies.
+
+    Returns (k, st) unchanged when no better instruction exists.
+    """
+    if not st.pushed:
+        return k, st
+    want = len(rec.get("args") or ())
+    product = st.pushed[-1]
+    for user in consumers.get(product.id) or []:
+        for j in range(k + 1, len(L.steps)):
+            nxt = L.steps[j]
+            if nxt.row != user.row:
+                continue
+            if len(nxt.popped) >= want + 1 and product in nxt.popped:
+                return j, nxt
+            break
+    return k, st
 
 
 def _build(rec, st, namev, strength, note, tier):
@@ -429,6 +463,21 @@ class Renderer:
             args = [_as_written(a) for a in rec["args"]]
         if rec.get("recv") is None:
             return "%s(%s)" % (name, ", ".join(args))
+        # __call is not a method. It is the metamethod Lua runs when something
+        # is called directly, so the harness's proxy sees `print(x)` and records
+        # it as print:__call(x) - that is how the proxy observed it, not how the
+        # program wrote it. Writing it back as a method call says the program
+        # indexed `print` for a field named __call, which it never did, and the
+        # line does not even mean the same thing. The receiver IS the thing
+        # being called.
+        #
+        # This is a fact about Lua's own calling convention, not a name being
+        # recognised: any receiver whose recorded method is __call was called
+        # directly, whatever it is.
+        if name == "__call":
+            if not _NAME.match(recv.strip()) and not recv.strip().startswith("("):
+                recv = "(%s)" % recv
+            return "%s(%s)" % (recv, ", ".join(args))
         # a method call needs something a method can be taken from: a literal or
         # an expression has to be parenthesised, or the line will not load
         if not _NAME.match(recv.strip()) and not recv.strip().startswith("("):
