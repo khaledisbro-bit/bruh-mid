@@ -24,6 +24,7 @@ produced it.
 """
 from evidence import OBSERVED, INFERRED, UNKNOWN, DECOY, TAG
 
+import re
 import cfgx
 import exprs as exprmod
 import induct
@@ -42,6 +43,24 @@ class Line:
         self.pc = pc
         self.prov = prov
         self.indent = indent
+
+
+_IDENT = re.compile(r"[A-Za-z_]\w*")
+_WORDS = {"and", "or", "not", "true", "false", "nil"}
+
+
+def _constant_condition(cond):
+    """Whether a rendered condition mentions nothing that can change.
+
+    Strings are removed first so their contents are not mistaken for names.
+    What is left is names: if none of them is anything but a Lua keyword, the
+    condition is built from literals alone and holds the same value on every
+    pass."""
+    if not cond:
+        return False
+    stripped = re.sub(r'"[^"]*"', "", cond)
+    names = [m.group(0) for m in _IDENT.finditer(stripped)]
+    return not [n for n in names if n not in _WORDS]
 
 
 class Emitter:
@@ -286,7 +305,16 @@ end
                 # then it beats the fallback below, because `for v = 0, 11`
                 # says what the loop does while "go round 13 times" says what
                 # this input did.
-                unrecovered = "OP(" in cond or cond == "true"
+                # A condition built only from literals cannot change between
+                # one pass and the next, so the loop it guards either never
+                # runs or never stops. `while (0 < 3) do` is not an imperfect
+                # reconstruction, it is a script that hangs - and it is what
+                # comes out when no variable model was established and every
+                # read renders as the value it happened to hold. Running that
+                # is what the behaviour comparison does, so it must never be
+                # written.
+                unrecovered = ("OP(" in cond or cond == "true"
+                               or _constant_condition(cond))
                 fh = self._for_header(lp) if unrecovered else None
                 if fh is not None:
                     text, why = fh

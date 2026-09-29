@@ -1,1 +1,6 @@
 luaparser  # optional: lets the self-test prove the runnable output compiles
+# Runs the Lua this package generates, so the behaviour harness and the
+# runnable reconstruction are executed in the self-test rather than only
+# parsed. Optional: without it those checks report that they could not run,
+# and say so, rather than passing quietly.
+lupa

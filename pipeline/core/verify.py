@@ -176,12 +176,36 @@ local env = setmetatable({}, { __index = function(_, k)
     return watch(tostring(k))
 end })
 
-local fn, err = loadstring(RECONSTRUCTED)
+-- loadstring is Lua 5.1 and Luau; `load` replaced it in 5.2. setfenv is the
+-- same story, and it is called through pcall below - so where it is missing
+-- the call quietly fails, the reconstruction runs against the REAL globals,
+-- the watch proxy sees nothing, and an empty call list comes back looking like
+-- a reconstruction that does nothing rather than a harness that did not
+-- attach. A silent wrong answer, which is worse than an error.
+--
+-- Both are taken in whichever form this runtime has. Where only `load` exists
+-- it takes the environment as its fourth argument, which is the replacement
+-- for setfenv.
+local _load = loadstring or load
+local fn, err
+if setfenv then
+    fn, err = _load(RECONSTRUCTED)
+else
+    fn, err = _load(RECONSTRUCTED, "reconstruction", "t", env)
+end
 if not fn then
     print("BEGIN_BEHAVIOUR\ncompile_error: " .. tostring(err) .. "\nEND_BEHAVIOUR")
     return
 end
-pcall(setfenv, fn, env)
+if setfenv then
+    local attached = pcall(setfenv, fn, env)
+    if not attached then
+        print("BEGIN_BEHAVIOUR\nrun_ok: false\nerror: the environment could " ..
+              "not be attached, so nothing this run did would have been " ..
+              "seen\nEND_BEHAVIOUR")
+        return
+    end
+end
 local ok, e = pcall(fn)
 local out = { "BEGIN_BEHAVIOUR", "run_ok: " .. tostring(ok) }
 if not ok then out[#out + 1] = "error: " .. tostring(e) end
@@ -550,6 +574,60 @@ def report(L, models, verdicts, records=(), calls=(), types=None):
         "consistent with every value the VM reported, over %d check(s)"
         % checked if ok else "INCONSISTENT - see the failures above")]
     return "\n".join(lines), ok
+
+
+def execute(script, seconds=6):
+    """Run a generated Lua script and return what it printed.
+
+    Uses lupa when it is installed. The behaviour harness is Lua that this
+    package writes and nothing here could run, so for a long time it was only
+    ever checked for syntax - and syntax is not the interesting half. Actually
+    executing it found, at once: a loader that does not exist outside Lua 5.1,
+    an environment that attached through a pcall and so failed silently, a
+    reconstruction that called a string, and one that looped forever.
+
+    The script runs in a child process. A Lua loop that never ends cannot be
+    interrupted from Python - the alarm never arrives, because the interpreter
+    is inside C - so the only reliable bound is a process that can be killed.
+
+    Returns (True, output), (False, why), or (None, why) when there is no
+    runtime to run it with.
+    """
+    try:
+        import lupa  # noqa: F401
+    except ImportError:
+        return None, "lupa is not installed, so the Lua cannot be run here"
+    import subprocess
+    import sys as _sys
+    import tempfile
+    import os as _os
+    fd, path = tempfile.mkstemp(suffix=".lua")
+    with _os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(script)
+    runner = (
+        "import sys, lupa\n"
+        "rt = lupa.LuaRuntime(unpack_returned_tuples=True)\n"
+        "out = []\n"
+        "rt.globals().print = lambda *a: out.append("
+        "' '.join(str(x) for x in a))\n"
+        "src = open(sys.argv[1], encoding='utf-8').read()\n"
+        "rt.compile(src)()\n"
+        "sys.stdout.write('\\n'.join(out))\n")
+    try:
+        r = subprocess.run([_sys.executable, "-c", runner, path],
+                           capture_output=True, text=True, timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return False, ("the script did not finish within %ds - a loop in it "
+                       "cannot end" % seconds)
+    finally:
+        try:
+            _os.unlink(path)
+        except OSError:
+            pass
+    if r.returncode != 0:
+        return False, (r.stderr or "").strip().splitlines()[-1][:160] \
+            if (r.stderr or "").strip() else "it stopped without saying why"
+    return True, r.stdout
 
 
 def _selftest():

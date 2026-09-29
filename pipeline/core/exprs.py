@@ -450,6 +450,17 @@ class Renderer:
             recv = self.value(call.recv_value.id, depth + 1)
             if recv in ("<unknown value>", "table", "{}") or recv.startswith("OP_"):
                 recv = rec.get("recv") or recv
+            # The value feeding a call is often the NAME the program looked up,
+            # because the instruction between the name and the call - the one
+            # that turns a name into the thing it names - was not identified.
+            # Rendering that literally produces ("print")("a"), which calls a
+            # string and stops the run at the first such line. The environment
+            # recorded what the receiver actually was, and a quoted string that
+            # says the same thing is the name, not the object.
+            bare = _unq(recv)
+            if (recv.startswith('"') and rec.get("recv")
+                    and bare == rec.get("recv") and _NAME.match(bare)):
+                recv = bare
         else:
             recv = rec.get("recv") or "?"
         args = [self.value(a.id, depth + 1) for a in call.arg_values]

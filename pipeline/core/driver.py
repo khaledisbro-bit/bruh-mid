@@ -603,6 +603,20 @@ def selftest():
             if _junk:
                 wrong.append("interpreter bookkeeping reported as a call "
                              "target: %s" % _junk[:3])
+        # Run the reconstruction, for real, in Lua. Everything above reasons
+        # ABOUT the output; this is the only check that makes it happen. It
+        # found a loader missing outside Lua 5.1, an environment that attached
+        # through a pcall and failed silently, a reconstruction that called a
+        # string, and one that could not terminate - none of which a parser,
+        # a fuzzer or any amount of reading would have shown.
+        _ran, _out = verify.execute(verify.behaviour_harness(a.runnable))
+        if _ran is False:
+            wrong.append("the reconstruction does not run: %s" % _out)
+        elif _ran is True:
+            _p = verify.parse_block(_out)
+            if _p["ok"] is not True:
+                wrong.append("the reconstruction ran but did not finish: %s"
+                             % (_p["error"] or "no reason given"))
         if not verify.statement_lines(a.runnable):
             wrong.append("the runnable rendering has no statements, so there "
                          "is nothing to run or compare")
