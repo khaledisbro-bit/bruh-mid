@@ -44,8 +44,35 @@ class Line:
 
 
 class Emitter:
+    PRELUDE = """-- Runnable rendering of the reconstruction.
+--
+-- What this analysis established is written as itself: the calls the program
+-- made, the arithmetic it did, the fields it read. What it did not establish is
+-- written as OP(<opcode>, inputs...), which stands for an instruction whose
+-- meaning this capture did not prove.
+--
+-- OP returns a value that tolerates being indexed, called and used in
+-- arithmetic. That is deliberate: an unknown standing in the middle of the
+-- program must not end the run, or nothing after it could be compared. Every
+-- OP in the output marks a place where the reconstruction is incomplete, not a
+-- place where it claims something.
+local OP
+OP = function()
+    local t = {}
+    local h = function() return OP() end
+    return setmetatable(t, {
+        __index = h, __call = h, __add = h, __sub = h, __mul = h, __div = h,
+        __mod = h, __pow = h, __unm = h, __concat = h, __len = h,
+        __lt = function() return false end, __le = function() return false end,
+        __eq = function() return false end,
+        __tostring = function() return "<unproven>" end,
+    })
+end
+"""
+
     def __init__(self, L, g, models, slots, amap, calls, decoys=None,
-                 env_slots=None, env_names=None):
+                 env_slots=None, env_names=None, runnable=False):
+        self.runnable = runnable
         self.L = L
         self.g = g
         self.models = models
@@ -54,7 +81,7 @@ class Emitter:
         self.bound = {}
         self.env_ops, self.env_why = exprmod.identify_env(L, models, calls, slots)
         self.R = exprmod.Renderer(L, models, slots, amap, calls, self.bound,
-                                  self.env_ops, env_slots, env_names)
+                                  self.env_ops, env_slots, env_names, runnable)
         self._tmp = 0
         self._jumps = self._jump_pcs()
         self._last = next((st for st in reversed(L.steps)
@@ -182,7 +209,8 @@ class Emitter:
                     "the last instruction executed; it consumed a value and "
                     "nothing ran afterwards, so it hands that value back")
             return self._line(
-                "OP_%d(%s)" % (st.op, args), ev, st,
+                ("OP(%d%s)" % (st.op, (", " + args) if args else ""))
+                if self.runnable else "OP_%d(%s)" % (st.op, args), ev, st,
                 "consumes %d value(s) and produces none, so its effect is a "
                 "statement; what that effect is was not proved by this run"
                 % st.pops)
@@ -246,6 +274,23 @@ class Emitter:
             lp = loop_by_head.get(head)
             if lp is not None and head not in emitted_heads:
                 cond = self._loop_condition(head)
+                # A condition this analysis did not establish must not become
+                # `while <unknown> do` in a script: the stub is truthy and the
+                # run would never leave the loop. The number of times the loop
+                # was seen to go round is a fact, so that is used instead, and
+                # it is stated as observed rather than recovered.
+                if self.runnable and ("OP(" in cond or cond == "true"):
+                    cond = None
+                    out.append(Line(
+                        "for _ = 1, %d do  -- times observed; the condition "
+                        "itself was not recovered" % max(lp["iterations"], 1),
+                        OBSERVED, head,
+                        "the loop ran %d time(s); its condition is not "
+                        "established" % lp["iterations"], depth))
+                    depth += 1
+                    open_loops.append((lp, depth))
+                    emitted_heads.add(head)
+                    continue
                 out.append(Line("while %s do" % cond, OBSERVED, head,
                                 "the block at %s is the head of a loop; the back "
                                 "edge from %s was taken %d time(s)"
@@ -330,6 +375,38 @@ class Emitter:
         return "true"
 
     # -- output --------------------------------------------------------------
+    def runnable_text(self):
+        """The reconstruction as a script that loads and runs.
+
+        Only the statements are kept - a comment about a branch nobody entered
+        cannot be executed - and the names the analysis introduced are declared,
+        so the file stands on its own."""
+        names = sorted(set(self.R.env_names.values()))
+        out = [self.PRELUDE]
+        if names:
+            out.append("-- slots the program read but this capture never saw "
+                       "written")
+            out.append("local %s = %s" % (", ".join(names),
+                                          ", ".join("OP()" for _ in names)))
+            out.append("")
+        # Lua ends a block at its return, and the blocks here are written in the
+        # order they first ran, which is not always that order. The top-level
+        # return is held back and written last so the file loads; it is still the
+        # same statement, in the only place the language allows it.
+        tail = None
+        for ln in self.lines:
+            body = ln.text.strip()
+            if body.startswith("--") or not body:
+                continue
+            if ln.indent == 0 and body.startswith("return "):
+                if tail is None:
+                    tail = body
+                continue
+            out.append("    " * ln.indent + ln.text)
+        if tail:
+            out.append(tail)
+        return "\n".join(out) + "\n"
+
     def text(self, header=True):
         out = []
         if header:

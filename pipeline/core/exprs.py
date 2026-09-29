@@ -61,6 +61,16 @@ def _as_written(arg):
 
 
 _NAME = re.compile(r"^[A-Za-z_]\w*$")
+_RISKY = re.compile(r"(^|[^\w.])nil\s*[\[.(]|^\s*-?\d+\s*\(|nil\s*[-+*/%]|"
+                    r"[-+*/%]\s*nil|\{\}\s*[-+*/%]|[-+*/%]\s*\{\}")
+
+
+def _risky(text):
+    """A rendering that loads but would stop the run: indexing or calling nil,
+    calling a number, arithmetic on nil or on a table. These come from a reading
+    that is wrong somewhere, and in a script they end the comparison at the first
+    one instead of letting the proven part run."""
+    return bool(_RISKY.search(text))
 
 
 def is_literal(text):
@@ -238,9 +248,13 @@ def identify_env(L, models, calls, slots):
 
 class Renderer:
     def __init__(self, L, models, slots, amap, calls, bound=None, env_ops=None,
-                 env_slots=None, env_names=None):
+                 env_slots=None, env_names=None, runnable=False):
         self.env_slots = env_slots or {}
         self.env_names = env_names or {}
+        # In runnable mode everything unproven is rendered as a call to a stub,
+        # so the file loads and the parts that ARE proven can be executed and
+        # compared. A report may say "OP_19" or "<constant>"; a script cannot.
+        self.runnable = runnable
         self.bound = bound if bound is not None else {}
         self.env_ops = env_ops or set()
         self.L = L
@@ -305,6 +319,8 @@ class Renderer:
         if m is not None and m.operation:
             out = self._operation(v, m.operation, depth)
             if out is not None:
+                if self.runnable and _risky(out):
+                    return self._stub(v, depth)
                 return out
         if v.inputs and v.op not in self.env_ops:
             head = self.L.values[v.inputs[0]]
@@ -313,14 +329,23 @@ class Renderer:
                 rest = [self.value(i, depth + 1) for i in v.inputs[1:]]
                 return "%s(%s)" % (callee, ", ".join(rest))
         if v.kind == "external":
-            return "<unknown value>"
+            return self._stub(v, depth) if self.runnable else "<unknown value>"
         if v.runtime and _LIT.match(v.runtime):
             if v.runtime not in ("table", "{}"):
                 return v.runtime
+        if self.runnable:
+            return self._stub(v, depth)
         if not v.inputs:
             return "OP_%d()" % v.op if v.op is not None else "<unknown value>"
         return "OP_%d(%s)" % (v.op, ", ".join(
             self.value(i, depth + 1) for i in v.inputs))
+
+    def _stub(self, v, depth):
+        """An operation this analysis has not established, written so the file
+        still loads: the opcode's number and its inputs handed to a stub."""
+        args = [self.value(i, depth + 1) for i in v.inputs]
+        return "OP(%s%s)" % (v.op if v.op is not None else -1,
+                             (", " + ", ".join(args)) if args else "")
 
     SYMBOLS = {"ADD": "+", "SUB": "-", "MUL": "*", "DIV": "/", "MOD": "%",
                "CONCAT": "..", "LT": "<", "LE": "<=", "GT": ">", "GE": ">=",
@@ -333,15 +358,24 @@ class Renderer:
         if sym and len(args) == 2:
             return "(%s %s %s)" % (args[0], sym, args[1])
         if op == "INDEX" and len(args) == 2:
+            base = args[0]
+            if not _NAME.match(base.strip()):
+                base = "(%s)" % base          # a table constructor or an
+                                              # expression cannot be indexed bare
             key = _unq(args[1]) if args[1].startswith('"') else None
             if key and re.fullmatch(r"[A-Za-z_]\w*", key):
-                return "%s.%s" % (args[0], key)
-            return "%s[%s]" % (args[0], args[1])
+                return "%s.%s" % (base, key)
+            return "%s[%s]" % (base, args[1])
         if op == "NEWTABLE" and not args:
             return "{}"
         if op == "LOADK":
-            return v.runtime if v.runtime else "<constant>"
+            if v.runtime:
+                return v.runtime
+            return "nil" if self.runnable else "<constant>"
         if op == "CALL" and args:
+            if self.runnable and not _NAME.match(args[0].strip()):
+                return None       # calling something that is not a name would
+                                  # not run; the stub below says so instead
             return "%s(%s)" % (args[0], ", ".join(args[1:]))
         return None
 
@@ -359,6 +393,10 @@ class Renderer:
             args = [_as_written(a) for a in rec["args"]]
         if rec.get("recv") is None:
             return "%s(%s)" % (name, ", ".join(args))
+        # a method call needs something a method can be taken from: a literal or
+        # an expression has to be parenthesised, or the line will not load
+        if not _NAME.match(recv.strip()) and not recv.strip().startswith("("):
+            recv = "(%s)" % recv
         return "%s:%s(%s)" % (recv, name, ", ".join(args))
 
 

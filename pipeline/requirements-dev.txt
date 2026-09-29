@@ -1,0 +1,1 @@
+luaparser  # optional: lets the self-test prove the runnable output compiles

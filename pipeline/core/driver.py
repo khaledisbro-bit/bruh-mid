@@ -107,6 +107,15 @@ class Analysis:
             self.env_rows, self.env_names)
         self.emitter.run()
         self.source = self.emitter.text()
+        # a second rendering, this one made to load and run, for the behaviour
+        # comparison in the executor
+        self.runner = emit.Emitter(
+            self.lift, self.cfg, self.models, self.slots, self.alias,
+            self.calls, {pc: v.why for pc, v in self.verdicts.items()
+                         if v.verdict == evidence.DECOY},
+            self.env_rows, self.env_names, runnable=True)
+        self.runner.run()
+        self.runnable = self.runner.runnable_text()
         self.verification, self.consistent = verify.report(
             self.lift, self.models, self.verdicts)
 
@@ -187,7 +196,8 @@ class Analysis:
             "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg),
             "VERIFICATION.txt": self.verification,
-            "behaviour_check.lua": verify.behaviour_harness(self.source),
+            "behaviour_check.lua": verify.behaviour_harness(self.runnable),
+            "RECONSTRUCTED_runnable.lua": self.runnable,
         }
         for name, body in files.items():
             with open(os.path.join(outdir, name), "w", encoding="utf-8") as f:
@@ -303,6 +313,22 @@ def selftest():
             wrong.append("called real code a decoy at pc %s" % sorted(false))
         if not a.consistent:
             wrong.append("value checks disagreed with the VM")
+        # The runnable rendering is handed to an executor, so it has to load.
+        # An output that cannot compile wastes a round of someone's time and
+        # proves nothing, so it is checked here whenever a parser is available.
+        try:
+            import luaparser.ast as lua_ast
+        except ImportError:
+            lua_ast = None
+        if lua_ast is not None:
+            for name, text in (("the runnable reconstruction", a.runnable),
+                               ("the behaviour check",
+                                verify.behaviour_harness(a.runnable))):
+                try:
+                    lua_ast.parse(text)
+                except Exception as e:
+                    wrong.append("%s is not valid Lua: %s"
+                                 % (name, str(e)[:120]))
         if a.lift.divergences:
             wrong.append("%d stack desynchronisation(s)" % len(a.lift.divergences))
         status = "PASS" if not wrong else "FAIL"
