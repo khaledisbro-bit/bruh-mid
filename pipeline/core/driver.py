@@ -210,7 +210,9 @@ class Analysis:
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
                              self.tables.why,
             "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),
-            "DECOY.txt": decoy.report(self.verdicts, self.cfg),
+            "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
+                         decoy.readable(self.verdicts, self.lift,
+                                        self.emitter.R, self.calls, self.models),
             "VERIFICATION.txt": self.verification,
             "behaviour_check.lua": verify.behaviour_harness(self.runnable),
             "RECONSTRUCTED_runnable.lua": self.runnable,

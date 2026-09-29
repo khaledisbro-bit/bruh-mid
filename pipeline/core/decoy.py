@@ -56,8 +56,8 @@ def sinks(L, calls, g, slots, env_ops=()):
     for b in g.branches:
         st = next((s for s in L.steps if s.key() == b["pc"] and s.popped), None)
         if st is not None:
-            mark(st.popped[0].id, "the condition the branch at %s tested"
-                 % (b["pc"],))
+            mark(st.popped[0].id, "the condition the branch at fn%d:%d tested"
+                 % b["pc"])
     last = next((st for st in reversed(L.steps)
                  if st.pops >= 1 and st.pushes == 0), None)
     if last is not None and last.popped:
@@ -170,6 +170,93 @@ def classify(L, g, calls, slots, amap, env_ops=()):
                       "by this capture"),
             "decoy: on the evidence available its result influences nothing")
     return out
+
+
+def readable(verdicts, L, R, calls, models):
+    """The same verdicts, said in terms of what the code does.
+
+    An instruction number tells a reader nothing. This lists each verdict
+    alongside what the instruction actually is - the call it makes, the value it
+    computes, the constant it loads - so the split between what matters and what
+    does not can be read rather than cross-referenced."""
+    by_step = {c.step.row: c for c in calls}
+    real, unproven, dec = [], [], []
+    for st in L.steps:
+        v = verdicts.get(st.key())
+        if v is None:
+            continue
+        if st.row in by_step:
+            text = R.call_text(by_step[st.row])
+        elif st.pushed:
+            text = R.value(st.pushed[0].id)
+        elif st.popped:
+            text = "OP_%d(%s)" % (st.op, ", ".join(
+                R.value(p.id) for p in st.popped))
+        else:
+            text = "OP_%d" % st.op
+        row = (st.pc, text, v.why)
+        if v.verdict == OBSERVED:
+            real.append(row)
+        elif v.verdict == DECOY:
+            dec.append(row)
+        else:
+            unproven.append(row)
+
+    def rank(row):
+        """Readable first. A call with its arguments, a string the program used,
+        a piece of arithmetic - these say something. A bare opcode number says
+        only that an instruction ran, so it goes last."""
+        t = row[1]
+        if "(" in t and not t.startswith("OP_"):
+            return 0
+        if '"' in t:
+            return 1
+        if any(op in t for op in (" + ", " - ", " * ", " .. ", " < ", " == ")):
+            return 2
+        if t.startswith("OP_") and "(" not in t:
+            return 5
+        if t in ("nil", "{}", "true", "false"):
+            return 4
+        return 3
+
+    def block(title, rows, note, limit=200):
+        out = ["", title, "-" * len(title), note, ""]
+        seen = set()
+        shown = 0
+        for pc, text, why in sorted(rows, key=rank):
+            t = text.strip()
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            out.append("  %s" % t)
+            out.append("      why: %s" % why)
+            shown += 1
+            if shown >= limit:
+                out.append("  ... %d more, all in the machine-readable list above"
+                           % (len(rows) - shown))
+                break
+        if not shown:
+            out.append("  (none)")
+        return out
+
+    LL = ["WHAT MATTERS AND WHAT DOES NOT, IN THE CODE'S OWN TERMS",
+          "=" * 58,
+          "The same verdicts as above, each shown as what the instruction is",
+          "rather than where it sits. Repeats are collapsed."]
+    LL += block("REAL - the program's behaviour depends on these", real,
+                "Each of these feeds something the program was observed to do: a\n"
+                "call it made, a condition it tested, the value it returned, or a\n"
+                "variable it read again.")
+    LL += block("DECOY - proven unable to affect anything", dec,
+                "These executed and can have no effect at all: nothing moves on\n"
+                "the stack, no value is produced, no call is recorded, and control\n"
+                "does not depend on them.")
+    LL += block("UNPROVEN - not settled either way", unproven,
+                "These produced a value nothing consumed on the path that ran.\n"
+                "That is not enough to call them decoys, so both readings are\n"
+                "kept. A run that enters the branches this one did not is what\n"
+                "would settle them.")
+    return "\n".join(LL)
 
 
 def report(verdicts, g):
