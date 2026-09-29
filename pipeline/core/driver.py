@@ -33,6 +33,7 @@ import exprs           # noqa: E402
 import frames          # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
+import plain           # noqa: E402
 import stackint        # noqa: E402
 import tracefmt        # noqa: E402
 import types_ as typecheck  # noqa: E402
@@ -195,6 +196,10 @@ class Analysis:
         os.makedirs(outdir, exist_ok=True)
         files = {
             "SUMMARY.txt": self.summary() + "\n\n" + version.describe(),
+            "WHAT_IT_DOES.txt": plain.build(
+                self.capture, self.lift, self.emitter.R, self.calls,
+                self.unmatched, self.models, self.verdicts, self.slots,
+                self.env_names),
             "RECONSTRUCTED.lua": self.source,
             "PROVENANCE.txt": self.emitter.provenance(),
             "FUNCTIONS.txt": frames.report(self.frames),
