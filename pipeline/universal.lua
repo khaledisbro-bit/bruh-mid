@@ -307,7 +307,19 @@ local function patchDispatch(s)
     -- stale at the loop top (nil most of the time); the freshly produced value
     -- lives in NY. Capture NY and log THAT as the value flowing.
     local ny = s:match("if %w+>=1 then %w+%[%w+%]=(%w+) end")
-    local topexpr = ny or ((arr and sp ~= "0") and (arr .. "[" .. sp .. "]")) or "nil"
+    -- The value flowing is read either from the pending slot or straight out of
+    -- the register array. Reading the array MUST NOT be written as a bare
+    -- index: on the first instruction the array can still be nil, and
+    -- `arr[sp]` then raises "attempt to index nil with number" from inside the
+    -- interpreter - the trace ends after a handful of instructions and the
+    -- error looks like the script's own, because it is reported at line 1 of
+    -- the chunk the injection went into.
+    --
+    -- Guarding it costs one `and`. The logger may never be the thing that ends
+    -- the run it is there to observe.
+    local topexpr = ny or ((arr and sp ~= "0")
+                           and ("(" .. arr .. " and " .. arr .. "[" .. sp .. "])"))
+                       or "nil"
     -- inject the logger right after the NL assignment `local NL=...;`
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
@@ -480,7 +492,11 @@ local function watched(fn, what)
             behavior[#behavior+1] = "error in " .. what .. ": " ..
                                     tostring(packed[2])
         end
-        return select(2, unpack and unpack(packed) or table.unpack(packed))
+        -- `unpack and unpack(packed)` truncates to one value inside an
+        -- and/or, so this used to hand back nothing at all. Unpack the
+        -- results explicitly, from index 2, which is where they start.
+        local un = table.unpack or unpack
+        return un(packed, 2, #packed)
     end
 end
 env.task = setmetatable({}, { __index = function(_, k)

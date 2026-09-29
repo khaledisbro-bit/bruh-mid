@@ -43,6 +43,7 @@ class Capture:
         self.prints = [l.split("PRINT:", 1)[1].strip()
                        for l in self.sections.get("PRINTS", []) if "PRINT:" in l]
         self.probe = _probe(self.sections)
+        self.run_error = _run_error(self.headers, self.body)
 
     def has_instructions(self):
         return len(self.rows) > 0
@@ -131,6 +132,25 @@ def _rows(body):
                     "opcode": int(m.group(2)), "operands": ops,
                     "sp": sp, "value": val})
     return out
+
+
+def _run_error(headers, body):
+    """What the harness said about the payload's own run.
+
+    A run that raised after a handful of instructions still produces a capture
+    that parses, and everything downstream then describes those few
+    instructions as if they were the program. The error is in the capture; it
+    just was not being read."""
+    ok = str(headers.get("run_ok", "")).strip().lower().startswith("true")
+    err = None
+    for ln in body.splitlines():
+        t = ln.strip()
+        if t.startswith("error:"):
+            err = t[len("error:"):].strip()
+            break
+    if ok and not err:
+        return None
+    return err or "the run did not finish"
 
 
 def _probe(sections):

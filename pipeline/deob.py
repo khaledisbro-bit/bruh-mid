@@ -344,6 +344,15 @@ def main():
             print("[4/4] ANALYSE : %s has no instruction records." % cap.name)
             print("              %s" % cap.why_no_instructions())
             continue
+        if getattr(cap, "run_error", None) and len(cap.rows) < 100:
+            print("[4/4] ANALYSE : %s - the script stopped early." % cap.name)
+            print("              %s" % cap.run_error)
+            print("              Only %d instruction(s) ran before it did, so "
+                  "what follows" % len(cap.rows))
+            print("              describes those, not the program. This is not "
+                  "a reconstruction")
+            print("              of the script; it is a reconstruction of its "
+                  "first few steps.")
         an = driver.Analysis(cap, vm_src)
         an.write(a.out)
         analyses.append(an)

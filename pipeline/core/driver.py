@@ -202,6 +202,14 @@ class Analysis:
              "=" * 46,
              "produced by %s" % version.banner(),
              "",
+             ] + ([
+             "THE SCRIPT STOPPED EARLY",
+             "  %s" % self.capture.run_error,
+             "  Everything below describes the %d instruction(s) that ran "
+             "before" % len(self.capture.rows),
+             "  that, which is not the program.",
+             "",
+             ] if getattr(self.capture, "run_error", None) else []) + [
              "captured instructions      %d" % len(self.capture.rows),
              "interpreter machinery      %d record(s) folded away"
              % (len(self.capture.rows) - len(self.program)),

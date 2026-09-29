@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 29
+VERSION = 30
 
 STAGES = (
     "captures read by shape",
@@ -65,6 +65,10 @@ STAGES = (
     "prints instead of ending the run",
     "the behaviour harness written as the Lua it is meant to be, and refusing "
     "to compare an empty rendering as though it had passed",
+    "the logger's own read of the register array guarded, so observing the "
+    "program cannot be what stops it",
+    "a run that raised early said so at the top of the report, rather than its "
+    "first few steps being described as the program",
 )
 
 
