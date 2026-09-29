@@ -333,6 +333,24 @@ def report(g, addressed=True):
             L.append("      " + b.get("why", ""))
         L.append("")
     if g.unexplored:
+        ran = {k for k in g.blocks}
+        seen_pcs = {k[1] for k in g.blocks}
+        elsewhere = [t for _a, t, _w in g.unexplored
+                     if t in ran or t[1] in seen_pcs]
+        never = [t for _a, t, _w in g.unexplored
+                 if not (t in ran or t[1] in seen_pcs)]
+        L.append("the untaken sides, sorted by what is known about them:")
+        L.append("  %d lead to code this capture DID run by another route - the"
+                 % len(elsewhere))
+        L.append("    code is recovered, only this way into it was not taken")
+        L.append("  %d lead to code this capture never ran at all - nothing is"
+                 % len(never))
+        L.append("    known about it beyond the branch that reaches it")
+        L.append("")
+        L.append("  Neither is dead code. A side not taken on one run is missing")
+        L.append("  evidence; calling it unreachable would need a proof this")
+        L.append("  capture cannot give, so none is claimed.")
+        L.append("")
         L.append("unexplored paths (kept as unknown, not deleted):")
         for a, b, why in g.unexplored[:40]:
             L.append("  %s -> %s : %s" % (_fmt(a), _fmt(b), why))

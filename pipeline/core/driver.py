@@ -35,6 +35,7 @@ import noise           # noqa: E402
 import opsem           # noqa: E402
 import stackint        # noqa: E402
 import tracefmt        # noqa: E402
+import types_ as typecheck  # noqa: E402
 import vmsrc           # noqa: E402
 import verify          # noqa: E402
 import version         # noqa: E402
@@ -71,6 +72,14 @@ class Analysis:
             dropped, _checked = vmsrc.revoke(self.models, self.lift,
                                              self.handler_why)
             self.from_handlers -= dropped
+            # Value algebra can only test a reading it can recompute. A reading
+            # it cannot is still testable against the types the values had: an
+            # index of nothing or a call of a number is impossible whatever the
+            # program was doing, and the reading that produced it is wrong.
+            bad, examined, why = typecheck.check(self.models, self.lift)
+            self.type_withdrawn, self.type_examined = bad, examined
+            self.handler_why.update(why)
+            self.from_handlers -= bad
         # The interpreter's handlers say which opcodes touch a variable. That
         # is checked the same way a guessed pair is, and only used if it holds.
         self.slots, self.slot_hits, self.slot_checks = (None, 0, 0)
@@ -117,7 +126,9 @@ class Analysis:
         self.runner.run()
         self.runnable = self.runner.runnable_text()
         self.verification, self.consistent = verify.report(
-            self.lift, self.models, self.verdicts, capture.calls, self.calls)
+            self.lift, self.models, self.verdicts, capture.calls, self.calls,
+            (getattr(self, "type_withdrawn", 0),
+             getattr(self, "type_examined", 0)))
         _f, self.in_step, self.unaccounted = verify.fidelity(
             capture.calls, self.calls)
 

@@ -354,11 +354,14 @@ end
             # something the program did. They are listed instead, as what they
             # are: observed actions with no recovered position.
             for text in ("--",
-                         "-- The program also made the calls below. The watched",
-                         "-- environment recorded them, so they happened. This",
-                         "-- capture carried no value that ties each one to an",
-                         "-- instruction, so their place in the code is not",
-                         "-- recovered and they are listed rather than written in."):
+                         "-- ==== QUOTED FROM THE CAPTURE'S OWN LOG ====",
+                         "-- The lines below are NOT reconstruction. They are the",
+                         "-- watched environment's records, copied word for word,",
+                         "-- of calls the program made that no instruction in this",
+                         "-- capture could be tied to. They are here so that what",
+                         "-- the program did is not hidden, and they are quoted",
+                         "-- rather than written as code precisely because their",
+                         "-- place in the program was not recovered."):
                 out.append(Line(text, UNKNOWN, (0, 0),
                                 "observed action whose position is unrecovered",
                                 0))

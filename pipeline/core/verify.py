@@ -281,24 +281,39 @@ def compare_behaviour(original_calls, replay_calls):
     return {"matched": same, "of": max(len(a), len(b)), "differences": diffs}
 
 
-def report(L, models, verdicts, records=(), calls=()):
+def report(L, models, verdicts, records=(), calls=(), types=None):
     rp, gr = replay(L, models), graph(L, models)
     cov, explained, total = coverage(L, verdicts)
+    def rate(r):
+        """A proportion is only worth printing when there is something to take
+        it of. One check passing is one check passing, not a hundred percent."""
+        if r.checks == 0:
+            return "nothing could be recomputed, so this check says nothing"
+        if r.checks < 5:
+            return ("%d of %d - too few to mean anything on its own"
+                    % (r.agreed, r.checks))
+        return "%d of %d (%.0f%%)" % (r.agreed, r.checks, 100 * r.rate)
+
     lines = ["VERIFICATION",
              "=" * 46,
-             "The reconstruction is checked against the VM's own record, not",
-             "against how plausible it looks.", "",
+             "Each check is reported on its own. A proportion taken of one or",
+             "two cases is not evidence about the rest, and coverage is not",
+             "correctness - they are different numbers and are kept apart.", "",
              "replay check - every instance of every named operation recomputed",
-             "  %d checked, %d agreed, %d could not be evaluated"
-             % (rp.checks, rp.agreed, rp.skipped),
-             "  agreement: %.1f%%" % (100 * rp.rate)]
+             "  attempted %d, agreed %d, disagreed %d, not evaluable %d"
+             % (rp.checks, rp.agreed, len(rp.failures), rp.skipped),
+             "  %s" % rate(rp),
+             "  Not evaluable means the operation cannot be recomputed from what",
+             "  the capture reports - an index, a call or a constant load has no",
+             "  arithmetic to redo - or an input's value was not reported. Those",
+             "  are tested by type instead, below."]
     for f in rp.failures[:10]:
         lines.append("  FAILED " + f)
     lines += ["",
               "graph check - every value with a named producer recomputed",
-              "  %d checked, %d agreed, %d could not be evaluated"
-              % (gr.checks, gr.agreed, gr.skipped),
-              "  agreement: %.1f%%" % (100 * gr.rate)]
+              "  attempted %d, agreed %d, disagreed %d, not evaluable %d"
+              % (gr.checks, gr.agreed, len(gr.failures), gr.skipped),
+              "  %s" % rate(gr)]
     for f in gr.failures[:10]:
         lines.append("  FAILED " + f)
     lines += ["",
@@ -315,6 +330,16 @@ def report(L, models, verdicts, records=(), calls=()):
               "  Until that comparison is made, this reconstruction is verified",
               "  against the recorded execution, not against a second run."]
     ok = (not rp.failures) and (not gr.failures)
+    if types:
+        withdrawn, examined = types
+        lines += ["",
+                  "type check - every instance of every named operation tested",
+                  "  against the types its values had",
+                  "  examined %d instance(s); withdrew %d reading(s) the values"
+                  % (examined, withdrawn),
+                  "  make impossible (indexing nothing, calling a number, and",
+                  "  the like). A value the capture did not report never",
+                  "  withdraws a reading; only an impossibility does."]
     if records:
         fid, prefix, missing = fidelity(records, calls)
         lines += ["", fid]
