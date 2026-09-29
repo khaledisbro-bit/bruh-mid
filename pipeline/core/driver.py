@@ -596,6 +596,7 @@ def selftest():
     # the two passes that reason about paths rather than about the one path
     # this run took are checked on graphs small enough to verify by hand
     import dispatch as _dispatch
+    import verify as _verify
     import exposure as _exposure
     import metatab as _metatab
     import induct as _induct
@@ -610,6 +611,7 @@ def selftest():
     _exposure._selftest()
     _metatab._selftest()
     _dispatch._selftest()
+    _verify._selftest()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 

@@ -437,10 +437,30 @@ def compare_behaviour(records, block_text):
         L.append("  it means a reading put an action into the program that was")
         L.append("  not there.")
         L.append("")
-    if not missing and not extra:
+    if not want and not have:
+        # Nothing on either side. There is no disagreement, and there is no
+        # agreement either: a comparison of nothing against nothing used to
+        # print "every call matches" and "the reconstruction does what the
+        # program did", which is the strongest thing this report can say, said
+        # on no evidence at all. That is precisely the failure this project
+        # exists to avoid - a result that reads like a pass.
+        L.append("  NOTHING WAS COMPARED. The capture recorded no calls, and")
+        L.append("  the reconstruction made none, so there is no agreement")
+        L.append("  here and no disagreement - there is no evidence.")
+        L.append("")
+        L.append("  This is not a check that passed. If the program does make")
+        L.append("  calls, then either the capture did not record them or the")
+        L.append("  reconstruction has nothing in it, and both are worth more")
+        L.append("  attention than this comparison can give.")
+    elif not missing and not extra:
         L.append("  Every call matches, one for one and in order. On the")
         L.append("  behaviour this capture recorded, the reconstruction does what")
         L.append("  the program did.")
+        if len(want) < 5:
+            L.append("")
+            L.append("  On %d call(s). That is few enough that agreeing on all"
+                     % len(want))
+            L.append("  of them says little about the rest of the program.")
     else:
         L.append("  verdict: the reconstruction accounts for %d of the %d call(s)"
                  % (len(matched), len(want)))
@@ -515,3 +535,73 @@ def report(L, models, verdicts, records=(), calls=(), types=None):
         "consistent with every value the VM reported"
         if ok else "INCONSISTENT - see the failures above")]
     return "\n".join(lines), ok
+
+
+def _selftest():
+    """Test the tester.
+
+    Every other check in this package reports on the reconstruction. This one
+    reports on the reports: given a reconstruction WRONG in a known way, does
+    the comparison say so? A verifier that cannot fail is not a verifier, and
+    nothing downstream would ever reveal it - a false pass reads exactly like a
+    real one."""
+    def blk(calls, ok=True, err=None):
+        out = ["BEGIN_BEHAVIOUR", "run_ok: %s" % ("true" if ok else "false")]
+        if err:
+            out.append("error: " + err)
+        out.append("---BEHAVIOUR---")
+        out += calls
+        out.append("END_BEHAVIOUR")
+        return "\n".join(out)
+
+    def rec(recv, method, *args):
+        return {"recv": recv, "method": method, "args": list(args)}
+
+    prog = [rec("game", "GetService", '"Players"'),
+            rec("svc", "Send", '"a"'),
+            rec("svc", "Send", '"b"'),
+            rec(None, "print", '"done"')]
+    want = [normalise(r) for r in prog]
+
+    # the same calls agree
+    t, m, mi, ex = compare_behaviour(prog, blk(want))
+    assert (mi, ex) == (0, 0) and m == 4, (m, mi, ex)
+
+    # a call the program made and the reconstruction did not
+    t, m, mi, ex = compare_behaviour(prog, blk(want[:3]))
+    assert mi == 1 and "and the reconstruction did not (1)" in t
+
+    # a call the reconstruction made and the program did not - the serious one
+    t, m, mi, ex = compare_behaviour(prog, blk(want + ['evil.Destroy("x")']))
+    assert ex == 1 and "the program did not (1)" in t
+
+    # the same calls in the wrong order are not the same behaviour
+    t, _m, _mi, _ex = compare_behaviour(prog, blk(list(reversed(want))))
+    assert "longest run in the same order: 4" not in t, t
+
+    # one changed argument is a different call
+    bad = list(want)
+    bad[1] = 'svc.Send("HACKED")'
+    t, _m, mi, ex = compare_behaviour(prog, blk(bad))
+    assert (mi, ex) == (1, 1), (mi, ex)
+
+    # a reconstruction that crashed is not agreement
+    t, _m, _mi, _ex = compare_behaviour(prog, blk([], ok=False, err="index nil"))
+    assert "did not finish" in t
+
+    # NOTHING against NOTHING is not a pass. This one was wrong: it printed
+    # "every call matches" and "the reconstruction does what the program did"
+    # on no evidence at all.
+    t, m, mi, ex = compare_behaviour([], blk([]))
+    assert "NOTHING WAS COMPARED" in t, t
+    assert "does what" not in t, t
+
+    # agreeing on a handful is worth saying out loud
+    t, _m, _mi, _ex = compare_behaviour(prog, blk(want))
+    assert "says little about the rest" in t
+
+    print("verify selftest ok")
+
+
+if __name__ == "__main__":
+    _selftest()
