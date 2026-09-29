@@ -103,6 +103,11 @@ def main():
                     help="watch the executor's workspace and pick each run's "
                          "files up automatically, then analyse them. Give the "
                          "number of runs to collect (default 1)")
+    ap.add_argument("--find-workspace", action="store_true",
+                    help="find the folder your executor writes to. Run "
+                         "writefile(\"VMSMART_WHERE.txt\", \"here\") in the "
+                         "executor first, then this prints the folder to pass "
+                         "to --workspace")
     ap.add_argument("--workspace",
                     help="the executor's output folder, if --collect cannot "
                          "find it")
@@ -123,6 +128,30 @@ def main():
     a = ap.parse_args()
 
     print("deob.py (%s)" % version.banner())
+
+    if a.find_workspace:
+        import collect as collector
+        print("looking for %s ..." % collector.MARKER)
+        hits = collector.find_marker()
+        if not hits:
+            print("")
+            print("not found. Run this one line in your executor first:")
+            print('    writefile("%s", "here")' % collector.MARKER)
+            print("")
+            print("Then run this again. If it still finds nothing, your")
+            print("executor writes somewhere this does not search - open the")
+            print("file from inside the executor to see where it landed, and")
+            print("pass that folder with --workspace.")
+            return 1
+        print("")
+        print("your executor writes to:")
+        for h in hits:
+            print("   %s" % h)
+        print("")
+        print("use it like this:")
+        print('   python3 %s %s --collect 2 --workspace "%s"'
+              % (os.path.basename(__file__), a.input, hits[0]))
+        return 0
     src = open(a.input, encoding="latin1").read()
     log = {"sample": os.path.basename(a.input), "size": len(src)}
     inner_src, inner_data, family = detect(src, log)
@@ -195,10 +224,19 @@ def main():
         if not spaces:
             print("\n[4/4] COLLECT : could not find where your executor writes "
                   "its output.")
-            print("              It is looking for a folder holding %s or %s."
-                  % (collector.BLOCK, collector.DUMP))
-            print("              Run the harness once, then pass that folder "
-                  "with --workspace.")
+            print("              It looks for a folder already holding one of "
+                  "the files the")
+            print("              harness writes, so before the first run there "
+                  "is nothing to find.")
+            print("")
+            print("              To find that folder, run this one line in your "
+                  "executor:")
+            print("                  writefile(\"%s\", \"here\")"
+                  % collector.MARKER)
+            print("              then:")
+            print("                  python3 %s %s --find-workspace"
+                  % (os.path.basename(__file__), a.input))
+            print("              and pass what it prints with --workspace.")
             return 1
         print("")
         runs = collector.watch(spaces, a.collect,

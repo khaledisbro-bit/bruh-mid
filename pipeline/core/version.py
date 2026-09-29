@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 23
+VERSION = 24
 
 STAGES = (
     "captures read by shape",
@@ -53,6 +53,8 @@ STAGES = (
     "traced script could notice is measured on the run rather than assumed",
     "a call written where it was made, not where its receiver was resolved, "
     "and a direct call written as one rather than as __call",
+    "the executor's own folder found by asking the executor, instead of "
+    "guessing at folders that already happen to hold an old capture",
 )
 
 

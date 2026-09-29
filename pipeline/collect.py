@@ -37,8 +37,19 @@ POLL = 0.5
 def _roots():
     out = []
     home = os.path.expanduser("~")
-    for d in (home, os.path.join(home, "Downloads"), os.path.join(home, "Desktop"),
-              os.path.join(home, "Documents"), os.getcwd()):
+    cands = [home, os.path.join(home, "Downloads"), os.path.join(home, "Desktop"),
+             os.path.join(home, "Documents"), os.getcwd()]
+    if os.name == "nt":
+        # Executors commonly keep their workspace under AppData. The walk below
+        # skips AppData wholesale, because walking all of it is slow and most of
+        # it is irrelevant - but that also meant the one place many executors
+        # actually write was never looked at. Naming the two subfolders that
+        # matter as roots of their own searches them without walking the rest.
+        for var in ("LOCALAPPDATA", "APPDATA"):
+            d = os.environ.get(var)
+            if d and os.path.isdir(d):
+                cands.append(d)
+    for d in cands:
         if os.path.isdir(d):
             out.append(d)
     if os.name == "nt":
@@ -69,7 +80,11 @@ def find_workspaces(hint=None, max_depth=5):
                 continue
             dirnames[:] = [d for d in dirnames
                            if d not in skip and not d.startswith(".")]
-            if BLOCK in filenames or DUMP in filenames:
+            # Any of the files the harness writes marks the folder. Looking
+            # only for the two big ones missed a workspace whose first run had
+            # not finished writing them yet.
+            if (BLOCK in filenames or DUMP in filenames or CODE in filenames
+                    or EXTRA in filenames or INNER in filenames):
                 real = os.path.realpath(dirpath)
                 if real not in seen:
                     seen.add(real)
@@ -150,3 +165,35 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
     except KeyboardInterrupt:
         log("\n  stopped; keeping the %d run(s) collected so far" % len(got))
     return got
+
+
+MARKER = "VMSMART_WHERE.txt"
+
+
+def find_marker(max_depth=6):
+    """Folders holding the marker file, so the executor can point at its own
+    workspace instead of anybody guessing where it is.
+
+    Run this one line in the executor:
+
+        writefile("VMSMART_WHERE.txt", "here")
+
+    whereupon the folder the executor writes to is the folder holding that
+    file, whatever the executor is called and wherever it was installed."""
+    found, seen = [], set()
+    skip = {"node_modules", ".git", "__pycache__", "Windows",
+            "Program Files", "Program Files (x86)", "$Recycle.Bin"}
+    for root in _roots():
+        base = root.rstrip("\\/").count(os.sep)
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            if dirpath.count(os.sep) - base >= max_depth:
+                dirnames[:] = []
+                continue
+            dirnames[:] = [d for d in dirnames
+                           if d not in skip and not d.startswith(".")]
+            if MARKER in filenames:
+                real = os.path.realpath(dirpath)
+                if real not in seen:
+                    seen.add(real)
+                    found.append(dirpath)
+    return found
