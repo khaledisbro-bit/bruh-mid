@@ -269,6 +269,11 @@ class Analysis:
              % (counts.get(evidence.OBSERVED, 0),
                 counts.get(evidence.UNKNOWN, 0),
                 counts.get(evidence.DECOY, 0)),
+             "runnable rendering         %s"
+             % ((lambda n: "%d statement(s)" % n if n else
+                 "EMPTY - nothing rendered as a statement, so there is "
+                 "nothing to run or compare")(
+                     len(verify.statement_lines(self.runnable)))),
              "value checks               %s"
              % ("all agreed with the VM" if self.consistent
                 else "DISAGREEMENTS FOUND - see the verification report"),
@@ -470,6 +475,9 @@ def selftest():
                 except Exception as e:
                     wrong.append("%s is not valid Lua: %s"
                                  % (what, str(e)[:120]))
+        if not verify.statement_lines(a.runnable):
+            wrong.append("the runnable rendering has no statements, so there "
+                         "is nothing to run or compare")
         if a.lift.divergences:
             wrong.append("%d stack desynchronisation(s)" % len(a.lift.divergences))
 

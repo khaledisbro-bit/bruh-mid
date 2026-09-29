@@ -112,7 +112,11 @@ def coverage(L, verdicts):
     return explained / total, explained, total
 
 
-BEHAVIOUR_HARNESS = '''-- Behaviour comparison harness (generated).
+# A RAW string. Without the r, Python turns every \n in the Lua below into a
+# real newline, and a Lua short string cannot span lines - so the generated
+# harness did not compile at all, and running it printed nothing. Nothing in
+# this text wants Python's escapes; the \n in it are Lua's.
+BEHAVIOUR_HARNESS = r'''-- Behaviour comparison harness (generated).
 --
 -- Runs the reconstruction inside a watched environment and prints every call it
 -- makes. Feed the printed block back with --behaviour and the two sequences are
@@ -253,9 +257,49 @@ def _bracket(text):
     return "[" + eq + "[\n" + text + "\n]" + eq + "]"
 
 
+def statement_lines(source):
+    """The statements in a rendering, ignoring comments and the OP prelude.
+
+    The prelude is fixed text that defines the stand-in for an unproven
+    instruction. A rendering carrying nothing but the prelude is empty, and it
+    still looks like a Lua file of a respectable size."""
+    lines = [l for l in (source or "").splitlines()
+             if l.strip() and not l.strip().startswith("--")]
+    body = []
+    seen_prelude = False
+    for i, l in enumerate(lines):
+        if not seen_prelude and l.strip() == "end":
+            seen_prelude = True
+            body = lines[i + 1:]
+            break
+    if not seen_prelude:
+        body = lines
+    return [l for l in body if l.strip()]
+
+
 def behaviour_harness(source):
     """A runnable script that replays the reconstruction under the same watched
-    environment, so its call sequence can be compared with the original's."""
+    environment, so its call sequence can be compared with the original's.
+
+    When the rendering has no statements there is nothing to replay. Wrapping
+    that in the usual harness produces a script that runs, prints an empty
+    sequence and compares clean against nothing - which reads like a passing
+    check. It says what happened instead."""
+    if not statement_lines(source):
+        return ('-- Behaviour comparison harness (generated).\n'
+                '--\n'
+                '-- There is nothing to compare. The runnable rendering of this\n'
+                '-- capture came out with no statements in it: every instruction\n'
+                '-- either had no meaning this run established, or produced a\n'
+                '-- value nothing used.\n'
+                '--\n'
+                '-- Running this would print an empty call sequence, which would\n'
+                '-- then compare clean against the program and read like a check\n'
+                '-- that passed. It is not one.\n'
+                'print("BEGIN_BEHAVIOUR\\n'
+                'run_ok: false\\n'
+                'error: the reconstruction has no statements to run\\n'
+                'END_BEHAVIOUR")\n')
     return BEHAVIOUR_HARNESS % _bracket(source)
 
 
