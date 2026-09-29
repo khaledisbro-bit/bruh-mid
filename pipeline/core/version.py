@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 37
+VERSION = 38
 
 STAGES = (
     "captures read by shape",
@@ -89,6 +89,8 @@ STAGES = (
     "instruction sharing an opcode the matcher happened to land on",
     "the behaviour comparison itself tested against reconstructions wrong in "
     "known ways, and refusing to call a comparison of nothing a pass",
+    "every report built from an empty capture and read for words that assert "
+    "a finding, so no verdict is reached on no evidence",
 )
 
 

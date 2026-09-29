@@ -515,7 +515,7 @@ def report(L, models, verdicts, records=(), calls=(), types=None):
               "  reconstruction. The script that does it is written alongside",
               "  this report as behaviour_check.lua; run it in the executor and",
               "  compare its call sequence with the original capture's.",
-              "  Until that comparison is made, this reconstruction is verified",
+              "  Until that comparison is made, this reconstruction is checked",
               "  against the recorded execution, not against a second run."]
     ok = (not rp.failures) and (not gr.failures)
     if types:
@@ -531,9 +531,24 @@ def report(L, models, verdicts, records=(), calls=(), types=None):
     if records:
         fid, prefix, missing = fidelity(records, calls)
         lines += ["", fid]
+    # Nothing failing is not the same as something passing. With no check
+    # performed there are no failures, and this used to end on "consistent with
+    # every value the VM reported" - its strongest sentence, on no evidence,
+    # the same shape of error the behaviour comparison had. The flag goes to
+    # the summary and to the badge in the app, so it must carry the difference:
+    # True for checked and clean, False for a real disagreement, None for a
+    # question nobody got to ask.
+    checked = rp.checks + gr.checks
+    if not checked:
+        lines += ["", "verdict: NOTHING WAS CHECKED. No named operation could "
+                      "be recomputed",
+                  "from what this capture reports, so there is no agreement "
+                  "here and",
+                  "no disagreement. This is not a verdict of consistent."]
+        return "\n".join(lines), None
     lines += ["", "verdict: %s" % (
-        "consistent with every value the VM reported"
-        if ok else "INCONSISTENT - see the failures above")]
+        "consistent with every value the VM reported, over %d check(s)"
+        % checked if ok else "INCONSISTENT - see the failures above")]
     return "\n".join(lines), ok
 
 

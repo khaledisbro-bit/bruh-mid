@@ -310,7 +310,9 @@ class Analysis:
                  "nothing to run or compare")(
                      len(verify.statement_lines(self.runnable)))),
              "value checks               %s"
-             % ("all agreed with the VM" if self.consistent
+             % ("none - nothing in this capture could be recomputed, so this "
+                "says nothing" if self.consistent is None
+                else "all agreed with the VM" if self.consistent
                 else "DISAGREEMENTS FOUND - see the verification report"),
              "",
              "What this is: the program that ran, rebuilt from the VM's own",
@@ -441,6 +443,48 @@ def merge_summary(analyses):
     return "\n".join(L)
 
 
+def _no_claims_from_nothing():
+    """No report may assert a finding when it was given nothing to work with.
+
+    This is the shape of error that a verifier cannot catch and a fuzzer will
+    never trip: the code does not crash, it states something confidently that
+    it has no grounds for, and a false pass reads exactly like a real one. It
+    was found twice - the behaviour comparison calling an empty pair a match,
+    and the verification verdict calling zero checks consistent - so every
+    report is now built from a capture with nothing in it and read for the
+    words that assert a finding."""
+    import re
+    import tempfile
+    capture = tracefmt.Capture(
+        "BEGIN_UNOBF_RESULT\nrun_ok: true\n---OPCODES---\nEND_UNOBF_RESULT",
+        "nothing")
+    a = Analysis(capture)
+    out = tempfile.mkdtemp()
+    written = a.write(out)
+    claim = re.compile(
+        r"\b(every \w+ matches|all agreed|does what the program|"
+        r"verdict: consistent|is verified\b|confirmed|proven correct|"
+        r"no disagreement\b)", re.I)
+    safe = re.compile(
+        r"nothing was compared|nothing was checked|no evidence|"
+        r"not a check that passed|not a verdict of consistent|says nothing",
+        re.I)
+    bad = []
+    for name in written:
+        if not name.endswith(".txt"):
+            continue
+        body = open(os.path.join(out, name), encoding="utf-8").read()
+        for ln in body.splitlines():
+            if claim.search(ln) and not safe.search(ln):
+                bad.append("%s: %s" % (name, ln.strip()[:70]))
+    assert not bad, "reports claim a finding from an empty capture:\n  " + \
+        "\n  ".join(bad)
+    # and the flag the app shows must say "nothing was checked", not "clean"
+    assert a.consistent is None, ("the value-check flag reads %r on a capture "
+                                  "with nothing in it" % (a.consistent,))
+    print("no-claims-from-nothing ok")
+
+
 def selftest():
     """Round-trip the engine against programs whose source is known.
 
@@ -490,7 +534,12 @@ def selftest():
             wrong.append("missed decoy at pc %s" % sorted(missed))
         if false:
             wrong.append("called real code a decoy at pc %s" % sorted(false))
-        if not a.consistent:
+        # Three states, not two. False is a real disagreement and a failure.
+        # None means no named operation could be recomputed from this capture,
+        # which is not a failure - and not a pass either. This assertion read
+        # None as a disagreement, having previously read it as agreement,
+        # because the flag itself only had two values.
+        if a.consistent is False:
             wrong.append("value checks disagreed with the VM")
         # The runnable rendering is handed to an executor, so it has to load.
         # An output that cannot compile wastes a round of someone's time and
@@ -612,6 +661,7 @@ def selftest():
     _metatab._selftest()
     _dispatch._selftest()
     _verify._selftest()
+    _no_claims_from_nothing()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 
