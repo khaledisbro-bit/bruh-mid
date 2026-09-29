@@ -127,7 +127,9 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
                         continue
                     dst = os.path.join(outdir, "run%d_%s.txt" % (n, tag))
                     shutil.copy2(src, dst)
-                    if tag in ("block", "dump"):
+                    # the constants dump is evidence too: the printed block
+                    # caps its list, and the file does not
+                    if tag in ("block", "dump", "consts"):
                         parts.append(dst)
                 if not parts:
                     continue

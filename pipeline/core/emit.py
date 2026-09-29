@@ -71,8 +71,10 @@ end
 """
 
     def __init__(self, L, g, models, slots, amap, calls, decoys=None,
-                 env_slots=None, env_names=None, runnable=False):
+                 env_slots=None, env_names=None, runnable=False,
+                 unplaced=()):
         self.runnable = runnable
+        self.unplaced = list(unplaced)
         self.L = L
         self.g = g
         self.models = models
@@ -345,6 +347,26 @@ end
                 "keep the file readable; PROVENANCE.txt lists every one"
                 % dropped[0], UNKNOWN, (0, 0),
                 "the capture is larger than one readable file", 0))
+        if self.unplaced and not self.runnable:
+            # Calls the program demonstrably made, which no instruction in this
+            # capture could be tied to. Writing them as code would put them
+            # somewhere they may not belong; leaving them out would drop
+            # something the program did. They are listed instead, as what they
+            # are: observed actions with no recovered position.
+            for text in ("--",
+                         "-- The program also made the calls below. The watched",
+                         "-- environment recorded them, so they happened. This",
+                         "-- capture carried no value that ties each one to an",
+                         "-- instruction, so their place in the code is not",
+                         "-- recovered and they are listed rather than written in."):
+                out.append(Line(text, UNKNOWN, (0, 0),
+                                "observed action whose position is unrecovered",
+                                0))
+            for rec in self.unplaced:
+                out.append(Line(
+                    "--   " + (rec.get("raw") or ""), OBSERVED, (0, 0),
+                    "the environment recorded this call; no instruction in this "
+                    "capture carried a value that could anchor it", 0))
         extra = sum(1 for b in self.g.branches if b["untaken"]) - shown_branches[0]
         if extra > 0:
             out.append(Line(

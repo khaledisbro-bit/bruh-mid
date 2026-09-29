@@ -104,7 +104,7 @@ class Analysis:
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
-            self.env_rows, self.env_names)
+            self.env_rows, self.env_names, False, self.unmatched)
         self.emitter.run()
         self.source = self.emitter.text()
         # a second rendering, this one made to load and run, for the behaviour
