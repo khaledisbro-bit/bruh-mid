@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 17
+VERSION = 18
 
 STAGES = (
     "captures read by shape",
@@ -30,6 +30,7 @@ STAGES = (
     "behaviour compared by replaying the reconstruction and lining the calls up",
     "verdicts also said in the code's own terms, readable content first",
     "what the program does, grouped and counted in plain terms",
+    "the interpreter's whole instruction array, so coverage is of the program",
 )
 
 

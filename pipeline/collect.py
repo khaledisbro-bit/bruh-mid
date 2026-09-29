@@ -26,6 +26,10 @@ EXTRA = "resolved_constants.txt"
 # The harness also writes the interpreter it found. Its handlers say what each
 # opcode does, which a short run cannot establish on its own.
 INNER = "inner_chunk_1.txt"
+# The instruction array: every instruction the program has, including the ones
+# the run never reached. Without it, coverage can only be measured against the
+# run, which flatters itself.
+CODE = "code_array.txt"
 SETTLE = 2.0            # seconds a file must stay unchanged to count as written
 POLL = 0.5
 
@@ -84,13 +88,13 @@ def _stamp(path):
 def _settled(ws, previous):
     """The pair as it stands, once both files have stopped changing and at least
     one of them differs from what was collected last time."""
-    now = {n: _stamp(os.path.join(ws, n)) for n in (BLOCK, DUMP, EXTRA)}
+    now = {n: _stamp(os.path.join(ws, n)) for n in (BLOCK, DUMP, EXTRA, CODE)}
     if now[BLOCK] is None and now[DUMP] is None:
         return None
     if all(now[n] == previous.get(n) for n in (BLOCK, DUMP)):
         return None
     time.sleep(SETTLE)
-    again = {n: _stamp(os.path.join(ws, n)) for n in (BLOCK, DUMP, EXTRA)}
+    again = {n: _stamp(os.path.join(ws, n)) for n in (BLOCK, DUMP, EXTRA, CODE)}
     if any(again[n] != now[n] for n in (BLOCK, DUMP)):
         return None          # still being written; wait for the next poll
     return again
@@ -103,7 +107,7 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
     state = {ws: {} for ws in workspaces}
     for ws in workspaces:
         state[ws] = {n: _stamp(os.path.join(ws, n))
-                     for n in (BLOCK, DUMP, EXTRA)}
+                     for n in (BLOCK, DUMP, EXTRA, CODE)}
     log("watching for runs in:")
     for ws in workspaces:
         log("   " + ws)
@@ -121,7 +125,8 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
                 n = len(got) + 1
                 parts = []
                 for name, tag in ((BLOCK, "block"), (DUMP, "dump"),
-                                  (EXTRA, "consts"), (INNER, "vm")):
+                                  (EXTRA, "consts"), (CODE, "code"),
+                                  (INNER, "vm")):
                     src = os.path.join(ws, name)
                     if not os.path.isfile(src):
                         continue
@@ -129,7 +134,7 @@ def watch(workspaces, runs, outdir, log=print, timeout=None):
                     shutil.copy2(src, dst)
                     # the constants dump is evidence too: the printed block
                     # caps its list, and the file does not
-                    if tag in ("block", "dump", "consts"):
+                    if tag in ("block", "dump", "consts", "code"):
                         parts.append(dst)
                 if not parts:
                     continue

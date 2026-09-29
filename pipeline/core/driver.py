@@ -35,6 +35,7 @@ import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
 import stackint        # noqa: E402
+import staticcode      # noqa: E402
 import tracefmt        # noqa: E402
 import types_ as typecheck  # noqa: E402
 import vmsrc           # noqa: E402
@@ -176,6 +177,13 @@ class Analysis:
              "action(s); %d not accounted for"
              % (self.in_step, self.unaccounted),
              "unexplored branch targets  %d" % len(self.cfg.unexplored),
+             "program instructions known %s"
+             % ((lambda t, c: "%d in the array; this run reached %d (%.0f%%)"
+                 % (t, c, 100.0 * c / max(t, 1)) if t else
+                 "the capture did not carry the instruction array, so every "
+                 "figure here is a share of the run, not of the program")(
+                     *staticcode.coverage(self.capture.code,
+                                          self.capture.rows))),
              "instructions explained     %d of %d (%.0f%%)"
              % (explained, total, 100 * cov),
              "verdicts                   real %d, unproven %d, decoy %d"
@@ -215,6 +223,8 @@ class Analysis:
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
                              self.tables.why,
             "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),
+            "PROGRAM_SIZE.txt": staticcode.report(
+                self.capture.code, self.capture.rows, self.cfg),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
                          decoy.readable(self.verdicts, self.lift,
                                         self.emitter.R, self.calls, self.models),

@@ -19,6 +19,7 @@ import re
 _ROW = re.compile(r"^(-?\d+);(-?\d+);([^;]*)"
                   r"(?:;(-?\d+))?(?:;([^;]*?))?(?:;(.*))?$")
 _CONST = re.compile(r"^([A-Z]):(.*)$")
+_CODEROW = re.compile(r"^(\d+):(.*)$")
 _METHOD = re.compile(r"^([\w.]+):(\w+)\((.*)\)$")
 _NAMED = re.compile(r"^([\w.]+):\s*(.+)$")
 _SECTION = re.compile(r"^-{2,}([A-Z_]+)-{2,}$")
@@ -38,6 +39,7 @@ class Capture:
         self.rows = _rows(self.body)
         self.constants = _constants(self.sections)
         self.calls, self.notes = _calls(self.sections.get("BEHAVIOR", []))
+        self.code = _code(self.sections, self.body)
         self.prints = [l.split("PRINT:", 1)[1].strip()
                        for l in self.sections.get("PRINTS", []) if "PRINT:" in l]
 
@@ -45,10 +47,11 @@ class Capture:
         return len(self.rows) > 0
 
     def summary(self):
-        return ("%s: %d instruction rows, %d constants, %d calls, %d prints, "
-                "sections=%s" % (self.name, len(self.rows), len(self.constants),
-                                 len(self.calls), len(self.prints),
-                                 ",".join(k or "head" for k in self.sections)))
+        return ("%s: %d instruction rows, %d in the code array, %d constants, "
+                "%d calls, %d prints, sections=%s"
+                % (self.name, len(self.rows), len(self.code),
+                   len(self.constants), len(self.calls), len(self.prints),
+                   ",".join(k or "head" for k in self.sections)))
 
 
 def _split(body):
@@ -101,6 +104,39 @@ def _rows(body):
         out.append({"i": len(out), "pc": int(m.group(1)),
                     "opcode": int(m.group(2)), "operands": ops,
                     "sp": sp, "value": val})
+    return out
+
+
+def _code(sections, body):
+    """The interpreter's whole instruction array, when the capture carries it.
+
+    A trace shows the instructions that RAN. The array holds every instruction
+    the program has, and without it coverage can only be measured against what
+    was executed, which flatters itself: a run that touches a tenth of the
+    program looks complete. Rows are `pc:operands`, and a row the run never
+    reached is exactly what makes this worth reading."""
+    out = {}
+    lines = sections.get("CODE")
+    if lines is None:
+        # a bare dump, written by the harness beside the printed block
+        if ";" in body[:400] or "---" in body[:200]:
+            return out
+        lines = body.splitlines()
+    for ln in lines:
+        m = _CODEROW.match(ln.strip())
+        if not m:
+            continue
+        ops = []
+        for x in m.group(2).split(","):
+            x = x.strip()
+            if x == "":
+                ops.append(None)
+                continue
+            try:
+                ops.append(int(x))
+            except ValueError:
+                ops.append(x)
+        out[int(m.group(1))] = ops
     return out
 
 
@@ -180,6 +216,10 @@ def combine(caps):
     base = caps[0]
     for other in caps[1:]:
         base.rows = _longer(base.rows, other.rows)
+        if other.code and not base.code:
+            base.code = other.code
+        elif other.code:
+            base.code.update(other.code)
         base.calls = _union(base.calls, other.calls, lambda c: c["raw"])
         base.constants = _union(base.constants, other.constants, lambda c: c)
         base.prints = _union(base.prints, other.prints, lambda p: p)

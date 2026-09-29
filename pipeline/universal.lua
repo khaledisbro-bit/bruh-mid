@@ -116,6 +116,36 @@ local function vprev(v)
     return t   -- function / userdata / thread
 end
 
+local codeRows = nil
+-- Dump the instruction array once. Every row is one instruction: its operands
+-- as the interpreter stores them. Rows the run never reached are exactly what
+-- makes this worth having, so nothing is filtered.
+env.__CODE = function(arr)
+    if codeRows ~= nil or type(arr) ~= "table" then return end
+    codeRows = {}
+    local n = 0
+    for pc = 1, 200000 do
+        local row = arr[pc]
+        if row == nil then
+            if pc > 8 then break end
+        else
+            n = n + 1
+            local a = {}
+            if type(row) == "table" then
+                for i = 1, 12 do
+                    local v = row[i]
+                    a[#a+1] = (v == nil) and "" or tostring(v)
+                end
+            end
+            codeRows[#codeRows+1] = tostring(pc) .. ":" .. table.concat(a, ",")
+        end
+        if n > 100000 then break end
+    end
+    pcall(function()
+        writefile("code_array.txt", table.concat(codeRows, "\n"))
+    end)
+end
+
 env.__OP = function(pc, oc, NO, sp, top)
     opn = opn + 1
     if opn > 40000 then return end
@@ -149,8 +179,8 @@ local function patchDispatch(s)
     -- program counter from NU's own assignment: local NU=((PC-1)*<digits>...
     local pc = s:match("local " .. nu .. "=%(%((%w+)%-1%)%*%d+")
     if not pc then return nil end
-    -- instruction row NO from the loop top: local NO = ARR[PC];
-    local no = s:match("local (%w+)=%w+%[" .. pc .. "%];")
+    -- instruction row NO from the loop top: local NO = CODE[PC];
+    local no, code = s:match("local (%w+)=(%w+)%[" .. pc .. "%];")
     if not no then return nil end
     -- register array + stack pointer from the register-write-buffer flush the
     -- handlers share:  if n>=2 then YL[Ym-1]=NN end  -> capture YL and Ym
@@ -166,7 +196,13 @@ local function patchDispatch(s)
     local mark = "local " .. nl .. "="
     local i = s:find(mark, 1, true); if not i then return nil end
     local j = s:find(";", i + #mark, true); if not j then return nil end
-    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end"
+    -- The trace only shows instructions that RAN. The array they are read
+    -- from holds every instruction the program has, including the ones this
+    -- run never reached, and reachability, branch targets and real coverage
+    -- cannot be judged without it. It is handed over once, from inside the
+    -- dispatch loop, where it is certain to be fully built.
+    local dump = code and (";if __CODE then __CODE(" .. code .. ")end") or ""
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end" .. dump
     return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 
@@ -334,6 +370,11 @@ say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
 pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
 -- devirtualization: the executed instruction stream (pc;opcode;operands)
 say("opcodes="..#ops.."  (logged, cap 40000; total executed may be higher)")
+if codeRows then
+    say("code_rows="..#codeRows)
+    say("---CODE---")
+    for i=1,math.min(#codeRows,2000) do say(codeRows[i]) end
+end
 say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
 pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)
 
