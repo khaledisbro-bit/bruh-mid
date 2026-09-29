@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 31
+VERSION = 32
 
 STAGES = (
     "captures read by shape",
@@ -71,6 +71,10 @@ STAGES = (
     "first few steps being described as the program",
     "the trace's instruction numbers lined up against the array's by matching "
     "the operands both report, rather than assumed to be the same",
+    "operations that could only have gone through a metatable told apart from "
+    "readings that are simply wrong, by whether the type could carry one",
+    "call sites grouped by what each was seen reaching, so one instruction "
+    "with several targets is not written as though it had one",
 )
 
 

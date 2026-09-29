@@ -37,6 +37,8 @@ functions that have nothing to do with each other.
 | repeated calls | `probes.py` | calls repeated with identical arguments whose answer nothing took |
 | calls | `exprs.py` | the environment's own call records, matched to instructions in order |
 | name resolution | `exprs.py` | the opcode whose output became a receiver recorded under the name it consumed |
+| metatables | `metatab.py` | operations whose input types make the primitive impossible, which completed anyway |
+| dispatch | `dispatch.py` | call sites grouped by what each was seen reaching |
 | what matters | `decoy.py` | influence computed backwards from observable behaviour |
 | output | `emit.py` | a rendering of the graph, nothing else |
 | checking | `verify.py` | every named operation and every value recomputed against the VM's record |
@@ -198,3 +200,35 @@ harness logs through is not the object it replaced. Those are the cost of
 tracing at all. What the report gives is a list measured on the run in front of
 you instead of assumed from the last time somebody looked, and a clean line
 means that question did not give it away - not that nothing could.
+
+## Metatables, and a reading that was being thrown away
+
+`types_.py` withdraws a reading when the values make the operation impossible -
+`nil[1]`, `1()`, `{} + 8`. That is right for most of them and wrong for some,
+because Lua has metatables: a table CAN be added to a number if it carries
+`__add`.
+
+So the same impossibility splits by type. nil, booleans and numbers have no
+metatable of their own, so the operation really could not have happened and the
+reading goes. A table or a userdata could have done it through a metamethod,
+and the value came back, so a metamethod is what happened - and that is a
+finding, not a failure. `metatab.py` records it and `types_.py` keeps the
+reading with the reason attached.
+
+What is claimed is the language's own rule: this type, in this operation, with
+a result, requires that metamethod. What the metamethod *does* is not
+recovered, because the capture shows the operation and its result and not the
+function behind it. And a metamethod that does what the primitive would have
+done anyway leaves nothing to distinguish it, so a quiet report here does not
+mean the program has no metatables.
+
+## One call instruction is not one target
+
+`dispatch.py` groups every call site by what it was actually seen calling. A
+site that reached several things is dispatch - the target is computed - and
+writing one name for it describes a program that does not exist.
+
+The three answers are kept apart. Several targets: dynamic, and settled,
+because it was seen being so. One target over several passes: fixed for this
+run, which is not the same as fixed. One pass: nothing is claimed, because one
+pass cannot tell the two apart.

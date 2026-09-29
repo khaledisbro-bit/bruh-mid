@@ -32,7 +32,9 @@ import evidence        # noqa: E402
 import exposure        # noqa: E402
 import exprs           # noqa: E402
 import frames          # noqa: E402
+import dispatch        # noqa: E402
 import induct          # noqa: E402
+import metatab         # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
@@ -83,7 +85,11 @@ class Analysis:
             # it cannot is still testable against the types the values had: an
             # index of nothing or a call of a number is impossible whatever the
             # program was doing, and the reading that produced it is wrong.
-            bad, examined, why = typecheck.check(self.models, self.lift)
+            # An operation the values make impossible is usually a wrong
+            # reading, and sometimes a metatable. Ask which before withdrawing.
+            self.meta = metatab.find(self.models, self.lift)
+            bad, examined, why = typecheck.check(
+                self.models, self.lift, metatab.rescued(self.meta))
             self.type_withdrawn, self.type_examined = bad, examined
             self.handler_why.update(why)
             self.from_handlers -= bad
@@ -110,6 +116,14 @@ class Analysis:
         self.tables = dataflow.infer_tables(self.lift)
         self.calls, self.unmatched = exprs.match_calls(
             self.lift, capture.calls)
+        # Metatables, where the interpreter's source was not read: the same
+        # test still applies, it just has fewer named operations to apply to.
+        if not hasattr(self, "meta"):
+            self.meta = metatab.find(self.models, self.lift)
+        # One call instruction is not one target. A site that reached several
+        # is dispatch, and writing one name for it describes a program that
+        # does not exist.
+        self.sites = dispatch.find(self.lift, self.calls, self.models)
         # The instruction array, where the capture carries it, is what lets a
         # branch have a side that was never entered. The side that did not run
         # has no numbers in the trace, so without the array nothing knows those
@@ -250,6 +264,12 @@ class Analysis:
                  "not measured; this capture has no probe section")(
                      *exposure.assess(
                          getattr(self.capture, "probe", {}))[:2])),
+             "metamethod dispatches      %s"
+             % (("%d site(s)" % len(self.meta)) if self.meta else "none seen"),
+             "call sites                 %s"
+             % ((lambda d, n: "%d, of which %d reached more than one target"
+                 % (n, d))(sum(1 for s in self.sites.values() if s.dynamic()),
+                           len(self.sites)) if self.sites else "none"),
              "repeated, answer unused    %s"
              % (("%d group(s), %d call(s) in all"
                  % (len(self.probes), sum(p.count for p in self.probes)))
@@ -346,6 +366,8 @@ class Analysis:
                 self.capture.code, self.program, self.cfg),
             "EXPOSURE.txt": exposure.report(
                 getattr(self.capture, "probe", {})),
+            "METATABLES.txt": metatab.report(self.meta),
+            "CALL_SITES.txt": dispatch.report(self.sites),
             "REPEATED_CALLS.txt": probes.report(
                 self.probes, len(self.calls) + len(self.unmatched)),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
@@ -541,7 +563,9 @@ def selftest():
             print("  | " + ln)
     # the two passes that reason about paths rather than about the one path
     # this run took are checked on graphs small enough to verify by hand
+    import dispatch as _dispatch
     import exposure as _exposure
+    import metatab as _metatab
     import induct as _induct
     import probes as _probes
     import sccp as _sccp
@@ -552,6 +576,8 @@ def selftest():
     _induct._selftest()
     _probes._selftest()
     _exposure._selftest()
+    _metatab._selftest()
+    _dispatch._selftest()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 

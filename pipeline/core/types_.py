@@ -109,10 +109,17 @@ def admits(operation, input_previews, result_preview=None):
     return True, ""
 
 
-def check(models, lift):
+def check(models, lift, rescued=None):
     """Withdraw every reading the values make impossible.
 
+    `rescued` maps an opcode to why a metamethod explains what looked
+    impossible. A table added to a number is impossible for a plain table and
+    ordinary for one carrying __add, and withdrawing that reading throws away
+    the evidence rather than the error. Those readings are kept, and the reason
+    is recorded against them.
+
     Returns (withdrawn, examined, reasons)."""
+    rescued = rescued or {}
     reasons, bad = {}, {}
     examined = 0
     for st in lift.steps:
@@ -123,6 +130,16 @@ def check(models, lift):
         out = st.pushed[0].runtime if st.pushed else None
         examined += 1
         ok, why = admits(m.operation, ins, out)
+        if not ok and st.op in rescued:
+            if st.op not in reasons:
+                m.fact.note("types.metamethod",
+                            "read as %s, and at pc %d %s - which a metatable "
+                            "makes possible. Kept: %s"
+                            % (m.operation, st.pc, why, rescued[st.op]),
+                            opcodes=(st.op,))
+                reasons[st.op] = ("read as %s, kept: a metamethod explains it"
+                                  % m.operation)
+            continue
         if not ok and st.op not in bad:
             bad[st.op] = (m.operation, why, st.pc)
     for op, (sem, why, pc) in bad.items():
