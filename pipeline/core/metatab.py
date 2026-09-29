@@ -40,14 +40,32 @@ import types_ as T
 # Lua's metamethod for each operation, and the types it can rescue. A table and
 # a userdata can carry a metatable; nil, booleans and numbers cannot be given
 # one from Lua, so an operation on those is impossible however it is read.
-_RESCUABLE = {T.TABLE, "userdata"}
+# Only a table, as far as this can see. "userdata" was listed here too, and
+# typeof() never returns it: a userdata reads as unknown, and so does every
+# Roblox value that is not a plain table or scalar. Unknown admits everything,
+# so those are never flagged - no false positives, and no detection either.
+_RESCUABLE = {T.TABLE}
 
+# ONLY the operations where an impossible type can actually be rescued by a
+# metatable. Each of the four that used to be here is undetectable this way,
+# and listing them claimed a coverage this cannot deliver:
+#
+#   __index    a table IS indexable, so indexing one is never impossible. The
+#              metamethod fires on a key that is absent, which a type cannot
+#              see.
+#   __newindex the same, for assignment.
+#   __len      a table HAS a length. Only a number or nil has none, and neither
+#              can carry a metatable.
+#   __call     a table IS callable as far as the admissible set is concerned,
+#              so calling one raises nothing to notice.
+#   __eq       `a == b` never raises in Lua whatever the types.
+#
+# The self-test below asserts this table holds no dead entry, so the list
+# cannot quietly grow one again.
 _EVENT = {
     "ADD": "__add", "SUB": "__sub", "MUL": "__mul", "DIV": "__div",
     "MOD": "__mod", "POW": "__pow", "CONCAT": "__concat",
-    "INDEX": "__index", "SETINDEX": "__newindex", "CALL": "__call",
     "LT": "__lt", "LE": "__le", "GT": "__lt", "GE": "__le",
-    "EQ": "__eq", "LEN": "__len",
 }
 
 
@@ -203,6 +221,23 @@ def _selftest():
 
     ev = find({1: M("ADD")}, L([St(0, 1, ["table", "8"], ["12"])]))
     assert list(rescued(ev)) == [1]
+
+    # No entry may claim coverage it cannot deliver. An operation belongs here
+    # only if SOME set of inputs makes the primitive impossible AND the
+    # offending type is one that can carry a metatable.
+    kinds = ["nil", "true", "3", '"s"', "table", "function: 0x1"]
+    dead = []
+    for opn in _EVENT:
+        live = False
+        for a in kinds:
+            for b in kinds:
+                for ins in ([a], [a, b], [a, b, "1"]):
+                    h = _offending(opn, ins)
+                    if h and h[1] in _RESCUABLE:
+                        live = True
+        if not live:
+            dead.append(opn)
+    assert not dead, "these can never be detected: %s" % dead
     print("metatab selftest ok")
 
 

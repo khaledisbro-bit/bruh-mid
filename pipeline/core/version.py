@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 32
+VERSION = 33
 
 STAGES = (
     "captures read by shape",
@@ -75,6 +75,8 @@ STAGES = (
     "readings that are simply wrong, by whether the type could carry one",
     "call sites grouped by what each was seen reaching, so one instruction "
     "with several targets is not written as though it had one",
+    "every stage asked what it does on a capture with nothing in it, and the "
+    "metamethod list asserted to hold nothing that can never fire",
 )
 
 

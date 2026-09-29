@@ -57,14 +57,17 @@ class Probe:
         return "%s(%s)" % (self.method, a)
 
 
-def _unused(call, L):
-    """Whether nothing took what this call returned."""
+def _unused(call, consumers):
+    """Whether nothing took what this call returned.
+
+    The consumer map is passed in. Building it inside here meant rebuilding the
+    whole value graph once for every call examined - work that cannot change
+    between two calls of the same capture."""
     st = getattr(call, "step", None)
     if st is None:
         return False
     if not st.pushed:
         return True                     # it produced nothing to take
-    consumers = L.consumers()
     return not any(consumers.get(v.id) for v in st.pushed)
 
 
@@ -73,12 +76,13 @@ def find(L, calls, records, min_repeats=MIN_REPEATS):
     repeat with nothing taking the answer."""
     groups = defaultdict(list)
     unused = {}
+    consumers = L.consumers() if hasattr(L, "consumers") else {}
     for c in calls:
         rec = getattr(c, "record", None) or {}
         key = (rec.get("recv") or "", rec.get("method") or "",
                tuple(rec.get("args") or ()))
         groups[key].append(c)
-        unused[id(c)] = _unused(c, L)
+        unused[id(c)] = _unused(c, consumers)
 
     out = []
     for (recv, method, args), members in groups.items():
@@ -152,6 +156,19 @@ def _selftest():
     calls = [C(i, rec) for i in range(6)]
     ps = find(Lf({}), calls, [])
     assert len(ps) == 1 and ps[0].count == 6, ps
+    # the map is built once, not once per call
+    class Counting(Lf):
+        def __init__(self, c):
+            Lf.__init__(self, c)
+            self.built = 0
+
+        def consumers(self):
+            self.built += 1
+            return self._c
+
+    cl = Counting({})
+    find(cl, [C(i, rec) for i in range(6)], [])
+    assert cl.built == 1, "consumer map built %d times" % cl.built
 
     # four is below the floor -> not reported
     ps = find(Lf({}), [C(i, rec) for i in range(4)], [])

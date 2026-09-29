@@ -215,6 +215,14 @@ and the value came back, so a metamethod is what happened - and that is a
 finding, not a failure. `metatab.py` records it and `types_.py` keeps the
 reading with the reason attached.
 
+What it covers is narrow, and the module says so: arithmetic, concatenation
+and ordering on a table. `__index`, `__newindex`, `__len` and `__call` are not
+detectable this way at all - a table is indexable, assignable, has a length and
+counts as callable, so none of them raises anything to notice - and `__eq`
+never raises in Lua whatever the types. Those were listed once, claiming a
+coverage they could not deliver; a self-test now asserts the list holds no
+entry that can never fire.
+
 What is claimed is the language's own rule: this type, in this operation, with
 a result, requires that metamethod. What the metamethod *does* is not
 recovered, because the capture shows the operation and its result and not the

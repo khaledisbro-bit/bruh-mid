@@ -31,6 +31,11 @@ class CFG:
         self.idom = {}
         self.branches = []        # dict per conditional branch
         self.unexplored = []      # (from_pc, to_pc, why)
+        # Set by build(). A CFG that was constructed and never built - which is
+        # what an empty capture produces - used to have no such attribute at
+        # all, so asking it which block an instruction is in raised instead of
+        # answering "none". The empty answer is the true one.
+        self._owner = {}
 
     def block_of(self, pc):
         return self._owner.get(pc)

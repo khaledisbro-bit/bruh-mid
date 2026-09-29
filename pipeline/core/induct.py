@@ -126,8 +126,9 @@ def counters(L, S, W, g=None, models=None):
     if g is not None:
         _attach_loops(out, g, L, S, W, models)
     else:
+        cons = L.consumers() if hasattr(L, "consumers") else {}
         for c in out.values():
-            _find_limit(c, L, W, None, models)
+            _find_limit(c, L, W, None, models, cons)
     return out
 
 
@@ -147,11 +148,12 @@ def _attach_loops(out, g, L, S, W, models=None):
                 c = out.get(W.def_web[st.row])
                 if c is not None and c.loop is None:
                     c.loop = lp
+    consumers = L.consumers() if hasattr(L, "consumers") else {}
     for c in out.values():
-        _find_limit(c, L, W, g, models)
+        _find_limit(c, L, W, g, models, consumers)
 
 
-def _find_limit(c, L, W, g=None, models=None):
+def _find_limit(c, L, W, g=None, models=None, consumers=None):
     """The value the counter was compared against, once per advance.
 
     Three things have to hold before a number is called the counter's bound:
@@ -171,7 +173,8 @@ def _find_limit(c, L, W, g=None, models=None):
     `for` header.
     """
     deciding = _branch_pcs(g)
-    consumers = L.consumers() if hasattr(L, "consumers") else {}
+    if consumers is None:
+        consumers = L.consumers() if hasattr(L, "consumers") else {}
     per_pc = defaultdict(list)
     for st in L.steps:
         if len(st.popped) != 2:

@@ -62,6 +62,11 @@ _CONCAT_OK = {STRING, NUMBER, UNKNOWN}
 _INDEX_OK = {TABLE, STRING, UNKNOWN}
 _CALL_OK = {FUNCTION, TABLE, UNKNOWN}
 _COMPARE_OK = {NUMBER, STRING, UNKNOWN}
+# `t[k] = v` needs something assignable. A string is indexable but not
+# assignable, so it does not belong here even though _INDEX_OK admits it.
+_SETINDEX_OK = {TABLE, UNKNOWN}
+# `#x` is defined for strings and tables and for nothing else.
+_LEN_OK = {STRING, TABLE, UNKNOWN}
 
 ARITH = {"ADD", "SUB", "MUL", "DIV", "MOD", "POW"}
 COMPARE = {"LT", "LE", "GT", "GE"}
@@ -99,6 +104,15 @@ def admits(operation, input_previews, result_preview=None):
         if ts and ts[0] not in _CALL_OK:
             return False, "%s cannot be called (%s)" % (ts[0],
                                                         input_previews[0])
+        return True, ""
+    if operation == "SETINDEX":
+        if ts and ts[0] not in _SETINDEX_OK:
+            return False, "%s cannot be assigned into (%s)" % (
+                ts[0], input_previews[0])
+        return True, ""
+    if operation == "LEN":
+        if ts and ts[0] not in _LEN_OK:
+            return False, "%s has no length (%s)" % (ts[0], input_previews[0])
         return True, ""
     if operation == "NEWTABLE":
         if result_preview is not None and typeof(result_preview) not in (
