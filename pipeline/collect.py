@@ -18,7 +18,32 @@ and describes a program that stops halfway.
 """
 import os
 import shutil
+import sys
 import time
+
+# Same guard as deob.py, repeated here because this module is also imported on
+# its own. Reconfiguring the stream is the fix; the wrapper below is what makes
+# it hold even when the stream cannot be reconfigured at all - a host may
+# replace stdout with something that has no such method and still refuses
+# characters outside ASCII.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
+def safe_print(text):
+    """Print a line that may name a folder in any language.
+
+    A path is data. It is not worth a traceback, and it is certainly not worth
+    one before any work has started, which is where this used to happen: the
+    list of folders about to be watched."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(enc, "replace").decode(enc, "replace"))
 
 BLOCK = "unobf_result.txt"
 DUMP = "opcode_trace.txt"
@@ -115,7 +140,7 @@ def _settled(ws, previous):
     return again
 
 
-def watch(workspaces, runs, outdir, log=print, timeout=None):
+def watch(workspaces, runs, outdir, log=safe_print, timeout=None):
     """Collect `runs` runs. Returns the argument for each run, with the two
     files of one run joined so they stay one run."""
     os.makedirs(outdir, exist_ok=True)
