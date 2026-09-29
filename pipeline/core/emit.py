@@ -26,6 +26,7 @@ from evidence import OBSERVED, INFERRED, UNKNOWN, DECOY, TAG
 
 import cfgx
 import exprs as exprmod
+import induct
 
 
 MAX_BRANCH_NOTES = 12
@@ -72,8 +73,9 @@ end
 
     def __init__(self, L, g, models, slots, amap, calls, decoys=None,
                  env_slots=None, env_names=None, runnable=False,
-                 unplaced=(), webs=None):
+                 unplaced=(), webs=None, counters=None):
         self.webs = webs
+        self.counters = counters or {}
         self.runnable = runnable
         self.unplaced = list(unplaced)
         self.L = L
@@ -278,12 +280,27 @@ end
             lp = loop_by_head.get(head)
             if lp is not None and head not in emitted_heads:
                 cond = self._loop_condition(head)
+                # A recovered condition is the best answer there is: it is
+                # what the program tests, written as the program tests it. Only
+                # when there is no condition does the counter come in - and
+                # then it beats the fallback below, because `for v = 0, 11`
+                # says what the loop does while "go round 13 times" says what
+                # this input did.
+                unrecovered = "OP(" in cond or cond == "true"
+                fh = self._for_header(lp) if unrecovered else None
+                if fh is not None:
+                    text, why = fh
+                    out.append(Line(text, OBSERVED, head, why, depth))
+                    depth += 1
+                    open_loops.append((lp, depth))
+                    emitted_heads.add(head)
+                    continue
                 # A condition this analysis did not establish must not become
                 # `while <unknown> do` in a script: the stub is truthy and the
                 # run would never leave the loop. The number of times the loop
                 # was seen to go round is a fact, so that is used instead, and
                 # it is stated as observed rather than recovered.
-                if self.runnable and ("OP(" in cond or cond == "true"):
+                if self.runnable and unrecovered:
                     cond = None
                     out.append(Line(
                         "for _ = 1, %d do  -- times observed; the condition "
@@ -380,6 +397,39 @@ end
                 UNKNOWN, 0, "kept out of the source so it stays readable; none are discarded", 0))
         self.lines = out
         return out
+
+    def _for_header(self, lp):
+        """`for v = start, limit[, step] do` when a counter of this loop was
+        settled, otherwise None.
+
+        A counter counts for this loop only if it is written inside it. A
+        counter advancing somewhere else says nothing about this loop's bound,
+        and lending it one would state a bound the loop does not have."""
+        body = set(lp["body"]) | {lp["head"]}
+        best = None
+        for wid, c in self.counters.items():
+            if c.header() is None:
+                continue
+            rows = {r for r in c.rows}
+            inside = [st for st in self.L.steps
+                      if st.row in rows and st.key() in body]
+            if not inside:
+                continue
+            if best is not None:
+                # two counters, two possible headers, and nothing in the
+                # capture says which one the loop turns on
+                return None
+            best = (c, inside[0])
+        if best is None:
+            return None
+        c, st = best
+        key = self.slots.writes.get(st.row)
+        name = self.R.var(key, st.row) if key is not None else "i"
+        start, limit, step = c.header()
+        text = ("for %s = %s, %s%s do"
+                % (name, induct._fmt(start), induct._fmt(limit),
+                   "" if step == 1 else ", " + induct._fmt(step)))
+        return text, c.why
 
     def _loop_condition(self, head):
         """The condition of the branch that leaves the loop, if the graph has

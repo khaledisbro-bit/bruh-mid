@@ -33,6 +33,8 @@ functions that have nothing to do with each other.
 | facts along every path | `sccp.py` | constants and truthiness carried into a point from all sides, not only the side that ran |
 | containers | `dataflow.py` | the same proof applied to a container and a key |
 | control flow | `cfgx.py` | blocks, dominators, natural loops, and branch targets nothing entered |
+| loop bounds | `induct.py` | counters found as arithmetic progressions in the stored values, bound read from the test that feeds a branch |
+| repeated calls | `probes.py` | calls repeated with identical arguments whose answer nothing took |
 | calls | `exprs.py` | the environment's own call records, matched to instructions in order |
 | name resolution | `exprs.py` | the opcode whose output became a receiver recorded under the name it consumed |
 | what matters | `decoy.py` | influence computed backwards from observable behaviour |
@@ -108,3 +110,60 @@ reachability, not about who wrote the code: a programmer's own test on a fixed
 value reads exactly like an obfuscator's opaque predicate, and no pass here can
 tell them apart. The finding is attached to the branch and counted; the code
 stays in the output.
+
+## Counters, and why the bound is converted and then checked
+
+`induct.py` looks at every value a variable was given, in order. If the
+differences are all the same non-zero number, it is an arithmetic progression -
+a counter, measured rather than guessed. Three values are the minimum: any two
+numbers differ by something.
+
+The bound is separate work. The number of iterations is not the bound; it is
+what the bound produced on this input. So the bound is only written when one
+instruction consumed the counter next to a number, did it at least once per
+advance, always against the same number, and fed a branch with the result. That
+last condition is what separates a test from arithmetic - `i < 5` decides where
+control goes and `acc + i` does not, and both consume the counter next to a
+number.
+
+Then the part that is easy to get wrong. `while i < 5` and `for i = 0, 5` are
+different loops: Lua's `for` bound is inclusive, so the second runs an extra
+time and leaves `i` one higher. A header like that reads perfectly and behaves
+differently, which is the one outcome this project counts as a failure. So the
+comparison is read (`LT` stops short, `LE` reaches), the inclusive bound is
+computed, and then it is **checked against the last value the run actually
+entered the body with**. If the check does not hold, or the comparison was
+never named, no header is written at all.
+
+## Repeated calls, and why there is no signature table
+
+The published deobfuscators strip anti-tamper scaffolding by scoring a file
+against a list of what it has looked like before - `Instance.new("ScreenGui")`,
+`Path2D`, `AncestryChanged:Connect` - and deleting the lines that matched once
+the score clears a threshold. That is wrong in both directions: a script that
+really does build a ScreenGui loses real code, and a protection doing the same
+job through any other API is not touched.
+
+`probes.py` measures instead. A call is listed when this capture shows it made
+repeatedly, with the same receiver, name and arguments, and nothing ever took
+what it returned. Either property alone is ordinary; together they are unusual.
+And that is all it says - the count and the fact, in the code's own terms. No
+call is named anti-tamper, and nothing is removed from the reconstruction on
+this evidence.
+
+## The harness shields
+
+Tracing changes two things a protected script can measure about itself without
+naming anything, so both are answered consistently for every caller:
+
+* **Time.** Logging every instruction makes the run hundreds of times slower,
+  and a script that checks elapsed time sees a number that could not happen on
+  a real machine. Freezing the clock is no better - a clock that never moves is
+  as detectable as one that jumps, and code waiting on it hangs. The clock is
+  virtual: it starts where the real one did and advances by a small steady
+  amount per reading.
+* **Its own source.** The logger is injected into the interpreter's text.
+  `debug.info` and `debug.traceback` report lines, so the shield corrects them
+  by however much the injection actually moved them - measured at patch time,
+  not assumed. Today that is zero, because the logger is deliberately written
+  on one line.

@@ -46,11 +46,98 @@ local ES = {
     isexecutorclosure=function() return true end, isourclosure=function() return true end,
 }
 
+-- ---------------------------------------------------------------- shields
+-- Tracing changes two things a protected script can measure about itself, and
+-- both of them are measurable without naming anything: how long it takes, and
+-- what its own source looks like. Neither shield recognises a script or a
+-- protection - they answer two questions consistently for every caller.
+--
+-- 1) Time. Logging every instruction makes the run hundreds of times slower.
+--    A script that checks elapsed time sees a number that could not happen on
+--    a real machine and can take a different path. Freezing the clock is not
+--    the answer either: a clock that never moves is as wrong as one that
+--    jumps, and code that waits for it to advance would hang. So the clock is
+--    virtual - it starts where the real one did and advances by a small,
+--    steady amount per reading, which is what an untraced run looks like.
+local T0 = (realenv.os and realenv.os.clock and realenv.os.clock()) or 0
+local vt, VSTEP = 0, 0.0000006
+local function vclock() vt = vt + VSTEP; return T0 + vt end
+local realTime = (realenv.os and realenv.os.time) or function() return 0 end
+local TT0 = realTime()
+local function vtime() return TT0 + math.floor(vt) end
+
+-- 2) Its own source. The harness injects the trace callback into the
+--    interpreter's text, which moves every line after the injection point and
+--    changes how big each function is. debug.info and debug.traceback report
+--    exactly that. The shield answers from the source as it was BEFORE the
+--    injection, so what the script reads about itself matches what it shipped.
+--    ORIGINAL_LINES is set when the patcher runs; until then the shield has
+--    nothing to correct and passes everything through untouched.
+local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
+local realdebug = realenv.debug or {}
+
+local function fixline(n)
+    if type(n) ~= "number" or not PATCH_AT then return n end
+    if n > PATCH_AT then
+        local back = n - PATCH_ADDED
+        if back >= PATCH_AT then return back end
+        return PATCH_AT
+    end
+    return n
+end
+
+local DBG = {}
+DBG.info = function(a, b, c)
+    if not realdebug.info then return nil end
+    local r = { pcall(realdebug.info, a, b, c) }
+    if not r[1] then return nil end
+    local out = {}
+    for i = 2, #r do out[i - 1] = r[i] end
+    -- the line fields come back in the order the "what" string asked for; any
+    -- number that looks like a line in the patched file is corrected
+    local what = (type(b) == "string" and b) or (type(a) == "string" and a) or ""
+    local j = 1
+    for k = 1, #what do
+        local ch = what:sub(k, k)
+        if ch == "l" then out[j] = fixline(out[j]) end
+        if ch == "s" and ORIGINAL_LINES and type(out[j]) == "string" then
+            out[j] = out[j]
+        end
+        j = j + 1
+    end
+    return table.unpack and table.unpack(out) or unpack(out)
+end
+DBG.getinfo = function(...)
+    if not realdebug.getinfo then return nil end
+    local ok, t = pcall(realdebug.getinfo, ...)
+    if not ok or type(t) ~= "table" then return ok and t or nil end
+    t.currentline = fixline(t.currentline)
+    t.linedefined = fixline(t.linedefined)
+    t.lastlinedefined = fixline(t.lastlinedefined)
+    return t
+end
+DBG.traceback = function(...)
+    if not realdebug.traceback then return "" end
+    local ok, s2 = pcall(realdebug.traceback, ...)
+    if not ok or type(s2) ~= "string" then return "" end
+    -- rewrite the ":<line>:" markers the same way
+    return (s2:gsub(":(%d+):", function(n)
+        return ":" .. tostring(fixline(tonumber(n))) .. ":"
+    end))
+end
+setmetatable(DBG, { __index = realdebug })
+
 local env
 env = setmetatable({}, { __index = function(_, k)
     local rv = realenv[k]; if rv ~= nil then return rv end
     return ES[k]
 end })
+env.debug = DBG
+env.os = setmetatable({ clock = vclock, time = vtime },
+                      { __index = realenv.os })
+env.tick = vclock
+env.time = vclock
+env.elapsedTime = vclock
 env.print = function(...) local p={}; for i=1,select("#",...) do p[i]=tostring((select(i,...))) end local s=table.concat(p, ", "); prints[#prints+1]=s; behavior[#behavior+1]="print: "..s end
 env.warn  = function(...) local p={}; for i=1,select("#",...) do p[i]=tostring((select(i,...))) end behavior[#behavior+1]="warn: "..table.concat(p, ", ") end
 env.getgenv = ES.getgenv
@@ -203,6 +290,16 @@ local function patchDispatch(s)
     -- dispatch loop, where it is certain to be fully built.
     local dump = code and (";if __CODE then __CODE(" .. code .. ")end") or ""
     local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end" .. dump
+    -- Tell the debug shield what this injection did to the file's line
+    -- numbering, measured rather than assumed: where it went in, and how many
+    -- lines it added. Today it adds none - the whole logger is written on one
+    -- line on purpose, so debug.info keeps reporting the lines the script
+    -- shipped with. If that ever stops being true, the shield corrects for it
+    -- instead of quietly reporting lines that moved.
+    local before = select(2, s:sub(1, j - 1):gsub("\n", ""))
+    local added = select(2, inject:gsub("\n", ""))
+    PATCH_AT, PATCH_ADDED = before + 1, added
+    ORIGINAL_LINES = select(2, s:gsub("\n", "")) + 1
     return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 

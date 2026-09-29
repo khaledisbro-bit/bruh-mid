@@ -31,9 +31,11 @@ import emit            # noqa: E402
 import evidence        # noqa: E402
 import exprs           # noqa: E402
 import frames          # noqa: E402
+import induct          # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
+import probes         # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -119,6 +121,16 @@ class Analysis:
         self.facts = sccp.propagate(self.cfg, self.lift, self.slots)
         self.predicates = sccp.decide_branches(
             self.facts, self.cfg, self.lift, self.slots)
+        # A loop written as "go round 4 times" states a property of the input,
+        # not of the program. Where a variable advanced by a fixed amount and
+        # something compared it against a value that held still, the loop has a
+        # bound the capture actually showed, and that is what gets written.
+        self.counters = induct.counters(self.lift, self.slots, self.webs,
+                                        self.cfg, self.models)
+        # Calls made over and over with the same arguments whose answer nothing
+        # ever took. Reported as that fact and nothing more - no name is
+        # matched against a table, and nothing is removed on this evidence.
+        self.probes = probes.find(self.lift, self.calls, capture.calls)
         # a different question from the stored slots above, and a different
         # answer: keep them apart, or the explanation of one overwrites the
         # explanation of the other and the report prints a dictionary
@@ -138,7 +150,8 @@ class Analysis:
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
-            self.env_rows, self.env_names, False, self.unmatched, self.webs)
+            self.env_rows, self.env_names, False, self.unmatched, self.webs,
+            self.counters)
         self.emitter.run()
         self.source = self.emitter.text()
         # a second rendering, this one made to load and run, for the behaviour
@@ -147,7 +160,8 @@ class Analysis:
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
-            self.env_rows, self.env_names, runnable=True, webs=self.webs)
+            self.env_rows, self.env_names, runnable=True, webs=self.webs,
+            counters=self.counters)
         self.runner.run()
         self.runnable = self.runner.runnable_text()
         self.verification, self.consistent = verify.report(
@@ -196,6 +210,16 @@ class Analysis:
                 "  (unreliable: instruction numbers may collide)"),
              "calls matched to code      %d of %d recorded"
              % (len(self.calls), len(self.calls) + len(self.unmatched)),
+             "repeated, answer unused    %s"
+             % (("%d group(s), %d call(s) in all"
+                 % (len(self.probes), sum(p.count for p in self.probes)))
+                if self.probes else "none"),
+             "counters recovered         %s"
+             % (("%d, of which %d gave a proved loop bound"
+                 % (len(self.counters),
+                    sum(1 for c in self.counters.values()
+                        if c.header() is not None)))
+                if self.counters else "none"),
              "behaviour                  longest unbroken agreement %d "
              "action(s); %d not accounted for"
              % (self.in_step, self.unaccounted),
@@ -230,6 +254,17 @@ class Analysis:
              "code that never ran is marked, not invented."]
         return "\n".join(L)
 
+    def _counter_names(self):
+        """The name the output gives each counter, so the report and the code
+        call the same variable the same thing."""
+        out = {}
+        for wid, c in self.counters.items():
+            row = c.rows[0] if c.rows else None
+            key = (self.slots.writes.get(row) if row is not None else None)
+            if key is not None:
+                out[wid] = self.emitter.R.var(key, row)
+        return out
+
     def write(self, outdir):
         os.makedirs(outdir, exist_ok=True)
         files = {
@@ -255,9 +290,13 @@ class Analysis:
                              "\n\n" + webs.report(self.webs),
             "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok) +
                                "\n\n" + sccp.report(self.facts, self.slots),
-            "VARIABLE_GROUPS.txt": webs.report(self.webs),
+            "VARIABLE_GROUPS.txt": webs.report(self.webs) + "\n\n" +
+                                   induct.report(self.counters,
+                                                 self._counter_names()),
             "PROGRAM_SIZE.txt": staticcode.report(
                 self.capture.code, self.capture.rows, self.cfg),
+            "REPEATED_CALLS.txt": probes.report(
+                self.probes, len(self.calls) + len(self.unmatched)),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
                          decoy.readable(self.verdicts, self.lift,
                                         self.emitter.R, self.calls, self.models),
@@ -412,11 +451,15 @@ def selftest():
             print("  | " + ln)
     # the two passes that reason about paths rather than about the one path
     # this run took are checked on graphs small enough to verify by hand
+    import induct as _induct
+    import probes as _probes
     import sccp as _sccp
     import webs as _webs
     print()
     _sccp._selftest()
     _webs._selftest()
+    _induct._selftest()
+    _probes._selftest()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 
