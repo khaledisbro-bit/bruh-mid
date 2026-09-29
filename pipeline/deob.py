@@ -62,7 +62,7 @@ def detect(src, log):
 
 
 def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
-                 name="harness.lua"):
+                 name="harness.lua", visible_hooks=False):
     """Embed the obfuscated source into the harness. The WHOLE file goes in,
     verbatim; a truncated sample would analyse a different program."""
     tmpl = open(os.path.join(HERE, template), encoding="utf-8").read()
@@ -78,6 +78,9 @@ def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
     if chunk != 1:
         tmpl = tmpl.replace("local TRACE_CHUNK = 1",
                             "local TRACE_CHUNK = %d" % chunk, 1)
+    if visible_hooks:
+        tmpl = tmpl.replace("local HIDE_HOOKS = true",
+                            "local HIDE_HOOKS = false", 1)
     if src not in tmpl:
         raise RuntimeError("the harness does not contain the whole source")
     path = os.path.join(outdir, name)
@@ -103,6 +106,13 @@ def main():
                     help="watch the executor's workspace and pick each run's "
                          "files up automatically, then analyse them. Give the "
                          "number of runs to collect (default 1)")
+    ap.add_argument("--visible-hooks", action="store_true",
+                    help="emit a harness whose trace hooks are ordinary "
+                         "globals instead of being served through the "
+                         "environment's metatable. Try this when a run records "
+                         "no instructions although the hook was placed: a VM "
+                         "that copies its environment loses hooks that are not "
+                         "real fields")
     ap.add_argument("--find-workspace", action="store_true",
                     help="find the folder your executor writes to. Run "
                          "writefile(\"VMSMART_WHERE.txt\", \"here\") in the "
@@ -199,10 +209,12 @@ def main():
     json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
 
     if a.safe:
-        os.replace(make_harness(src, a.out, safe=True),
+        os.replace(make_harness(src, a.out, safe=True,
+                                visible_hooks=a.visible_hooks),
                    os.path.join(a.out, "harness_safe.lua"))
         print("              safe harness -> %s/harness_safe.lua" % a.out)
-    harness = make_harness(src, a.out)
+    harness = make_harness(src, a.out,
+                           visible_hooks=a.visible_hooks)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
     # One run traces one interpreter, because patching two trips the VM's
     # integrity check. The program's tail runs inside the later ones, so a
@@ -210,6 +222,7 @@ def main():
     extra = []
     for n in range(2, a.chunks + 1):
         extra.append(make_harness(src, a.out, chunk=n,
+                                  visible_hooks=a.visible_hooks,
                                   name="harness_chunk%d.lua" % n))
     for p2 in extra:
         print("              also: %s  (traces the next interpreter down)" % p2)
@@ -254,11 +267,15 @@ def main():
         print("  3) python3 %s %s --trace capture.txt"
               % (os.path.basename(__file__), a.input))
         print("")
-        print("or skip the copying: python3 %s %s --collect 2"
+        print("or skip the copying: python3 %s %s --collect 1"
               % (os.path.basename(__file__), a.input))
-        print("  then run harness.lua once and harness_chunk2.lua once. Each")
-        print("  traces a different interpreter, and the program's tail runs in")
-        print("  the second, so both are needed to account for all of it.")
+        print("  then run harness.lua ONCE, and nothing else.")
+        print("")
+        print("  harness_chunk2.lua is for builds that nest a second")
+        print("  interpreter inside the first. Run it only if harness.lua's")
+        print("  own output says an interpreter was left untraced - on a build")
+        print("  with one interpreter it records nothing, and running it after")
+        print("  harness.lua overwrites the capture that did work.")
         return 0
 
     missing = [t for t in tracefmt.expand(a.trace) if not os.path.isfile(t)]
@@ -308,9 +325,8 @@ def main():
     analyses = []
     for cap in captures:
         if not cap.has_instructions():
-            print("[4/4] ANALYSE : %s has no instruction records - the dispatch "
-                  "hook did not match this build, so there is nothing to lift."
-                  % cap.name)
+            print("[4/4] ANALYSE : %s has no instruction records." % cap.name)
+            print("              %s" % cap.why_no_instructions())
             continue
         an = driver.Analysis(cap, vm_src)
         an.write(a.out)

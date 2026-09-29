@@ -47,6 +47,31 @@ class Capture:
     def has_instructions(self):
         return len(self.rows) > 0
 
+    def why_no_instructions(self):
+        """Why this capture carries no instructions.
+
+        "The hook did not match" was being printed for every empty capture,
+        which is one of three different things and the only one nobody can act
+        on. The harness writes what it did into the behaviour log, so read it
+        rather than assume.
+        """
+        notes = "\n".join(self.sections.get("BEHAVIOR", []))
+        placed = "patched dispatch" in notes
+        skipped = "left untraced" in notes
+        if placed:
+            return ("the trace hook WAS placed in this build's interpreter, "
+                    "and then never fired. That is not a build this cannot "
+                    "read - it is the hook being unreachable from where the "
+                    "interpreter runs, which is a fault here and worth "
+                    "reporting with this capture.")
+        if skipped:
+            return ("this run was asked to trace a different interpreter than "
+                    "the one that ran the program. Run harness.lua on its own; "
+                    "harness_chunk2.lua traces the next interpreter down and "
+                    "produces nothing when there is only one.")
+        return ("the trace hook never matched this build's dispatch loop, so "
+                "no instruction was ever logged.")
+
     def summary(self):
         return ("%s: %d instruction rows, %d in the code array, %d constants, "
                 "%d calls, %d prints, sections=%s"

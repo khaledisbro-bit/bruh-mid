@@ -143,6 +143,18 @@ local env
 -- environment returns nil for them. Ordinary globals - print, game, warn -
 -- stay real fields, because a real environment has those and hiding them would
 -- be its own tell.
+-- Hooks served through __index are invisible to `pairs` and `rawget`, which
+-- is what keeps a script from spotting the tracer by walking its own globals.
+-- It costs one thing: a VM that COPIES its environment - `for k,v in
+-- pairs(getfenv()) do E[k]=v end` - copies real fields and not metamethod
+-- answers, so the hooks would not follow it and nothing would be logged.
+--
+-- No build has been shown to do that. But "no instructions were recorded" and
+-- "the hook was unreachable" look identical from the files, so the choice is
+-- a switch rather than a belief: deob.py can emit a harness with the hooks as
+-- plain fields, and if that one records what the hidden one did not, the copy
+-- is what happened.
+local HIDE_HOOKS = true
 local HID = {}
 env = setmetatable({}, { __index = function(_, k)
     local h = HID[k]; if h ~= nil then return h end
@@ -487,6 +499,12 @@ env.task = setmetatable({}, { __index = function(_, k)
     end
     return real
 end })
+
+-- With hiding off, the hooks become ordinary globals. Placed here, after every
+-- one of them is defined, so the copy carries all four.
+if not HIDE_HOOKS then
+    for k, v in pairs(HID) do rawset(env, k, v) end
+end
 
 -- ----------------------------------------------------------------- probe
 -- Everything above is a shield. A shield nobody tested is a hope, so this
