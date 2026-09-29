@@ -357,8 +357,15 @@ end
         while open_loops:
             lp2, d2 = open_loops.pop()
             depth = d2 - 1
+            # A loop head is an address - a function and an instruction - not a
+            # bare number, so "%d" raised here rather than printing it. Nothing
+            # in the fixtures reaches this line, because it only runs when the
+            # instructions end with a loop still open, which is what a capture
+            # cut off mid-write looks like. The same formatting every other
+            # address uses.
             out.append(Line("end", OBSERVED, lp2["head"],
-                            "closes the loop whose head is pc %d" % lp2["head"],
+                            "closes the loop whose head is %s, which the "
+                            "capture never left" % cfgx._fmt(lp2["head"]),
                             depth))
         if dropped[0]:
             out.append(Line(

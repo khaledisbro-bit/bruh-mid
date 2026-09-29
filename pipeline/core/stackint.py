@@ -142,6 +142,11 @@ def lift(rows, program_rows, models):
 
     L = Lift()
     stack = []
+    # What the run could possibly have pushed. Every instruction pushes a few
+    # values at most, so several times the instruction count, plus room for a
+    # short capture, is already far past any real stack. It exists to reject a
+    # corrupt number, not to constrain a real one.
+    depth_ceiling = 4 * len(program_rows) + 256
     for r in program_rows:
         rid = r["i"]
         st = Step(rid, r["pc"], r["opcode"], r["operands"], r["sp"],
@@ -152,13 +157,44 @@ def lift(rows, program_rows, models):
 
         if r.get("burst_after"):
             product = None
-        pops, pushes, why, ev = _arity(r, product, after, m)
+        pops, pushes, why, ev = _arity(r, product, after, m, depth_ceiling)
         st.pops, st.pushes, st.net = pops, pushes, (
             None if after is None or r["sp"] is None else after - r["sp"])
 
         # align the simulated stack with what the VM reported before this
         # instruction; a mismatch means an earlier arity was wrong.
-        if r["sp"] is not None and len(stack) != r["sp"]:
+        #
+        # The depth is taken from the capture, and a capture can be damaged - a
+        # run cut off mid-write, a field mangled in transit. A stack pointer
+        # that reads as a billion used to be believed: the loop below inserts
+        # one object per missing slot, so it allocated until the process was
+        # killed. A hang and an out-of-memory death, from one bad field.
+        #
+        # No stack can be deeper than the run could have pushed, and every
+        # instruction pushes a handful at most. A depth past that ceiling is
+        # not a deep stack, it is a corrupt number, and the row is recorded as
+        # unreadable rather than acted on.
+        # A stack depth is a count. It cannot be negative, and it cannot be
+        # deeper than this run could have filled. Either reading is a damaged
+        # field rather than a deep stack, and acting on one is worse than
+        # useless: a negative depth makes `len(stack) > sp` true forever, so
+        # the resync below pops until the list is empty and then raises.
+        if r["sp"] is not None and (r["sp"] < 0 or r["sp"] > depth_ceiling):
+            L.divergences.append((rid, r["pc"], len(stack), r["sp"]))
+            st.aligned = False
+            st.sp = None
+            st.fact.evidence = UNKNOWN
+            st.fact.note("stackint.impossible_depth",
+                         "the capture reports a stack depth of %s here, which "
+                         "is %s. The number is not believed and this row is "
+                         "not used to align the replay"
+                         % (r["sp"],
+                            "impossible: a depth is a count" if r["sp"] < 0
+                            else ("past anything %d instruction(s) could have "
+                                  "built (ceiling %d)"
+                                  % (len(program_rows), depth_ceiling))),
+                         pcs=(r["pc"],), steps=(rid,))
+        elif r["sp"] is not None and len(stack) != r["sp"]:
             L.divergences.append((rid, r["pc"], len(stack), r["sp"]))
             st.aligned = False
             while len(stack) < r["sp"]:
@@ -220,12 +256,31 @@ def lift(rows, program_rows, models):
     return L
 
 
-def _arity(row, product, after, model):
-    """Decide how many values this one instruction consumed and produced."""
+def _arity(row, product, after, model, ceiling=None):
+    """Decide how many values this one instruction consumed and produced.
+
+    The stack movement comes from two numbers the capture reported, and a
+    capture can be damaged - a run cut off mid-write, a field mangled in
+    transit. A stack pointer that reads as a billion makes this compute a
+    movement of a billion, and the caller then loops that many times building a
+    value for each: the analysis hangs and the process is killed. That is one
+    bad field turning into an out-of-memory death.
+
+    No instruction moves the stack further than the run could have filled it.
+    Past that ceiling the two numbers are not describing a stack effect, so the
+    movement is discarded and the opcode's own measured effect is used instead,
+    which is what already happens when no stack pointer follows at all."""
     produced = _is_value(product)
     net = None
     if after is not None and row["sp"] is not None:
         net = after - row["sp"]
+        if ceiling is not None and abs(net) > ceiling:
+            return (0, 1 if produced else 0,
+                    "the capture reports the stack moving %+d here, which is "
+                    "past anything this run could have built (ceiling %d). "
+                    "Those numbers are not believed, and no stack effect is "
+                    "taken from them" % (net, ceiling),
+                    UNKNOWN)
 
     # A helper ran inside this instruction's handler, so the value reported next
     # may be the helper's leftover. Whether this instruction produced anything
