@@ -117,7 +117,9 @@ class Analysis:
         self.runner.run()
         self.runnable = self.runner.runnable_text()
         self.verification, self.consistent = verify.report(
-            self.lift, self.models, self.verdicts)
+            self.lift, self.models, self.verdicts, capture.calls, self.calls)
+        _f, self.in_step, self.unaccounted = verify.fidelity(
+            capture.calls, self.calls)
 
     def summary(self):
         cov, explained, total = verify.coverage(self.lift, self.verdicts)
@@ -158,6 +160,9 @@ class Analysis:
                 "  (unreliable: instruction numbers may collide)"),
              "calls matched to code      %d of %d recorded"
              % (len(self.calls), len(self.calls) + len(self.unmatched)),
+             "behaviour                  longest unbroken agreement %d "
+             "action(s); %d not accounted for"
+             % (self.in_step, self.unaccounted),
              "unexplored branch targets  %d" % len(self.cfg.unexplored),
              "instructions explained     %d of %d (%.0f%%)"
              % (explained, total, 100 * cov),

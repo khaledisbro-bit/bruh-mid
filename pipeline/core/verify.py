@@ -192,6 +192,74 @@ def behaviour_harness(source):
     return BEHAVIOUR_HARNESS % _bracket(source)
 
 
+def fidelity(records, calls):
+    """How much of what the program did the reconstruction accounts for.
+
+    "11 of 20 matched" says how many records found an instruction; it does not
+    say whether the reconstruction would DO the same things in the same order.
+    This lines the two sequences up and reports the longest unbroken stretch of
+    the program's actions that the reconstruction makes, and which actions it
+    does not make at all. Nine right in a row then nothing is a different result
+    from nine scattered, and the difference decides how far the output can be
+    trusted.
+
+    Identical actions are counted one for one, not as a set: a program that
+    creates four folders is not accounted for by a reconstruction that creates
+    one."""
+    from collections import Counter
+    have = Counter(c.record.get("raw") for c in calls)
+    accounted = []
+    for rec in records:
+        raw = rec.get("raw")
+        if have.get(raw, 0) > 0:
+            have[raw] -= 1
+            accounted.append(True)
+        else:
+            accounted.append(False)
+    best = run = 0
+    best_at = at = 0
+    for i, ok in enumerate(accounted):
+        if ok:
+            if run == 0:
+                at = i
+            run += 1
+            if run > best:
+                best, best_at = run, at
+        else:
+            run = 0
+    missing = [r for r, ok in zip(records, accounted) if not ok]
+    L = ["BEHAVIOUR - the program's actions against the reconstruction's",
+         "-" * 60,
+         "The environment recorded %d call(s) the program made. The"
+         % len(records),
+         "reconstruction accounts for %d of them, counted one for one."
+         % (len(records) - len(missing)), ""]
+    if best:
+        L.append("  Its longest unbroken agreement is %d action(s), starting at"
+                 % best)
+        L.append("  the program's action %d:" % (best_at + 1))
+        for r in records[best_at:best_at + min(best, 12)]:
+            L.append("    " + (r.get("raw") or ""))
+        if best > 12:
+            L.append("    ... %d more in that stretch" % (best - 12))
+    else:
+        L.append("  It makes none of the actions the program made.")
+    if missing:
+        L.append("")
+        L.append("  not accounted for (%d):" % len(missing))
+        for r in missing[:20]:
+            L.append("    " + (r.get("raw") or ""))
+        if len(missing) > 20:
+            L.append("    ... %d more" % (len(missing) - 20))
+        L.append("")
+        L.append("  An action the program took that the reconstruction does not")
+        L.append("  make is missing evidence, not a disagreement: the")
+        L.append("  instruction behind it is outside what this capture traced,")
+        L.append("  or nothing in the capture carried a value to anchor it on.")
+        L.append("  Tracing the chunk it happened in is what closes it.")
+    return "\n".join(L), best, len(missing)
+
+
 def compare_behaviour(original_calls, replay_calls):
     """Compare two recorded call sequences: same calls, same order."""
     a = [c.get("raw", "") if isinstance(c, dict) else str(c)
@@ -213,7 +281,7 @@ def compare_behaviour(original_calls, replay_calls):
     return {"matched": same, "of": max(len(a), len(b)), "differences": diffs}
 
 
-def report(L, models, verdicts):
+def report(L, models, verdicts, records=(), calls=()):
     rp, gr = replay(L, models), graph(L, models)
     cov, explained, total = coverage(L, verdicts)
     lines = ["VERIFICATION",
@@ -247,6 +315,9 @@ def report(L, models, verdicts):
               "  Until that comparison is made, this reconstruction is verified",
               "  against the recorded execution, not against a second run."]
     ok = (not rp.failures) and (not gr.failures)
+    if records:
+        fid, prefix, missing = fidelity(records, calls)
+        lines += ["", fid]
     lines += ["", "verdict: %s" % (
         "consistent with every value the VM reported"
         if ok else "INCONSISTENT - see the failures above")]

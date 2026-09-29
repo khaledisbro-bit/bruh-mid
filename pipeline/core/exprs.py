@@ -389,6 +389,12 @@ class Renderer:
         else:
             recv = rec.get("recv") or "?"
         args = [self.value(a.id, depth + 1) for a in call.arg_values]
+        # The instruction may leave more on the stack than the call took. The
+        # environment recorded how many arguments there were, so anything past
+        # that is not an argument and is dropped rather than printed.
+        want = len(rec.get("args") or ())
+        if want and len(args) > want:
+            args = args[:want]
         if not args and rec.get("args"):
             args = [_as_written(a) for a in rec["args"]]
         if rec.get("recv") is None:
