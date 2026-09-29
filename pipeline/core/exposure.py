@@ -73,17 +73,25 @@ def _lead_int(v):
 
 
 def assess(probe):
-    """(exposed, checked, rows) - rows are (tag, meaning, value, exposed)."""
+    """(exposed, checked, rows) - rows are (tag, meaning, value, exposed).
+
+    A check that raised inside the harness reports itself as failed. That is
+    neither clean nor exposed: it is a question that did not get asked, and
+    counting it either way would be a claim about something nobody measured."""
     rows = []
     exposed = 0
     for tag, meaning, is_bad in _CHECKS:
         if tag not in probe:
             continue
         v = probe[tag]
+        if v.startswith("check_failed"):
+            rows.append((tag, meaning, v, None))
+            continue
         bad = bool(is_bad(v))
         exposed += 1 if bad else 0
         rows.append((tag, meaning, v, bad))
-    return exposed, len(rows), rows
+    answered = sum(1 for r in rows if r[3] is not None)
+    return exposed, answered, rows
 
 
 def report(probe):
@@ -99,11 +107,21 @@ def report(probe):
     L.append("  payload. Every one is a question any script can ask about its")
     L.append("  own environment, with no name of any tool in it.")
     L.append("")
+    failed = 0
     for tag, meaning, v, bad in rows:
-        L.append("  [%s] %s" % ("EXPOSED" if bad else "  ok   ", meaning))
+        if bad is None:
+            mark, failed = "NOT ASKED", failed + 1
+        else:
+            mark = "EXPOSED" if bad else "  ok   "
+        L.append("  [%s] %s" % (mark, meaning))
         L.append("           %s = %s" % (tag, v))
     L.append("")
-    L.append("  %d of %d checks came back exposed." % (exposed, checked))
+    L.append("  %d of %d answered checks came back exposed." % (exposed, checked))
+    if failed:
+        L.append("  %d check(s) raised inside the harness and were not "
+                 "answered. Those" % failed)
+        L.append("  are counted neither way: a question nobody got to ask is")
+        L.append("  not a clean result.")
     L.append("")
     L.append("  A clean line is not proof that nothing is detectable. It is")
     L.append("  proof that this particular question did not give it away. The")
@@ -125,6 +143,13 @@ def _selftest():
     exposed, checked, _ = assess(clean)
     # the metatable is a genuine tell and is counted as one even in the best case
     assert checked == 8 and exposed == 1, (exposed, checked)
+
+    # a check that raised is neither clean nor exposed
+    broke = dict(clean)
+    broke["globals_not_in_real_env"] = "check_failed: attempt to index nil"
+    e2, c2, rows2 = assess(broke)
+    assert e2 == 1 and c2 == 7, (e2, c2)
+    assert any(r[3] is None for r in rows2)
 
     leaky = dict(clean)
     leaky["globals_not_in_real_env"] = "4: __OP,__CODE,__SL,__CAP"

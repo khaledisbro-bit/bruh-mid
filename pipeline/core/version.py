@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 24
+VERSION = 25
 
 STAGES = (
     "captures read by shape",
@@ -55,6 +55,8 @@ STAGES = (
     "and a direct call written as one rather than as __call",
     "the executor's own folder found by asking the executor, instead of "
     "guessing at folders that already happen to hold an old capture",
+    "each self-check in its own guard, so one that raises does not silently "
+    "take the rest with it, and an unasked question is not read as a clean one",
 )
 
 

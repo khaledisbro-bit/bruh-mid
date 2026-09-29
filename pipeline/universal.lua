@@ -465,67 +465,91 @@ env.task = setmetatable({}, { __index=function(_,k) if k=="wait" then return env
 local probe = {}
 local function pnote(tag, detail) probe[#probe+1] = tag .. "\t" .. tostring(detail) end
 
-pcall(function()
-    -- 1) Globals that exist here and do not exist in the real environment.
-    --    This is the cheapest check a script can run and it used to find the
-    --    tracer's own hooks sitting in plain sight.
+-- Each check runs in its own pcall. They all used to share one, so the first
+-- that raised took every later one down with it and the section came back
+-- empty with nothing to say why. A check that fails now says so and the rest
+-- still run: a missing answer is information, an absent section is not.
+local function pcheck(tag, fn)
+    local ok, a, b = pcall(fn)
+    if ok then
+        pnote(tag, b == nil and a or (tostring(a) .. ": " .. tostring(b)))
+    else
+        pnote(tag, "check_failed: " .. tostring(a))
+    end
+end
+
+-- 1) Globals that exist here and do not exist in the real environment. The
+--    cheapest check a script can run, and the one that found the tracer's own
+--    hooks sitting in plain sight.
+pcheck("globals_not_in_real_env", function()
     local extra, n = {}, 0
     for k in pairs(env) do
-        if realenv[k] == nil and type(k) == "string" then
+        if type(k) == "string" and realenv[k] == nil then
             n = n + 1
             if n <= 12 then extra[#extra+1] = k end
         end
     end
-    pnote("globals_not_in_real_env", n .. (n > 0 and (": " .. table.concat(extra, ",")) or ""))
+    if n == 0 then return 0 end
+    return n, table.concat(extra, ",")
+end)
 
-    -- 2) Can the tracer's hooks be reached by name, and can they be seen?
-    --    Reachable is required - the injected logger calls them. Visible is
-    --    the leak.
-    local reach, seen = 0, 0
+-- 2) Can the tracer's hooks be reached by name, and can they be seen?
+--    Reachable is required - the injected logger calls them. Visible is the
+--    leak.
+pcheck("hooks_reachable", function()
+    local n = 0
     for _, k in ipairs({"__OP", "__CODE", "__SL", "__CAP"}) do
-        if env[k] ~= nil then reach = reach + 1 end
-        if rawget(env, k) ~= nil then seen = seen + 1 end
+        if env[k] ~= nil then n = n + 1 end
     end
-    pnote("hooks_reachable", reach)
-    pnote("hooks_visible_to_rawget", seen)
+    return n
+end)
+pcheck("hooks_visible_to_rawget", function()
+    local n = 0
+    for _, k in ipairs({"__OP", "__CODE", "__SL", "__CAP"}) do
+        if rawget(env, k) ~= nil then n = n + 1 end
+    end
+    return n
+end)
 
-    -- 3) Does the environment carry a metatable? A plain environment does not,
-    --    and this harness's does. Reported rather than hidden: removing it
-    --    would mean giving up the fallback to the real globals.
-    pnote("env_has_metatable", getmetatable(env) ~= nil)
+-- 3) Does the environment carry a metatable? A plain one does not, and this
+--    harness's does. Reported rather than hidden: removing it would mean
+--    giving up the fallback to the real globals.
+pcheck("env_has_metatable", function()
+    return getmetatable(env) ~= nil
+end)
 
-    -- 4) Identity. A hooked function is not the function it replaced, and
-    --    rawequal says so without needing a name.
-    local swapped = 0
+-- 4) Identity. A hooked function is not the function it replaced, and
+--    rawequal says so without needing a name.
+pcheck("functions_not_identical_to_real", function()
+    local n = 0
     for _, k in ipairs({"print", "warn", "loadstring", "require"}) do
         local mine, real = env[k], realenv[k]
         if mine ~= nil and real ~= nil and not rawequal(mine, real) then
-            swapped = swapped + 1
+            n = n + 1
         end
     end
-    pnote("functions_not_identical_to_real", swapped)
+    return n
+end)
 
-    -- 5) Time. The shield's whole job is that a traced run does not look
-    --    impossibly slow. Measure what a script measuring itself would get.
+-- 5) Time. The shield's whole job is that a traced run does not look
+--    impossibly slow. Measure what a script measuring itself would get.
+pcheck("virtual_seconds_for_200k_adds", function()
     local c0 = env.os.clock()
     local acc = 0
     for i = 1, 200000 do acc = acc + i end
-    local c1 = env.os.clock()
-    pnote("virtual_seconds_for_200k_adds", string.format("%.6f", c1 - c0))
-    local r0 = (realenv.os and realenv.os.clock and realenv.os.clock()) or 0
-    pnote("clock_is_monotonic", c1 >= c0)
-    pnote("clock_differs_from_real", math.abs((c1 - c0) - 0) >= 0)
-    pnote("real_clock_available", r0 ~= 0)
+    return string.format("%.6f", env.os.clock() - c0)
+end)
+pcheck("clock_is_monotonic", function()
+    local a = env.os.clock()
+    local b = env.os.clock()
+    return b >= a
+end)
 
-    -- 6) What the script can learn about its own source position.
-    if env.debug and env.debug.info then
-        local ok, line = pcall(function()
-            return select(1, env.debug.info(1, "l"))
-        end)
-        pnote("debug_info_line", ok and tostring(line) or "unavailable")
-    else
-        pnote("debug_info_line", "no debug.info")
-    end
+-- 6) What the script can learn about its own source position.
+pcheck("debug_info_line", function()
+    if not (env.debug and env.debug.info) then return "no debug.info" end
+    local l = env.debug.info(1, "l")
+    return l == nil and "unavailable" or tostring(l)
 end)
 
 say("---PROBE---")
