@@ -128,7 +128,24 @@ end
 setmetatable(DBG, { __index = realdebug })
 
 local env
+-- The tracer's own hooks live HERE, not on env. They used to be plain fields
+-- on the environment, which means any script that walks its own globals
+--
+--     for k in pairs(getfenv()) do ... end
+--
+-- saw __OP, __CODE, __SL and __CAP sitting there. Four names that exist in no
+-- Roblox environment are a far more direct giveaway than timing or line
+-- numbers, and cost nothing to look for.
+--
+-- Served through __index instead, they still resolve when the injected code
+-- reads them as globals, because a global read is exactly an __index lookup.
+-- What changes is that pairs() does not walk a metamethod, and rawget on the
+-- environment returns nil for them. Ordinary globals - print, game, warn -
+-- stay real fields, because a real environment has those and hiding them would
+-- be its own tell.
+local HID = {}
 env = setmetatable({}, { __index = function(_, k)
+    local h = HID[k]; if h ~= nil then return h end
     local rv = realenv[k]; if rv ~= nil then return rv end
     return ES[k]
 end })
@@ -162,7 +179,7 @@ end
 -- (keys, field names, numbers). All guarded by pcall so it can never break the
 -- run: if the patch does not apply, the original chunk is loaded unchanged.
 local resolved, seenR = {}, {}
-env.__SL = function(r)
+HID.__SL = function(r)
     if #resolved > 4000 then return end
     if type(r) == "string" then
         if #r >= 2 and #r <= 120 and not seenR["S"..r] then
@@ -174,7 +191,7 @@ env.__SL = function(r)
         seenR["N"..tostring(r)] = true; resolved[#resolved+1] = "N:" .. tostring(r)
     end
 end
-env.__CAP = function() end
+HID.__CAP = function() end
 
 -- Devirtualization trace. The inner VM's dispatch loop looks like
 --   while true do local NO = ARR[PC]  ...
@@ -207,7 +224,7 @@ local codeRows = nil
 -- Dump the instruction array once. Every row is one instruction: its operands
 -- as the interpreter stores them. Rows the run never reached are exactly what
 -- makes this worth having, so nothing is filtered.
-env.__CODE = function(arr)
+HID.__CODE = function(arr)
     if codeRows ~= nil or type(arr) ~= "table" then return end
     codeRows = {}
     local n = 0
@@ -233,7 +250,7 @@ env.__CODE = function(arr)
     end)
 end
 
-env.__OP = function(pc, oc, NO, sp, top)
+HID.__OP = function(pc, oc, NO, sp, top)
     opn = opn + 1
     if opn > 40000 then return end
     local a = {}
@@ -435,6 +452,84 @@ end
 local wN = 0
 env.wait = function() wN = wN + 1; if wN > 40 then error("WAIT_BUDGET") end return 0 end
 env.task = setmetatable({}, { __index=function(_,k) if k=="wait" then return env.wait end return rtask[k] end })
+
+-- ----------------------------------------------------------------- probe
+-- Everything above is a shield. A shield nobody tested is a hope, so this
+-- interrogates the environment the harness just built, the same way a
+-- protected script would, and writes down whatever it can still tell.
+--
+-- It matches no names and knows nothing about any obfuscator. It asks
+-- questions any script can ask about itself, and reports the answers. A clean
+-- result is not proof that nothing is detectable. A dirty one is proof that
+-- something is.
+local probe = {}
+local function pnote(tag, detail) probe[#probe+1] = tag .. "\t" .. tostring(detail) end
+
+pcall(function()
+    -- 1) Globals that exist here and do not exist in the real environment.
+    --    This is the cheapest check a script can run and it used to find the
+    --    tracer's own hooks sitting in plain sight.
+    local extra, n = {}, 0
+    for k in pairs(env) do
+        if realenv[k] == nil and type(k) == "string" then
+            n = n + 1
+            if n <= 12 then extra[#extra+1] = k end
+        end
+    end
+    pnote("globals_not_in_real_env", n .. (n > 0 and (": " .. table.concat(extra, ",")) or ""))
+
+    -- 2) Can the tracer's hooks be reached by name, and can they be seen?
+    --    Reachable is required - the injected logger calls them. Visible is
+    --    the leak.
+    local reach, seen = 0, 0
+    for _, k in ipairs({"__OP", "__CODE", "__SL", "__CAP"}) do
+        if env[k] ~= nil then reach = reach + 1 end
+        if rawget(env, k) ~= nil then seen = seen + 1 end
+    end
+    pnote("hooks_reachable", reach)
+    pnote("hooks_visible_to_rawget", seen)
+
+    -- 3) Does the environment carry a metatable? A plain environment does not,
+    --    and this harness's does. Reported rather than hidden: removing it
+    --    would mean giving up the fallback to the real globals.
+    pnote("env_has_metatable", getmetatable(env) ~= nil)
+
+    -- 4) Identity. A hooked function is not the function it replaced, and
+    --    rawequal says so without needing a name.
+    local swapped = 0
+    for _, k in ipairs({"print", "warn", "loadstring", "require"}) do
+        local mine, real = env[k], realenv[k]
+        if mine ~= nil and real ~= nil and not rawequal(mine, real) then
+            swapped = swapped + 1
+        end
+    end
+    pnote("functions_not_identical_to_real", swapped)
+
+    -- 5) Time. The shield's whole job is that a traced run does not look
+    --    impossibly slow. Measure what a script measuring itself would get.
+    local c0 = env.os.clock()
+    local acc = 0
+    for i = 1, 200000 do acc = acc + i end
+    local c1 = env.os.clock()
+    pnote("virtual_seconds_for_200k_adds", string.format("%.6f", c1 - c0))
+    local r0 = (realenv.os and realenv.os.clock and realenv.os.clock()) or 0
+    pnote("clock_is_monotonic", c1 >= c0)
+    pnote("clock_differs_from_real", math.abs((c1 - c0) - 0) >= 0)
+    pnote("real_clock_available", r0 ~= 0)
+
+    -- 6) What the script can learn about its own source position.
+    if env.debug and env.debug.info then
+        local ok, line = pcall(function()
+            return select(1, env.debug.info(1, "l"))
+        end)
+        pnote("debug_info_line", ok and tostring(line) or "unavailable")
+    else
+        pnote("debug_info_line", "no debug.info")
+    end
+end)
+
+say("---PROBE---")
+for i = 1, #probe do say(probe[i]) end
 
 -- run
 local f = realLoad(SOURCE)

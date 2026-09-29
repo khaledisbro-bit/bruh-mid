@@ -29,6 +29,7 @@ import dataflow        # noqa: E402
 import decoy           # noqa: E402
 import emit            # noqa: E402
 import evidence        # noqa: E402
+import exposure        # noqa: E402
 import exprs           # noqa: E402
 import frames          # noqa: E402
 import induct          # noqa: E402
@@ -229,6 +230,11 @@ class Analysis:
                 "  (unreliable: instruction numbers may collide)"),
              "calls matched to code      %d of %d recorded"
              % (len(self.calls), len(self.calls) + len(self.unmatched)),
+             "traced-run exposure        %s"
+             % ((lambda e, c: "%d of %d checks exposed" % (e, c) if c else
+                 "not measured; this capture has no probe section")(
+                     *exposure.assess(
+                         getattr(self.capture, "probe", {}))[:2])),
              "repeated, answer unused    %s"
              % (("%d group(s), %d call(s) in all"
                  % (len(self.probes), sum(p.count for p in self.probes)))
@@ -318,6 +324,8 @@ class Analysis:
             # not one.
             "PROGRAM_SIZE.txt": staticcode.report(
                 self.capture.code, self.program, self.cfg),
+            "EXPOSURE.txt": exposure.report(
+                getattr(self.capture, "probe", {})),
             "REPEATED_CALLS.txt": probes.report(
                 self.probes, len(self.calls) + len(self.unmatched)),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
@@ -500,6 +508,7 @@ def selftest():
             print("  | " + ln)
     # the two passes that reason about paths rather than about the one path
     # this run took are checked on graphs small enough to verify by hand
+    import exposure as _exposure
     import induct as _induct
     import probes as _probes
     import sccp as _sccp
@@ -509,6 +518,7 @@ def selftest():
     _webs._selftest()
     _induct._selftest()
     _probes._selftest()
+    _exposure._selftest()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 

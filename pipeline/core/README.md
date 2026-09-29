@@ -167,3 +167,34 @@ naming anything, so both are answered consistently for every caller:
   by however much the injection actually moved them - measured at patch time,
   not assumed. Today that is zero, because the logger is deliberately written
   on one line.
+
+## Measuring the shields instead of trusting them
+
+The harness shields two things tracing makes measurable, and a third that
+searching never turned up: its own hooks were plain fields on the environment.
+`__OP`, `__CODE`, `__SL` and `__CAP` sat there in the open, and
+
+    for k in pairs(getfenv()) do ... end
+
+lists them. Four names that exist in no Roblox environment are a more direct
+giveaway than timing or line numbers, and cost nothing to look for. They are
+served through the environment's `__index` now: a global read is an `__index`
+lookup, so the injected logger still reaches them, while `pairs` does not walk
+a metamethod and `rawget` returns nil.
+
+That fix came from auditing the harness rather than from reading about what
+protections check, which is why `exposure.py` exists. Before it runs the
+payload, the harness asks the questions any script can ask about its own
+environment - which globals are here that are not in the real one, whether the
+hooks can be read off the table, whether the environment carries a metatable,
+whether the functions are the objects they replaced, what the clock reports for
+a fixed amount of work, what line the script reads for itself - and writes the
+answers into the capture. `EXPOSURE.txt` turns them into a report.
+
+The report does not claim the harness is undetectable. It is not, and the
+report names the parts that are: the environment does carry a metatable,
+because the fallback to the real globals needs one, and any function the
+harness logs through is not the object it replaced. Those are the cost of
+tracing at all. What the report gives is a list measured on the run in front of
+you instead of assumed from the last time somebody looked, and a clean line
+means that question did not give it away - not that nothing could.

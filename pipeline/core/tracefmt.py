@@ -42,6 +42,7 @@ class Capture:
         self.code = _code(self.sections, self.body)
         self.prints = [l.split("PRINT:", 1)[1].strip()
                        for l in self.sections.get("PRINTS", []) if "PRINT:" in l]
+        self.probe = _probe(self.sections)
 
     def has_instructions(self):
         return len(self.rows) > 0
@@ -104,6 +105,21 @@ def _rows(body):
         out.append({"i": len(out), "pc": int(m.group(1)),
                     "opcode": int(m.group(2)), "operands": ops,
                     "sp": sp, "value": val})
+    return out
+
+
+def _probe(sections):
+    """What the harness could still tell about itself.
+
+    The harness interrogates its own environment before running the payload
+    and writes down the answers, so the shields are measured rather than
+    assumed. Rows are `tag<TAB>value`."""
+    out = {}
+    for ln in sections.get("PROBE", []):
+        if "\t" not in ln:
+            continue
+        tag, _, val = ln.partition("\t")
+        out[tag.strip()] = val.strip()
     return out
 
 

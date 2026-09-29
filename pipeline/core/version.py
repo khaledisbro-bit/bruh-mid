@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 21
+VERSION = 22
 
 STAGES = (
     "captures read by shape",
@@ -47,6 +47,10 @@ STAGES = (
     "single pass never varies",
     "machinery still found when the program sits in a loop and is as busy as "
     "the interpreter, decided by the stack pointer being handed back unchanged",
+    "the tracer's own hooks served through the environment's metatable, so "
+    "walking the globals does not list them",
+    "the harness interrogating itself before it runs the payload, so what a "
+    "traced script could notice is measured on the run rather than assumed",
 )
 
 
