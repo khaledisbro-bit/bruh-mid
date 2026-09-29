@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 33
+VERSION = 34
 
 STAGES = (
     "captures read by shape",
@@ -77,6 +77,8 @@ STAGES = (
     "with several targets is not written as though it had one",
     "every stage asked what it does on a capture with nothing in it, and the "
     "metamethod list asserted to hold nothing that can never fire",
+    "Lua's values kept apart where Python would merge them, so a path "
+    "carrying 0 and one carrying false are not read as carrying the same thing",
 )
 
 

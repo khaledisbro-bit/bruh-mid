@@ -119,6 +119,18 @@ def truth_of(f):
     return not (v is None or v is False)
 
 
+def vkey(v):
+    """A value keyed so Lua's types stay apart.
+
+    Python holds that 0 == False and 1 == True, and a dict, a set or a plain
+    == will treat them as one value. In Lua they are not one value and they are
+    not even close: 0 is true in a condition and false is false. Merging them
+    made the lattice claim a variable was a known constant on two paths that
+    carried values Lua reads oppositely, and a branch fed that was then
+    declared unreachable. The type has to travel with the value."""
+    return (type(v).__name__, v)
+
+
 def meet(a, b):
     """Facts true on both paths. Equal facts survive; two that disagree but
     agree on truthiness collapse to that truthiness; the rest are dropped."""
@@ -127,7 +139,7 @@ def meet(a, b):
         g = b.get(k)
         if g is None:
             continue
-        if g == f:
+        if f[0] == g[0] and (f[0] != CONST or vkey(f[1]) == vkey(g[1])):
             out[k] = f
             continue
         ta, tb = truth_of(f), truth_of(g)
@@ -226,13 +238,13 @@ def _constants(F, g, L, S):
         f = (F.at_step.get(st.row) or F.entry.get(g.block_of(st.key()), {})
              ).get(slot)
         if f is None or f[0] != CONST:
-            seen[slot].add(_NOVALUE)
+            seen[slot].add(("novalue", None))
         else:
-            seen[slot].add(f[1])
+            seen[slot].add(vkey(f[1]))
     for slot, vals in seen.items():
         if len(vals) == 1:
-            v = next(iter(vals))
-            if not isinstance(v, _NoValue):
+            kind, v = next(iter(vals))
+            if kind != "novalue":
                 F.constants[slot] = v
 
 
@@ -283,7 +295,8 @@ def decide_branches(F, g, L, S):
                                "cannot run")}
             continue
         const = [f for f in facts if f[0] == CONST]
-        settled = len(const) == len(facts) and len({f[1] for f in const}) == 1
+        settled = (len(const) == len(facts)
+                   and len({vkey(f[1]) for f in const}) == 1)
         if settled and len(facts) < MIN_DECIDED:
             out[pc] = {"verdict": UNKNOWN, "evidence": UNKNOWN,
                        "why": ("this branch ran %d time(s), and that one pass "
@@ -376,6 +389,30 @@ def _selftest():
     assert truth_of(("c", None)) is False
     assert truth_of(("c", False)) is False
     assert truth_of(("t",)) is True
+    # Lua's 0 and false are different values with opposite truthiness, and
+    # Python's == says they are the same. The lattice must not agree with
+    # Python here.
+    assert meet({"a": ("c", 0)}, {"a": ("c", False)}) == {}, "0 is not false"
+    assert meet({"a": ("c", 1)}, {"a": ("c", True)}) == {"a": ("t",)}, \
+        "1 is not true, though both are truthy"
+
+    # meet is a lattice meet: commutative, idempotent and associative
+    import itertools as _it
+    _f = [None, ("c", 1), ("c", 0), ("c", None), ("c", False), ("c", "a"),
+          ("t",), ("f",)]
+
+    def _d(x):
+        return {} if x is None else {"x": x}
+    for _a in _f:
+        assert meet(_d(_a), _d(_a)) == _d(_a), ("not idempotent", _a)
+        for _b in _f:
+            assert meet(_d(_a), _d(_b)) == meet(_d(_b), _d(_a)), \
+                ("not commutative", _a, _b)
+    for _a, _b, _c in _it.product(_f, repeat=3):
+        assert meet(meet(_d(_a), _d(_b)), _d(_c)) == \
+               meet(_d(_a), meet(_d(_b), _d(_c))), ("not associative",
+                                                    _a, _b, _c)
+
     assert meet({"a": ("c", 1)}, {"a": ("c", 1)}) == {"a": ("c", 1)}
     assert meet({"a": ("c", 1)}, {"a": ("c", 2)}) == {"a": ("t",)}
     assert meet({"a": ("c", 1)}, {"a": ("c", None)}) == {}
