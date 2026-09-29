@@ -37,6 +37,7 @@ import stackint        # noqa: E402
 import tracefmt        # noqa: E402
 import vmsrc           # noqa: E402
 import verify          # noqa: E402
+import version         # noqa: E402
 
 
 class Analysis:
@@ -99,6 +100,8 @@ class Analysis:
             counts[v.verdict] = counts.get(v.verdict, 0) + 1
         L = ["SUMMARY - %s" % self.capture.name,
              "=" * 46,
+             "produced by %s" % version.banner(),
+             "",
              "captured instructions      %d" % len(self.capture.rows),
              "interpreter machinery      %d record(s) folded away"
              % (len(self.capture.rows) - len(self.program)),
@@ -145,7 +148,7 @@ class Analysis:
     def write(self, outdir):
         os.makedirs(outdir, exist_ok=True)
         files = {
-            "SUMMARY.txt": self.summary(),
+            "SUMMARY.txt": self.summary() + "\n\n" + version.describe(),
             "RECONSTRUCTED.lua": self.source,
             "PROVENANCE.txt": self.emitter.provenance(),
             "FUNCTIONS.txt": frames.report(self.frames),

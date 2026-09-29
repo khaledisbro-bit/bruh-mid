@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "core"))
 
 import unobf                      # noqa: E402
-from core import driver, tracefmt  # noqa: E402
+from core import driver, tracefmt, version  # noqa: E402
 
 
 def safe_long_bracket(content):
@@ -110,6 +110,7 @@ def main():
                          "builds whose integrity check reacts to the trace")
     a = ap.parse_args()
 
+    print("deob.py (%s)" % version.banner())
     src = open(a.input, encoding="latin1").read()
     log = {"sample": os.path.basename(a.input), "size": len(src)}
     inner_src, inner_data, family = detect(src, log)
