@@ -289,3 +289,40 @@ def report(verdicts, g):
         if v.alternative:
             L.append("  %-8s %-9s rival reading kept: %s" % ("", "", v.alternative))
     return "\n".join(L)
+
+
+def apply_predicates(verdicts, predicates, g=None):
+    """Record what constant propagation settled about each branch.
+
+    A branch whose condition is the same constant on every path that reaches it
+    cannot go the other way. That is worth saying, and it is said - on the
+    branch and on the target that was never entered.
+
+    What it is NOT is a licence to delete. "The other side cannot be reached"
+    is a statement about reachability, not about who wrote the code: a
+    programmer's own `if n < 10` with n fixed at 3 reads exactly the same way
+    as an obfuscator's opaque predicate, and this pass cannot tell them apart.
+    So the verdict on the instruction is left alone and nothing is removed from
+    the reconstruction. The finding is attached to the branch, where a reader
+    can weigh it, and counted.
+
+    Returns how many branches were settled this way.
+    """
+    n = 0
+    for pc, d in (predicates or {}).items():
+        if d.get("verdict") != DECOY:
+            continue
+        n += 1
+        v = verdicts.get(pc)
+        if v is not None and v.alternative is None:
+            v.alternative = d["why"]
+    if g is not None:
+        settled = {pc for pc, d in (predicates or {}).items()
+                   if d.get("verdict") == DECOY}
+        for b in g.branches:
+            if b["pc"] in settled:
+                b["settled"] = (predicates or {})[b["pc"]]["why"]
+        g.unexplored = [(a, t, why + "  -- and: " +
+                         (predicates or {})[a]["why"] if a in settled else why)
+                        for a, t, why in g.unexplored]
+    return n

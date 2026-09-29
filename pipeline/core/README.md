@@ -29,6 +29,8 @@ functions that have nothing to do with each other.
 | opcode meaning | `opsem.py` | candidate operations tested against every instance's real values |
 | value graph | `stackint.py` | symbolic replay of the stack, checked against the VM's own stack pointer |
 | variables | `dataflow.py` | write/read opcode pairs proved by "a read returns the last write" |
+| one slot, several variables | `webs.py` | reads and writes grouped by what reaches what, so a reused slot becomes separate variables |
+| facts along every path | `sccp.py` | constants and truthiness carried into a point from all sides, not only the side that ran |
 | containers | `dataflow.py` | the same proof applied to a container and a key |
 | control flow | `cfgx.py` | blocks, dominators, natural loops, and branch targets nothing entered |
 | calls | `exprs.py` | the environment's own call records, matched to instructions in order |
@@ -74,3 +76,35 @@ python3 driver.py run1.txt run2.txt -o out   # several runs of the same program
 Several captures of one program are merged at the level of facts, never text: an
 instruction explained in any run counts as explained, and a branch target counts
 as unexplored only when no run took it. Different samples are never merged.
+
+## Two passes that reason about paths, not about the run
+
+Most of this package measures the path the capture took. Two stages reason
+about every path instead, which is what it takes to say anything about code the
+run did not enter.
+
+**`webs.py` - one slot is not one variable.** A compiler reuses a slot. The
+same slot can hold a player at the top of a function and a string at the
+bottom, with nothing connecting them, and writing both as one variable claims
+an assignment the program never made. So the reads and writes of each slot are
+grouped by reaching definitions: a read belongs with every write that can reach
+it, and writes that share a read belong together. Each group is one variable
+and gets its own name. The same pass answers two more questions for free - a
+read with no write reaching it came in from outside the capture (a parameter,
+an upvalue), and a write that every path overwrites before any read is a store
+nothing could see. A write that merely reaches the end of the capture is NOT
+that: the run stopping is not evidence, and it is reported as unsettled.
+
+**`sccp.py` - what holds on every path in.** Per variable, one of: the same
+constant everywhere, never-false, always-false, or nothing known. Facts meet at
+a join, so a fact that survives to a point held on every path that reached it.
+The use is on branches with a side this run did not take. If the value feeding
+such a branch was the same constant on every path into it, that side cannot be
+entered while that holds. If the value differed, the condition is real. If
+nothing is established, nothing is claimed.
+
+Neither pass deletes anything. "This side is unreachable" is a statement about
+reachability, not about who wrote the code: a programmer's own test on a fixed
+value reads exactly like an obfuscator's opaque predicate, and no pass here can
+tell them apart. The finding is attached to the branch and counted; the code
+stays in the output.

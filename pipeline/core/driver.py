@@ -34,11 +34,13 @@ import frames          # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
+import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
 import tracefmt        # noqa: E402
 import types_ as typecheck  # noqa: E402
 import vmsrc           # noqa: E402
+import webs            # noqa: E402
 import verify          # noqa: E402
 import version         # noqa: E402
 
@@ -106,16 +108,37 @@ class Analysis:
         self.calls, self.unmatched = exprs.match_calls(
             self.lift, capture.calls)
         self.cfg = cfgx.build(self.lift, self.slots)
-        self.env_ops, self.env_why = exprs.identify_env(
+        # One slot is not one variable. A compiler reuses a slot, so the reads
+        # and writes of a slot are grouped by what can reach what, and each
+        # group is named on its own. Without this, two unrelated values written
+        # to one slot read as one variable being reassigned.
+        self.webs = webs.build(self.cfg, self.lift, self.slots)
+        # Facts that hold on EVERY path into a point, not just on the path this
+        # run took. This is what separates a condition that was decided before
+        # it was tested from one that really depends on something.
+        self.facts = sccp.propagate(self.cfg, self.lift, self.slots)
+        self.predicates = sccp.decide_branches(
+            self.facts, self.cfg, self.lift, self.slots)
+        # a different question from the stored slots above, and a different
+        # answer: keep them apart, or the explanation of one overwrites the
+        # explanation of the other and the report prints a dictionary
+        self.env_ops, self.env_op_why = exprs.identify_env(
             self.lift, self.models, self.calls, self.slots)
         self.verdicts = decoy.classify(
             self.lift, self.cfg, self.calls, self.slots, self.alias,
             self.env_ops)
+        # A branch whose condition is one constant on every path that reaches
+        # it can only ever go one way. That is recorded against the branch and
+        # against the target that was never entered. It does not delete
+        # anything: a programmer's own always-true test reads the same way as
+        # an obfuscator's, and this pass cannot tell which it is looking at.
+        self.opaque = decoy.apply_predicates(self.verdicts, self.predicates,
+                                             self.cfg)
         self.emitter = emit.Emitter(
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
-            self.env_rows, self.env_names, False, self.unmatched)
+            self.env_rows, self.env_names, False, self.unmatched, self.webs)
         self.emitter.run()
         self.source = self.emitter.text()
         # a second rendering, this one made to load and run, for the behaviour
@@ -124,7 +147,7 @@ class Analysis:
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
-            self.env_rows, self.env_names, runnable=True)
+            self.env_rows, self.env_names, runnable=True, webs=self.webs)
         self.runner.run()
         self.runnable = self.runner.runnable_text()
         self.verification, self.consistent = verify.report(
@@ -176,7 +199,14 @@ class Analysis:
              "behaviour                  longest unbroken agreement %d "
              "action(s); %d not accounted for"
              % (self.in_step, self.unaccounted),
-             "unexplored branch targets  %d" % len(self.cfg.unexplored),
+             "variables after grouping   %s"
+             % (("%d over %d slot(s); %d slot(s) held more than one"
+                 % (len(self.webs.webs),
+                    len(set(w.slot for w in self.webs.webs.values())),
+                    len(self.webs.split)))
+                if self.webs.active() else "not established"),
+             "unexplored branch targets  %d (%d of them fed by a value that "
+             "never varied)" % (len(self.cfg.unexplored), self.opaque),
              "program instructions known %s"
              % ((lambda t, c: "%d in the array; this run reached %d (%.0f%%)"
                  % (t, c, 100.0 * c / max(t, 1)) if t else
@@ -207,7 +237,7 @@ class Analysis:
             "WHAT_IT_DOES.txt": plain.build(
                 self.capture, self.lift, self.emitter.R, self.calls,
                 self.unmatched, self.models, self.verdicts, self.slots,
-                self.env_names),
+                self.env_names, self.webs, self.facts),
             "RECONSTRUCTED.lua": self.source,
             "PROVENANCE.txt": self.emitter.provenance(),
             "FUNCTIONS.txt": frames.report(self.frames),
@@ -221,8 +251,11 @@ class Analysis:
                              ("\n\nSTORED SLOTS\n" + "-" * 46 + "\n  " +
                               self.env_why if self.env_why else "") +
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
-                             self.tables.why,
-            "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),
+                             self.tables.why +
+                             "\n\n" + webs.report(self.webs),
+            "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok) +
+                               "\n\n" + sccp.report(self.facts, self.slots),
+            "VARIABLE_GROUPS.txt": webs.report(self.webs),
             "PROGRAM_SIZE.txt": staticcode.report(
                 self.capture.code, self.capture.rows, self.cfg),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
@@ -377,6 +410,13 @@ def selftest():
             if ln.startswith("--") or not ln.strip():
                 continue
             print("  | " + ln)
+    # the two passes that reason about paths rather than about the one path
+    # this run took are checked on graphs small enough to verify by hand
+    import sccp as _sccp
+    import webs as _webs
+    print()
+    _sccp._selftest()
+    _webs._selftest()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1
 

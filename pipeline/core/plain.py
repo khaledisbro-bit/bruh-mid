@@ -49,7 +49,8 @@ def _interesting(text):
     return switches < max(2, len(letters) * 0.4)
 
 
-def build(capture, L, R, calls, unmatched, models, verdicts, slots, env_names):
+def build(capture, L, R, calls, unmatched, models, verdicts, slots, env_names,
+          webs=None, facts=None):
     services, created, methods = [], [], []
     for rec in list(capture.calls):
         name = rec.get("method") or ""
@@ -143,6 +144,49 @@ def build(capture, L, R, calls, unmatched, models, verdicts, slots, env_names):
                % unsure)
     out.append("    path that ran, which is not enough to call them pointless")
     out.append("")
+    if webs is not None and webs.active():
+        out.append("Variables, said plainly")
+        out.append("-" * 25)
+        out.append("  %d variable(s) in all." % len(webs.webs))
+        if webs.split:
+            out.append("  %d storage slot(s) held more than one thing at "
+                       "different" % len(webs.split))
+            out.append("    points. Each one is written out separately, so two")
+            out.append("    unrelated values are never shown as one being")
+            out.append("    reassigned.")
+        inbound = [w for w in webs.webs.values() if not w.defs]
+        if inbound:
+            out.append("  %d value(s) came in from outside this capture - a"
+                       % len(inbound))
+            out.append("    parameter, something captured from an enclosing")
+            out.append("    function, or a write in code this run never ran.")
+        if webs.dead:
+            out.append("  %d store(s) nothing could ever read: the slot is"
+                       % len(webs.dead))
+            out.append("    written again, on every path, before anything")
+            out.append("    reads it. They are still written out.")
+        out.append("")
+    if facts is not None and facts.constants:
+        out.append("Variables that never changed")
+        out.append("-" * 28)
+        out.append("  Each of these held one value everywhere it was read, on")
+        out.append("  every path through the program, not just the path taken.")
+        for slot, v in sorted(facts.constants.items(),
+                              key=lambda kv: str(kv[0]))[:40]:
+            out.append("    %r" % (v,))
+        out.append("")
+    if facts is not None and facts.decided:
+        settled = [d for d in facts.decided.values()
+                   if d.get("verdict") == DECOY]
+        out.append("Tests that could only go one way")
+        out.append("-" * 32)
+        out.append("  %d of %d branch(es) with a side this run did not take"
+                   % (len(settled), len(facts.decided)))
+        out.append("  were fed a value that was the same on every path into")
+        out.append("  them. That side cannot be entered while that holds. It")
+        out.append("  is still written out: a test on a fixed value is what a")
+        out.append("  programmer writes too, not only an obfuscator.")
+        out.append("")
     if unmatched:
         out.append("Calls the program made that could not be placed in the code")
         out.append("-" * 58)

@@ -248,7 +248,8 @@ def identify_env(L, models, calls, slots):
 
 class Renderer:
     def __init__(self, L, models, slots, amap, calls, bound=None, env_ops=None,
-                 env_slots=None, env_names=None, runnable=False):
+                 env_slots=None, env_names=None, runnable=False, webs=None):
+        self.webs = webs
         self.env_slots = env_slots or {}
         self.env_names = env_names or {}
         # In runnable mode everything unproven is rendered as a call to a stub,
@@ -269,7 +270,12 @@ class Renderer:
     def _assign_names(self):
         """A variable is named per function and slot, so the same local seen on
         two calls of one function reads as one variable, while the same slot
-        number in a different function does not."""
+        number in a different function does not.
+
+        Where the reaching-definition pass ran, the name goes on the variable
+        rather than on the slot. A compiler reuses a slot, so one slot can hold
+        two things that no read connects; naming per slot writes them as one
+        variable and claims an assignment the program never made."""
         order, byfn = [], {}
         for st in self.L.steps:
             key = self.slots.writes.get(st.row, self.slots.reads.get(st.row))
@@ -281,8 +287,32 @@ class Renderer:
             order.append((key, group))
         for key, group in order:
             self.names[key] = byfn[group]
+        self.by_web = {}
+        if self.webs is not None and self.webs.active():
+            per_group = {}
+            for st in self.L.steps:
+                wid = self.webs.of_row(st.row)
+                if wid is None:
+                    continue
+                key = self.slots.writes.get(st.row, self.slots.reads.get(st.row))
+                if key is None:
+                    continue
+                base = self.names.get(key)
+                if base is None:
+                    continue
+                if wid in self.by_web:
+                    continue
+                n = per_group.get(base, 0)
+                per_group[base] = n + 1
+                # the first variable on a slot keeps the slot's name, so a slot
+                # that was never reused reads exactly as it did before
+                self.by_web[wid] = base if n == 0 else "%s_%d" % (base, n + 1)
 
-    def var(self, key):
+    def var(self, key, row=None):
+        if row is not None and self.webs is not None:
+            wid = self.webs.of_row(row)
+            if wid is not None and wid in getattr(self, "by_web", {}):
+                return self.by_web[wid]
         if key in self.names:
             return self.names[key]
         return "slot%s" % (key[1] if isinstance(key, tuple) else key,)
@@ -307,7 +337,7 @@ class Renderer:
             if key in self.env_names:
                 return self.env_names[key]
         if v.slot is not None and v.kind != "external":
-            return self.var(v.slot)
+            return self.var(v.slot, getattr(v, "row", None))
         call = self.by_step.get(v.row)
         if call is not None and v in call.step.pushed:
             return self.call_text(call, depth)

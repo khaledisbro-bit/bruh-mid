@@ -170,39 +170,79 @@ def analyze_inner(src, log):
 
 
 def classify_constructs(outer_src, knobs, log):
-    """REAL / SUSPICIOUS / DECOY / UNKNOWN for the statically visible pieces.
-    Rule: on the decode/execute path -> REAL; provably unreferenced -> DECOY;
-    otherwise SUSPICIOUS (kept, never deleted) or UNKNOWN."""
+    """What the unwrapping established, and nothing more.
+
+    An earlier version of this function matched names in the outer source and
+    wrote a prepared conclusion for each one it recognised - see
+    "DecompressBuffer" and get told the decompress call is on the decode path.
+    That is a lookup table, not analysis: it says the same thing about a file
+    that merely mentions the name, and says nothing about a file that does the
+    same work under another name.
+
+    Every entry below is the result of a test that was actually run on THIS
+    file. The decode tests are the strong ones: a blob either decoded under a
+    candidate alphabet into a Zstd stream whose header lengths fit its body, or
+    it did not, and that is a fact about the bytes. The shape findings are
+    weaker and are labelled as such: they say a piece of the interpreter has a
+    given shape, not what it is for.
+    """
     cls = {"REAL": [], "SUSPICIOUS": [], "DECOY": [], "UNKNOWN": []}
+    l1 = log.get("layer1", {})
 
-    # Outer wrapper: base85 decoder, EncodingService decompress, header split,
-    # loadstring -- all provably on the decode path (data flows blob -> J -> ZA/Zh -> loadstring).
-    if "DecompressBuffer" in outer_src:
-        cls["REAL"].append(("outer.EncodingService:DecompressBuffer", "consumes base85 output; feeds the split"))
-    if re.search(r"for \w+=1,85 do", outer_src):
-        cls["REAL"].append(("outer.base85_decoder K", "decodes the payload blob before decompress"))
-    if "loadstring(" in outer_src:
-        cls["REAL"].append(("outer.loadstring(ZA)(Zh,...)", "entry into the inner VM"))
+    # ---- decode-tested, so these are facts about the bytes ----------------
+    real = l1.get("real_blob_key")
+    if real is not None:
+        cls["REAL"].append(("blob[%s]" % real,
+                            "decoded under one of the candidate alphabets into "
+                            "a Zstd stream whose two header lengths fit its "
+                            "body; the payload that ran came out of it"))
+    for k in l1.get("blob_keys", []):
+        if k != real:
+            cls["DECOY"].append(("blob[%s]" % k,
+                                 "every candidate alphabet was tried on it and "
+                                 "none produced a Zstd stream with a header "
+                                 "that fits - it carries no payload"))
+    n_alpha = l1.get("alphabet_candidates", 0)
+    if real is not None and n_alpha > 1:
+        cls["DECOY"].append(("%d of %d base85 alphabet literal(s)"
+                             % (n_alpha - 1, n_alpha),
+                             "the payload decoded under one of them; the others "
+                             "were tried on it and rejected"))
+    for note in l1.get("rejected", []):
+        cls["DECOY"].append(note if isinstance(note, tuple) else (note, "decode test"))
 
-    # Extra 85-char alphabet literals beyond the one used = DECOY.
-    n_alpha = log.get("layer1", {}).get("alphabet_candidates", 1)
-    if n_alpha > 1:
-        cls["DECOY"].append((f"{n_alpha-1} extra base85 alphabet literal(s)",
-                             "not the alphabet that decoded the real blob"))
-    # Extra data blobs beyond the real one = DECOY (decode-tested).
-    for k in log.get("layer1", {}).get("blob_keys", []):
-        if k != log.get("layer1", {}).get("real_blob_key"):
-            cls["DECOY"].append((f"blob[{k}]", "failed decode test (charset/zstd/header) -> decoy blob"))
-
-    # Inner: resolver, decoder, LCG, dispatch = REAL (drive execution).
+    # ---- read from the interpreter's own shape, and no further ------------
     if knobs.get("resolver"):
         rv = knobs["resolver"]
-        cls["REAL"].append((f"inner.resolver {rv['name']}", f"resolves constants via {rv['decoder']}({rv['const_table']}[i])"))
+        cls["REAL"].append(("%s(i)" % rv["name"],
+                            "has the shape of a constant resolver - it folds a "
+                            "negative index, then returns %s(%s[i]). Every "
+                            "constant the program uses comes back through it, "
+                            "which is why it is on the execution path"
+                            % (rv["decoder"], rv["const_table"])))
     if knobs.get("lcg"):
-        cls["REAL"].append(("inner.LCG stream", "per-pc instruction decryption; changing it yields garbage"))
-    # Integrity/anti-tamper: SUSPICIOUS until the trace proves whether it gates the payload.
+        n = len(knobs["lcg"])
+        cls["REAL"].append(("%d recurrence(s) of the form x = (x*a + c) %% m" % n,
+                            "a state that advances once per instruction. The "
+                            "trace decides what it feeds; the shape alone only "
+                            "says the interpreter carries a changing number"))
     if knobs.get("integrity", {}).get("sha256_table"):
-        cls["SUSPICIOUS"].append(("inner.SHA-256 integrity", "anti-tamper; must confirm via trace whether it gates real logic"))
+        cls["SUSPICIOUS"].append(
+            ("a constant from SHA-256's round table is present",
+             "that is all this establishes. Whether anything is hashed, and "
+             "whether a hash gates the payload, is decided by the trace - not "
+             "by the constant being in the file"))
+    if knobs.get("integrity", {}).get("chacha_rounds"):
+        cls["SUSPICIOUS"].append(
+            ("rotation amounts in the order 16, 12, 8, 7 appear",
+             "the order a ChaCha quarter-round uses. Whether a cipher runs, "
+             "and on what, is decided by the trace"))
+    if knobs.get("local_function_count"):
+        cls["UNKNOWN"].append(
+            ("%d local function(s) in the interpreter"
+             % knobs["local_function_count"],
+             "counted, not read. Which of them run, and what each one does, is "
+             "measured from the capture, not guessed from the source"))
     log["classification"] = cls
     return cls
 

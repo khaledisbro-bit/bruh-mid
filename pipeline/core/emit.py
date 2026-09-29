@@ -72,7 +72,8 @@ end
 
     def __init__(self, L, g, models, slots, amap, calls, decoys=None,
                  env_slots=None, env_names=None, runnable=False,
-                 unplaced=()):
+                 unplaced=(), webs=None):
+        self.webs = webs
         self.runnable = runnable
         self.unplaced = list(unplaced)
         self.L = L
@@ -83,7 +84,8 @@ end
         self.bound = {}
         self.env_ops, self.env_why = exprmod.identify_env(L, models, calls, slots)
         self.R = exprmod.Renderer(L, models, slots, amap, calls, self.bound,
-                                  self.env_ops, env_slots, env_names, runnable)
+                                  self.env_ops, env_slots, env_names, runnable,
+                                  webs)
         self._tmp = 0
         self._jumps = self._jump_pcs()
         self._last = next((st for st in reversed(L.steps)
@@ -174,7 +176,7 @@ end
         if key is not None and st.popped:
             src = st.popped[0]
             rhs = self.R.value(src.id)
-            name = self.R.var(key)
+            name = self.R.var(key, st.row)
             first = self.first_write.get(key)
             if first is None:
                 self.first_write[key] = st.pc
