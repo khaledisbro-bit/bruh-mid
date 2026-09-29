@@ -451,7 +451,42 @@ end
 -- bound it so an infinite while-wait cannot hang the trace.
 local wN = 0
 env.wait = function() wN = wN + 1; if wN > 40 then error("WAIT_BUDGET") end return 0 end
-env.task = setmetatable({}, { __index=function(_,k) if k=="wait" then return env.wait end return rtask[k] end })
+-- A function handed to task.spawn, task.delay or task.defer runs on its own
+-- thread. The pcall around the payload does not reach that thread, so when one
+-- of them raises, the error surfaces as an engine message and never reaches the
+-- capture: the trace looks clean while something in the script is failing, and
+-- there is no way to tell from the files afterwards.
+--
+-- Wrapping the callback puts the error where it can be read. The error is not
+-- swallowed - it is written into the behaviour log and re-raised nowhere, so
+-- the thread ends exactly as it would have, and the capture now says why.
+local function watched(fn, what)
+    if type(fn) ~= "function" then return fn end
+    return function(...)
+        local packed = { pcall(fn, ...) }
+        if not packed[1] then
+            behavior[#behavior+1] = "error in " .. what .. ": " ..
+                                    tostring(packed[2])
+        end
+        return select(2, unpack and unpack(packed) or table.unpack(packed))
+    end
+end
+env.task = setmetatable({}, { __index = function(_, k)
+    if k == "wait" then return env.wait end
+    local real = rtask[k]
+    if (k == "spawn" or k == "delay" or k == "defer") and type(real) == "function" then
+        return function(a, b, ...)
+            -- task.spawn(fn, ...) and task.delay(t, fn, ...) put the callback
+            -- in different places, so the one that is a function is the one
+            -- that gets watched.
+            if type(a) == "function" then
+                return real(watched(a, "task." .. k), b, ...)
+            end
+            return real(a, watched(b, "task." .. k), ...)
+        end
+    end
+    return real
+end })
 
 -- ----------------------------------------------------------------- probe
 -- Everything above is a shield. A shield nobody tested is a hope, so this

@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 25
+VERSION = 26
 
 STAGES = (
     "captures read by shape",
@@ -57,6 +57,8 @@ STAGES = (
     "guessing at folders that already happen to hold an old capture",
     "each self-check in its own guard, so one that raises does not silently "
     "take the rest with it, and an unasked question is not read as a clean one",
+    "errors on the script's own spawned threads written into the capture, "
+    "instead of surfacing only as an engine message nobody analysing can see",
 )
 
 
