@@ -452,7 +452,8 @@ def selftest():
     ok = True
     print("SELF-TEST - reconstructing programs whose source is known")
     print("=" * 62)
-    for name in ("rich", "loop", "calls", "branch", "funcs"):
+    for name in ("rich", "loop", "calls", "branch", "funcs",
+                 "nested", "reuse", "down", "dyn"):
         prog = refvm.FIXTURES[name]()
         text, em = refvm.run(prog)
         a = Analysis(tracefmt.Capture(text, name))
@@ -522,6 +523,37 @@ def selftest():
             if _k != _shift:
                 wrong.append("a trace shifted by %+d was measured as %+d"
                              % (_shift, _k))
+        # Each of the four below exists to break one stage, and the answer is
+        # known. A stage that crashes is caught elsewhere; these catch a stage
+        # that runs and is wrong.
+        if name == "nested":
+            if len({lp["head"] for lp in a.cfg.loops}) < 2:
+                wrong.append("two nested loops came back as %d loop head(s)"
+                             % len({lp["head"] for lp in a.cfg.loops}))
+            _body = [l for l in a.source.splitlines()
+                     if l.strip() and not l.strip().startswith("--")]
+            if _body and max(len(l) - len(l.lstrip()) for l in _body) < 8:
+                wrong.append("the inner loop was not nested in the output")
+        if name == "reuse" and a.webs.active():
+            _on0 = [w for w in a.webs.webs.values()
+                    if str(w.slot).endswith("0)")]
+            if len(_on0) != 2:
+                wrong.append("a slot holding two unrelated values came back as "
+                             "%d variable(s)" % len(_on0))
+        if name == "down":
+            _cs = list(a.counters.values())
+            if len(_cs) != 1 or _cs[0].step != -2 or _cs[0].start != 10:
+                wrong.append("the counter 10,8,6,... was read as %s"
+                             % [(c.start, c.step) for c in _cs])
+        if name == "dyn":
+            _t = {t for s2 in a.sites.values() for t in s2.targets}
+            # the two real callees, and nothing the interpreter was holding
+            if not {"print", "warn"} <= _t:
+                wrong.append("the two callees came back as %s" % sorted(_t)[:4])
+            _junk = [t for t in _t if t.isdigit() and len(t) > 8]
+            if _junk:
+                wrong.append("interpreter bookkeeping reported as a call "
+                             "target: %s" % _junk[:3])
         if not verify.statement_lines(a.runnable):
             wrong.append("the runnable rendering has no statements, so there "
                          "is nothing to run or compare")

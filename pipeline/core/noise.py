@@ -142,7 +142,26 @@ def analyse(rows, min_bursts=MIN_BURSTS, min_sites=MIN_SITES,
                     restored += 1
         ok = (len(bursts) >= min_bursts and len(ent) >= min_sites
               and len(ex) >= min_exits)
-        if ok and relaxed:
+        # A short capture cannot meet counts that describe a busy interpreter.
+        # The helper in a run of twenty instructions is entered from two places
+        # and leaves to two, not three, and the region is rejected for being
+        # small rather than for being the program - so the interpreter's own
+        # bookkeeping is handed back as the program, where it corrupts arity
+        # and lands recorded calls on helper instructions.
+        #
+        # The counts are not the discriminator anyway; they are a proxy for one.
+        # The discriminator is that machinery computes where to go next and
+        # gives the program's stack back exactly as it found it, and a loop body
+        # does not: in a fixture built for this, the loop body restores it on
+        # NONE of its nine bursts while the helper restores it on all six.
+        #
+        # So a region too small for the counts gets a second chance on that
+        # test alone, and it has to be perfect - every burst, not most.
+        small = (not ok and len(bursts) >= 2 and len(ent) >= 2
+                 and len(ex) >= 2 and restored == len(bursts))
+        if small:
+            ok = True
+        if ok and relaxed and not small:
             # Under the relaxed gate a loop body can clear the entry/exit test:
             # its condition branches two ways and its blocks are entered from
             # several places, which looks like being called from many callers.
@@ -159,12 +178,16 @@ def analyse(rows, min_bursts=MIN_BURSTS, min_sites=MIN_SITES,
         info = {"pcs": r, "rows": sum(freq[p] for p in reg),
                 "bursts": len(bursts), "sites": len(ent), "exits": len(ex),
                 "restored": restored, "machinery": ok, "relaxed": relaxed,
+                "small": small,
                 "why": ("run %d time(s) in %d burst(s); entered from %d "
                         "instruction(s) and left to %d, and %d burst(s) gave "
                         "the stack pointer back unchanged%s"
                         % (sum(freq[p] for p in reg), len(bursts), len(ent),
                            len(ex), restored,
-                           ("  (found under the relaxed frequency gate: "
+                           ("  (too small for the usual counts; taken on the "
+                            "stack pointer alone, which every one of its "
+                            "bursts handed back unchanged)" if small else
+                            "  (found under the relaxed frequency gate: "
                             "nothing in this capture ran several times the "
                             "median, which is what a program that sits in a "
                             "loop looks like)" if relaxed else "")))}

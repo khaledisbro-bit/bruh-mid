@@ -136,6 +136,20 @@ def classify(L, g, calls, slots, amap, env_ops=()):
                           "instructions, by something the program observably did")
             continue
         if st.pushes == 0 and st.pops == 0:
+            # "It moved nothing" is only evidence when the movement was
+            # measured. Where the arity could not be established - a decryptor
+            # ran inside every execution of this opcode, so what it left
+            # pending was never visible - 0->0 is the shape the numbers allow,
+            # not something the run showed. Calling that dead condemns an
+            # instruction for being unobservable.
+            if st.fact.evidence == UNKNOWN:
+                out[st.key()] = Verdict(
+                    st.key(), UNKNOWN,
+                    "it appears to move nothing on the stack, but its arity "
+                    "was never established - a decryptor ran inside it and "
+                    "nothing else settled what this opcode produces - so "
+                    "there is no evidence either way")
+                continue
             if (st.key() in jumps or st.key() in unexplored_from
                     or any(b["pc"] == st.key() for b in g.branches)):
                 out[st.key()] = Verdict(

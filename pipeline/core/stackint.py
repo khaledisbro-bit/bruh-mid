@@ -246,6 +246,13 @@ def lift(rows, program_rows, models):
             stack.append(v)
             st.pushed.append(v)
 
+        # How well the arity is known belongs on the instruction, not only on
+        # the values it produced. Without it a later pass cannot tell an arity
+        # that was measured from one that is merely the shape the numbers
+        # allowed, and the decoy pass was condemning instructions on the
+        # strength of the second.
+        if ev == UNKNOWN and st.fact.evidence != UNKNOWN:
+            st.fact.evidence = UNKNOWN
         st.fact.note("stackint.arity", why, pcs=(r["pc"],),
                      opcodes=(r["opcode"],), steps=(rid,))
         L.steps.append(st)
@@ -299,6 +306,20 @@ def _arity(row, product, after, model, ceiling=None):
                         INFERRED)
 
     if net is not None:
+        # A decryptor ran inside this instruction, so the value reported next is
+        # the decryptor's and not this instruction's - which is why `product`
+        # was cleared. That means "left nothing pending" was never observed
+        # here, it is what is left when nothing could be seen. If the opcode's
+        # other instances did not settle it either (they all had a burst too),
+        # then whether this produces a value is simply not established.
+        #
+        # It used to fall through to `produced = False` and report OBSERVED,
+        # and an instruction that moves the stack by nothing and produces
+        # nothing is one the decoy pass calls dead. So a name lookup whose
+        # every execution happened to trigger a decryptor was reported as code
+        # nothing could depend on.
+        unsettled = bool(row.get("burst_after")) and not produced and (
+            model is None or model.produces is None)
         pushes = max(1, net) if produced else max(0, net)
         pops = pushes - net
         if pops < 0:
@@ -307,6 +328,14 @@ def _arity(row, product, after, model, ceiling=None):
                "it consumed %d and produced %d"
                % (net, "a value" if produced else "nothing", pops, pushes))
         ev = OBSERVED
+        if unsettled:
+            why = ("stack pointer moved %+d, and a decryptor ran inside this "
+                   "instruction so what it left pending could not be seen. No "
+                   "other instance of OP_%d settled it either, so whether it "
+                   "produces a value is not established and %d->%d is the "
+                   "shape the movement allows, not a measurement"
+                   % (net, row["opcode"], pops, pushes))
+            ev = UNKNOWN
         if model is not None and model.pops is not None and \
                 (model.pops, model.pushes) != (pops, pushes):
             why += ("; this run of OP_%d disagrees with the opcode's usual "

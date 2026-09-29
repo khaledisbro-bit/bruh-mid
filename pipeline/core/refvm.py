@@ -461,9 +461,98 @@ def fixture_branch():
     return Program(src, code, c)
 
 
+def fixture_nested():
+    """Two loops, one inside the other. The graph has to find both with
+    different heads, and the emitter has to nest the inner one."""
+    c = {1: 0, 2: 3, 3: 2, 4: 1}
+    code = asm([
+        ("PUSHK", 1), ("SETLOCAL", 0),
+        "outer",
+        ("GETLOCAL", 0), ("PUSHK", 2), ("LT",), ("JMPIFNOT", "done"),
+        ("PUSHK", 1), ("SETLOCAL", 1),
+        "inner",
+        ("GETLOCAL", 1), ("PUSHK", 3), ("LT",), ("JMPIFNOT", "endinner"),
+        ("GETLOCAL", 1), ("PUSHK", 4), ("ADD",), ("SETLOCAL", 1),
+        ("JMP", "inner"),
+        "endinner",
+        ("GETLOCAL", 0), ("PUSHK", 4), ("ADD",), ("SETLOCAL", 0),
+        ("JMP", "outer"),
+        "done",
+        ("PUSHK", 1), ("RETURN",),
+    ])
+    src = ('local i = 0\n'
+           'while i < 3 do\n'
+           '    local j = 0\n'
+           '    while j < 2 do\n'
+           '        j = j + 1\n'
+           '    end\n'
+           '    i = i + 1\n'
+           'end\n'
+           'return 0\n')
+    return Program(src, code, c)
+
+
+def fixture_reuse():
+    """One slot holding two things nothing connects. Writing them as one
+    variable claims an assignment the program never made."""
+    c = {1: 7, 2: 1, 3: "hello", 4: "!"}
+    code = asm([
+        ("PUSHK", 1), ("SETLOCAL", 0),
+        ("GETLOCAL", 0), ("PUSHK", 2), ("ADD",), ("SETLOCAL", 1),
+        ("PUSHK", 3), ("SETLOCAL", 0),
+        ("GETLOCAL", 0), ("PUSHK", 4), ("CONCAT",), ("SETLOCAL", 1),
+        ("PUSHK", 1), ("RETURN",),
+    ])
+    src = ('local x = 7\n'
+           'local y = x + 1\n'
+           'x = "hello"\n'
+           'y = x .. "!"\n'
+           'return 7\n')
+    return Program(src, code, c)
+
+
+def fixture_down():
+    """A counter that goes down by two. A step is measured from the values,
+    so a negative one has to come out as readily as a positive one."""
+    c = {1: 10, 2: 0, 3: 2}
+    code = asm([
+        ("PUSHK", 1), ("SETLOCAL", 0),
+        "top",
+        ("PUSHK", 2), ("GETLOCAL", 0), ("LT",), ("JMPIFNOT", "done"),
+        ("GETLOCAL", 0), ("PUSHK", 3), ("SUB",), ("SETLOCAL", 0),
+        ("JMP", "top"),
+        "done",
+        ("GETLOCAL", 0), ("RETURN",),
+    ])
+    src = ('local n = 10\n'
+           'while 0 < n do\n'
+           '    n = n - 2\n'
+           'end\n'
+           'return n\n')
+    return Program(src, code, c)
+
+
+def fixture_dyn():
+    """Two calls that reach different things. A call site is not one target,
+    and the pair must come back as the pair."""
+    c = {1: "print", 2: "warn", 5: "a"}
+    code = asm([
+        ("PUSHK", 1), ("GETENV",), ("PUSHK", 5), ("CALL", 1),
+        ("PUSHK", 2), ("GETENV",), ("PUSHK", 5), ("CALL", 1),
+        ("PUSHK", 5), ("RETURN",),
+    ])
+    src = ('print("a")\n'
+           'warn("a")\n'
+           'return "a"\n')
+    return Program(src, code, c)
+
+
 FIXTURES = {"calls": fixture_calls, "loop": fixture_loop,
             "rich": fixture_rich, "branch": fixture_branch,
-            "funcs": fixture_funcs}
+            "funcs": fixture_funcs, "nested": fixture_nested,
+            "reuse": fixture_reuse, "down": fixture_down,
+            "dyn": fixture_dyn}
+
 
 
 if __name__ == "__main__":

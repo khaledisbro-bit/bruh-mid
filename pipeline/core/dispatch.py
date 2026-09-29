@@ -66,15 +66,25 @@ def _describe(st, call):
 def find(L, calls, models=None):
     """Every call site, with the distinct targets it was seen reaching."""
     by_row = {c.step.row: c for c in calls if getattr(c, "step", None)}
-    call_ops = set()
-    for m_op, m in (models or {}).items():
-        if getattr(m, "operation", None) in ("CALL", "SELFCALL"):
-            call_ops.add(m_op)
-    call_ops |= {c.step.op for c in calls if getattr(c, "step", None)}
+    # An opcode the engine NAMED as a call is a call wherever it runs, so every
+    # execution of it counts as a site.
+    named_ops = {op for op, m in (models or {}).items()
+                 if getattr(m, "operation", None) in ("CALL", "SELFCALL")}
 
     sites = {}
     for st in L.steps:
-        if st.op not in call_ops:
+        # An opcode that is only here because the call matcher happened to land
+        # on it is NOT a call opcode. Taking it as one and then sweeping in
+        # every other instruction that shares it turns one uncertain match into
+        # a pile of invented targets - on a capture too small for the
+        # interpreter's own helpers to be recognised, the matcher lands on a
+        # helper and every pass of that helper is then reported as a call site
+        # reaching whatever it happened to be holding. Those rows are the
+        # interpreter's bookkeeping, not the program's calls.
+        #
+        # So an opcode from the matcher only accounts for the rows a call was
+        # actually matched to.
+        if st.op not in named_ops and st.row not in by_row:
             continue
         s = sites.get(st.key())
         if s is None:

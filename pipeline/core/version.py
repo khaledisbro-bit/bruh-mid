@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 35
+VERSION = 36
 
 STAGES = (
     "captures read by shape",
@@ -81,6 +81,12 @@ STAGES = (
     "carrying 0 and one carrying false are not read as carrying the same thing",
     "a damaged capture read as damaged: a stack depth that is negative or past "
     "anything the run could have built is not believed rather than acted on",
+    "the interpreter's helpers found in a short capture too, decided by the "
+    "stack pointer coming back unchanged rather than by counts it cannot meet",
+    "an arity nobody could measure marked as unmeasured, so an instruction is "
+    "not called dead for having been unobservable",
+    "a call site taken from instructions a call was matched to, not from every "
+    "instruction sharing an opcode the matcher happened to land on",
 )
 
 
