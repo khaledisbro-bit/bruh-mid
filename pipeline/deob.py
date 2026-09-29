@@ -106,6 +106,10 @@ def main():
     ap.add_argument("--workspace",
                     help="the executor's output folder, if --collect cannot "
                          "find it")
+    ap.add_argument("--behaviour", metavar="FILE",
+                    help="what behaviour_check.lua printed. Compares the "
+                         "reconstruction's calls with the program's and writes "
+                         "the result")
     ap.add_argument("--chunks", type=int, default=2, metavar="N",
                     help="write a harness for each of the first N nested "
                          "interpreters (default 2). One run traces one of them; "
@@ -254,6 +258,14 @@ def main():
               "meanings will be read from its handlers"
               % (vm_path, len(vm_src)))
 
+    behaviour = None
+    if a.behaviour:
+        if not os.path.isfile(a.behaviour):
+            print("\n%s is not here." % a.behaviour)
+            return 1
+        with open(a.behaviour, encoding="latin1") as f:
+            behaviour = f.read()
+
     captures = tracefmt.load(a.trace, one_run=a.one_run)
     analyses = []
     for cap in captures:
@@ -267,6 +279,16 @@ def main():
         analyses.append(an)
         print("[4/4] ANALYSE : %s" % cap.name)
         print(an.summary())
+        if behaviour:
+            from core import verify as vmod
+            text, matched, missing, extra = vmod.compare_behaviour(
+                cap.calls, behaviour)
+            path = os.path.join(a.out, "BEHAVIOUR_COMPARISON.txt")
+            open(path, "w").write(text + "\n")
+            print("")
+            print(text)
+            print("")
+            print("              behaviour comparison -> %s" % path)
     if len(analyses) > 1:
         body = driver.merge_summary(analyses)
         open(os.path.join(a.out, "ACROSS_RUNS.txt"), "w").write(body + "\n")

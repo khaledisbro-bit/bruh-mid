@@ -114,12 +114,15 @@ def coverage(L, verdicts):
 
 BEHAVIOUR_HARNESS = '''-- Behaviour comparison harness (generated).
 --
--- Runs the reconstruction inside the same watched environment the original was
--- captured in, and prints the call sequence it produces. Run the original
--- capture harness and this one, then compare the two BEHAVIOUR blocks: the same
--- calls, with the same arguments, in the same order, is what makes a
--- reconstruction correct. Anything else is a reconstruction that only looks
--- right.
+-- Runs the reconstruction inside a watched environment and prints every call it
+-- makes. Feed the printed block back with --behaviour and the two sequences are
+-- compared: the same calls, with the same arguments, in the same order, is what
+-- makes a reconstruction correct.
+--
+-- Calls are written as a dotted path with its arguments - GetService("Players"),
+-- Instance.new("Part") - which is also how the original capture's records are
+-- read before comparing, so the two can be lined up whatever shape each log
+-- used.
 local RECONSTRUCTED = %s
 
 local seen = {}
@@ -137,13 +140,29 @@ local function argstr(...)
     for i = 1, n do p[i] = preview((select(i, ...))) end
     return table.concat(p, ", ")
 end
-local function watch(ns)
-    return setmetatable({}, { __index = function(_, k)
-        return function(_, ...)
-            seen[#seen + 1] = ns .. ":" .. tostring(k) .. "(" .. argstr(...) .. ")"
-            return watch(ns .. "." .. tostring(k))
-        end
-    end })
+
+-- A watched name has to work in every shape the program might use it in: called
+-- directly, indexed then called, or used as a receiver with a colon. A proxy
+-- that only answers one of those ends the run at the first of the others.
+local watch
+watch = function(ns)
+    local function record(...)
+        seen[#seen + 1] = ns .. "(" .. argstr(...) .. ")"
+        return watch(ns)
+    end
+    return setmetatable({}, {
+        __index = function(_, k) return watch(ns .. "." .. tostring(k)) end,
+        __call = function(_, first, ...)
+            -- a colon call passes the receiver itself as the first argument;
+            -- dropping it keeps both shapes reading the same way
+            if first ~= nil and type(first) == "table" then
+                return record(...)
+            end
+            return record(first, ...)
+        end,
+        __concat = function(a, b) return tostring(a) .. tostring(b) end,
+        __tostring = function() return ns end,
+    })
 end
 
 local env = setmetatable({}, { __index = function(_, k)
@@ -155,7 +174,7 @@ end })
 
 local fn, err = loadstring(RECONSTRUCTED)
 if not fn then
-    print("BEGIN_BEHAVIOUR\\ncompile_error: " .. tostring(err) .. "\\nEND_BEHAVIOUR")
+    print("BEGIN_BEHAVIOUR\ncompile_error: " .. tostring(err) .. "\nEND_BEHAVIOUR")
     return
 end
 pcall(setfenv, fn, env)
@@ -165,8 +184,56 @@ if not ok then out[#out + 1] = "error: " .. tostring(e) end
 out[#out + 1] = "---BEHAVIOUR---"
 for i = 1, #seen do out[#out + 1] = seen[i] end
 out[#out + 1] = "END_BEHAVIOUR"
-print(table.concat(out, "\\n"))
+print(table.concat(out, "\n"))
 '''
+
+
+def normalise(rec):
+    """One shape for a call, whatever shape its log used.
+
+    The capture writes `GetService: Players` for a service lookup, `Instance.new:
+    Part` for a construction and `Svc:Method(args)` for a proxied call. The
+    behaviour harness writes a dotted path with its arguments. Both are reduced
+    to the same thing here, or the two sequences could never be lined up."""
+    if isinstance(rec, str):
+        return rec.strip()
+    name = rec.get("method") or ""
+    recv = rec.get("recv")
+    path = ("%s.%s" % (recv, name)) if recv else name
+    args = []
+    for a in rec.get("args") or ():
+        a = a.strip()
+        if a.startswith('"') or _PLAIN.match(a):
+            args.append(a)
+        else:
+            args.append('"%s"' % a)
+    return "%s(%s)" % (path, ", ".join(args))
+
+
+_PLAIN = __import__("re").compile(
+    r"^(-?\d+(\.\d+)?|true|false|nil|table|function|\{.*\})$")
+
+
+def parse_block(text):
+    """The call sequence out of a printed BEGIN_BEHAVIOUR block."""
+    if "BEGIN_BEHAVIOUR" in text:
+        text = text.split("BEGIN_BEHAVIOUR", 1)[1]
+    text = text.split("END_BEHAVIOUR", 1)[0]
+    ok, err, calls = None, None, []
+    body = text.split("---BEHAVIOUR---", 1)
+    head = body[0]
+    for ln in head.splitlines():
+        ln = ln.strip()
+        if ln.startswith("run_ok:"):
+            ok = ln.split(":", 1)[1].strip() == "true"
+        elif ln.startswith(("error:", "compile_error:")):
+            err = ln.split(":", 1)[1].strip()
+    if len(body) > 1:
+        for ln in body[1].splitlines():
+            ln = ln.strip()
+            if ln:
+                calls.append(ln)
+    return {"ok": ok, "error": err, "calls": calls}
 
 
 def _bracket(text):
@@ -260,25 +327,82 @@ def fidelity(records, calls):
     return "\n".join(L), best, len(missing)
 
 
-def compare_behaviour(original_calls, replay_calls):
-    """Compare two recorded call sequences: same calls, same order."""
-    a = [c.get("raw", "") if isinstance(c, dict) else str(c)
-         for c in original_calls]
-    b = [c.get("raw", "") if isinstance(c, dict) else str(c)
-         for c in replay_calls]
-    n = min(len(a), len(b))
-    same = 0
-    diffs = []
-    for i in range(n):
-        if a[i] == b[i]:
-            same += 1
+def compare_behaviour(records, block_text):
+    """Compare what the program did with what the reconstruction did.
+
+    `records` are the original capture's call records; `block_text` is what the
+    behaviour harness printed. Both are reduced to one shape first, then lined up
+    in order."""
+    got = parse_block(block_text)
+    want = [normalise(r) for r in records]
+    have = [normalise(c) for c in got["calls"]]
+    L = ["BEHAVIOUR COMPARISON",
+         "=" * 46,
+         "The program's calls against the reconstruction's, in order.", ""]
+    if got["ok"] is False or got["error"]:
+        L.append("  The reconstruction did not finish: %s"
+                 % (got["error"] or "it stopped without saying why"))
+        L.append("  Whatever it managed before stopping is compared below, but a")
+        L.append("  run that ends early cannot account for what came after.")
+        L.append("")
+    from collections import Counter
+    pool = Counter(have)
+    matched, missing = [], []
+    for w in want:
+        if pool.get(w, 0) > 0:
+            pool[w] -= 1
+            matched.append(w)
         else:
-            diffs.append("position %d: original made %s, reconstruction made %s"
-                         % (i + 1, a[i], b[i]))
-    if len(a) != len(b):
-        diffs.append("the original made %d call(s), the reconstruction made %d"
-                     % (len(a), len(b)))
-    return {"matched": same, "of": max(len(a), len(b)), "differences": diffs}
+            missing.append(w)
+    extra = sorted(pool.elements())
+    # longest run of the program's calls the reconstruction made, in order
+    i = j = best = run = 0
+    while i < len(want) and j < len(have):
+        if want[i] == have[j]:
+            run += 1
+            best = max(best, run)
+            i += 1
+            j += 1
+        else:
+            run = 0
+            j += 1
+            if j >= len(have):
+                i += 1
+                j = 0
+    L += ["  the program made %d call(s); the reconstruction made %d"
+          % (len(want), len(have)),
+          "  same call, matched one for one: %d" % len(matched),
+          "  longest run in the same order: %d" % best, ""]
+    if missing:
+        L.append("  the program made these and the reconstruction did not (%d):"
+                 % len(missing))
+        for m in missing[:20]:
+            L.append("    " + m)
+        if len(missing) > 20:
+            L.append("    ... %d more" % (len(missing) - 20))
+        L.append("")
+    if extra:
+        L.append("  the reconstruction made these and the program did not (%d):"
+                 % len(extra))
+        for e in extra[:20]:
+            L.append("    " + e)
+        if len(extra) > 20:
+            L.append("    ... %d more" % (len(extra) - 20))
+        L.append("")
+        L.append("  A call the program never made is the serious kind of error:")
+        L.append("  it means a reading put an action into the program that was")
+        L.append("  not there.")
+        L.append("")
+    if not missing and not extra:
+        L.append("  Every call matches, one for one and in order. On the")
+        L.append("  behaviour this capture recorded, the reconstruction does what")
+        L.append("  the program did.")
+    else:
+        L.append("  verdict: the reconstruction accounts for %d of the %d call(s)"
+                 % (len(matched), len(want)))
+        L.append("  the program made%s."
+                 % (", and makes %d it did not" % len(extra) if extra else ""))
+    return "\n".join(L), len(matched), len(missing), len(extra)
 
 
 def report(L, models, verdicts, records=(), calls=(), types=None):
