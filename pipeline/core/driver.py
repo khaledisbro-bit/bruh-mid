@@ -71,7 +71,25 @@ class Analysis:
             dropped, _checked = vmsrc.revoke(self.models, self.lift,
                                              self.handler_why)
             self.from_handlers -= dropped
-        self.slots = dataflow.infer_slots(self.lift)
+        # The interpreter's handlers say which opcodes touch a variable. That
+        # is checked the same way a guessed pair is, and only used if it holds.
+        self.slots, self.slot_hits, self.slot_checks = (None, 0, 0)
+        if vm_source and self.vm is not None and self.vm.ok:
+            rd, wr = vmsrc.variables(vm_source, self.vm, self.models,
+                                     self.lift.steps)
+            self.slots, self.slot_hits, self.slot_checks = \
+                dataflow.slots_from_source(self.lift, rd, wr)
+        if self.slots is None or not self.slots.active():
+            self.slots = dataflow.infer_slots(self.lift)
+        # Slots the program reads but this capture never writes: the interpreter
+        # keeps them boxed, and naming them shows one object used repeatedly
+        # instead of a different unnamed opcode each time.
+        self.env_rows, self.env_names, self.env_why = {}, {}, ""
+        if vm_source and self.vm is not None and self.vm.ok:
+            rd, _wr = vmsrc.variables(vm_source, self.vm, self.models,
+                                      self.lift.steps)
+            self.env_rows, self.env_names, self.env_why, _a, _t = \
+                dataflow.env_slots(self.lift, rd)
         self.alias = dataflow.alias(self.lift, self.slots)
         self.tables = dataflow.infer_tables(self.lift)
         self.calls, self.unmatched = exprs.match_calls(
@@ -85,7 +103,8 @@ class Analysis:
         self.emitter = emit.Emitter(
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
-                         if v.verdict == evidence.DECOY})
+                         if v.verdict == evidence.DECOY},
+            self.env_rows, self.env_names)
         self.emitter.run()
         self.source = self.emitter.text()
         self.verification, self.consistent = verify.report(
@@ -112,6 +131,8 @@ class Analysis:
              "values recovered           %d (%d consumed from outside the "
              "capture)" % (len(self.lift.values), self.lift.externals),
              "stack desynchronisations   %d" % len(self.lift.divergences),
+             "stored slots named         %s"
+             % (len(self.env_names) if self.env_names else "none"),
              "variables                  %s"
              % (len(set(list(self.slots.reads.values()) +
                         list(self.slots.writes.values())))
@@ -159,6 +180,8 @@ class Analysis:
                            if self.vm else opsem.report(self.models),
             "VALUES.txt": stackint.report(self.lift, self.models),
             "VARIABLES.txt": dataflow.report(self.lift, self.slots) +
+                             ("\n\nSTORED SLOTS\n" + "-" * 46 + "\n  " +
+                              self.env_why if self.env_why else "") +
                              "\n\nCONTAINERS\n" + "-" * 46 + "\n  " +
                              self.tables.why,
             "CONTROL_FLOW.txt": cfgx.report(self.cfg, self.frames_ok),

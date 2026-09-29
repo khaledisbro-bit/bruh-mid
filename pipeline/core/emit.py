@@ -44,7 +44,8 @@ class Line:
 
 
 class Emitter:
-    def __init__(self, L, g, models, slots, amap, calls, decoys=None):
+    def __init__(self, L, g, models, slots, amap, calls, decoys=None,
+                 env_slots=None, env_names=None):
         self.L = L
         self.g = g
         self.models = models
@@ -53,7 +54,7 @@ class Emitter:
         self.bound = {}
         self.env_ops, self.env_why = exprmod.identify_env(L, models, calls, slots)
         self.R = exprmod.Renderer(L, models, slots, amap, calls, self.bound,
-                                  self.env_ops)
+                                  self.env_ops, env_slots, env_names)
         self._tmp = 0
         self._jumps = self._jump_pcs()
         self._last = next((st for st in reversed(L.steps)

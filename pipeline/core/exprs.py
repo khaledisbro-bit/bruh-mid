@@ -60,9 +60,14 @@ def _as_written(arg):
     return '"%s"' % a
 
 
+_NAME = re.compile(r"^[A-Za-z_]\w*$")
+
+
 def is_literal(text):
-    """A rendering that is just a value: repeating it duplicates nothing."""
-    return bool(_LIT.match(text.strip()))
+    """A rendering that costs nothing to repeat: a value, or a name that already
+    stands for one. Giving either its own line adds a rename, not information."""
+    t = text.strip()
+    return bool(_LIT.match(t) or _NAME.match(t))
 
 
 def _unq(v):
@@ -232,7 +237,10 @@ def identify_env(L, models, calls, slots):
 
 
 class Renderer:
-    def __init__(self, L, models, slots, amap, calls, bound=None, env_ops=None):
+    def __init__(self, L, models, slots, amap, calls, bound=None, env_ops=None,
+                 env_slots=None, env_names=None):
+        self.env_slots = env_slots or {}
+        self.env_names = env_names or {}
         self.bound = bound if bound is not None else {}
         self.env_ops = env_ops or set()
         self.L = L
@@ -280,6 +288,10 @@ class Renderer:
     def _render(self, v, depth):
         if v.id in self.bound:
             return self.bound[v.id]
+        if v.row in self.env_slots:
+            key = self.env_slots[v.row]
+            if key in self.env_names:
+                return self.env_names[key]
         if v.slot is not None and v.kind != "external":
             return self.var(v.slot)
         call = self.by_step.get(v.row)

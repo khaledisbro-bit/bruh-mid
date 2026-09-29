@@ -51,6 +51,117 @@ def _operand_positions(step):
     return range(len(step.operands))
 
 
+def env_slots(L, reads):
+    """Name the stored slots the program reads.
+
+    Some opcodes fetch a value the interpreter keeps in a boxed slot, indexed by
+    one of the instruction's operands - the handler says so outright. Those are
+    the program's captured values, and without naming them every read of the same
+    slot renders as a separate unnamed opcode, hiding that one object is being
+    used over and over.
+
+    They cannot be checked the way a variable is, because nothing in this capture
+    writes them, so the check available is consistency: two reads of one slot,
+    with no write between, must return the same value. The rate is reported and
+    the naming is marked inferred, never observed."""
+    seen, agree, differ = {}, 0, 0
+    keys = {}
+    for st in L.steps:
+        i = reads.get(st.op)
+        if i is None or not (0 <= i < len(st.operands)) or not st.pushed:
+            continue
+        key = st.operands[i]
+        keys[st.row] = key
+        got = st.pushed[0].runtime
+        if got is None:
+            continue
+        if key in seen:
+            if seen[key] == got:
+                agree += 1
+            else:
+                differ += 1
+        seen[key] = got
+    order, names = [], {}
+    for row in sorted(keys):
+        k = keys[row]
+        if k not in names:
+            names[k] = "u%d" % len(names)
+        order.append(k)
+    total = agree + differ
+    why = ("%d opcode(s) read a stored slot, naming %d slot(s). Of the repeat "
+           "reads, %d of %d returned the same value as the read before it"
+           % (len(reads), len(names), agree, total))
+    return keys, names, why, agree, total
+
+
+def slots_from_source(L, reads, writes):
+    """Build the variable model the interpreter's handlers describe, and check it.
+
+    The handlers say which opcode reads a variable and which writes one, and at
+    which operand. That is a claim, so it is put through the same test a guessed
+    pair has to pass: every read must return what the last write to its slot
+    stored. The rate is reported; a model that fails it is not used."""
+    S = Slots()
+    if not reads or not writes:
+        S.why = "the interpreter's handlers did not describe a variable access"
+        return S, 0, 0
+    env, hits, misses = {}, 0, 0
+    for st in L.steps:
+        if st.op in writes:
+            i = writes[st.op]
+            if 0 <= i < len(st.operands) and st.popped:
+                key = (st.frame, st.operands[i])
+                env[key] = st.popped[0]
+                S.writes[st.row] = key
+        elif st.op in reads:
+            i = reads[st.op]
+            if not (0 <= i < len(st.operands)) or not st.pushed:
+                continue
+            key = (st.frame, st.operands[i])
+            S.reads[st.row] = key
+            src = env.get(key)
+            if src is None:
+                continue
+            S.reaching[st.row] = src.id
+            got, want = st.pushed[0].runtime, src.runtime
+            if got is None or want is None:
+                continue
+            if got == want:
+                hits += 1
+            else:
+                misses += 1
+    S.write_ops = set(writes)
+    S.read_ops = set(reads)
+    S.witnesses = hits
+    total = hits + misses
+    S.why = ("taken from the interpreter's handlers: %d opcode(s) write a "
+             "variable and %d read one. Of the reads that could be checked, "
+             "%d of %d returned exactly what the last write to the same slot "
+             "stored" % (len(writes), len(reads), hits, total))
+    if total and hits < total * 0.9:
+        S.why += " - too many disagreed, so this model is not used"
+        return Slots(), hits, total
+    _mark(L, S)
+    return S, hits, total
+
+
+def _mark(L, S):
+    for st in L.steps:
+        if st.row in S.reads:
+            src = S.reaching.get(st.row)
+            for v in st.pushed:
+                v.slot = S.reads[st.row]
+                v.fact.evidence = OBSERVED if src is not None else UNKNOWN
+                v.fact.note(
+                    "dataflow.slot",
+                    ("reads variable %s, last written by v%s"
+                     % (_name(S.reads[st.row]), src)) if src is not None else
+                    ("reads variable %s, never written inside the capture"
+                     % _name(S.reads[st.row])),
+                    pcs=(st.pc,), steps=(st.row,),
+                    inputs=((src,) if src is not None else ()))
+
+
 def infer_slots(L, min_witnesses=MIN_WITNESSES):
     """Find the opcodes that write and read local variables."""
     writers = defaultdict(list)
@@ -97,20 +208,7 @@ def infer_slots(L, min_witnesses=MIN_WITNESSES):
              "returned exactly what the last write to the same slot stored, with "
              "no counter-example" % (wop, wi, rop, ri, hits))
 
-    for st in L.steps:
-        if st.op == rop and st.row in S.reads:
-            src = S.reaching.get(st.row)
-            for v in st.pushed:
-                v.slot = S.reads[st.row]
-                v.fact.evidence = OBSERVED if src is not None else UNKNOWN
-                v.fact.note(
-                    "dataflow.slot",
-                    ("reads variable %s, last written by v%s"
-                     % (_name(S.reads[st.row]), src)) if src is not None else
-                    ("reads variable %s, never written inside the capture"
-                     % _name(S.reads[st.row])),
-                    pcs=(st.pc,), steps=(st.row,),
-                    inputs=((src,) if src is not None else ()))
+    _mark(L, S)
     return S
 
 

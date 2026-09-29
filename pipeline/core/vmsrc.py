@@ -46,6 +46,9 @@ OPS = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD",
 class VM:
     def __init__(self):
         self.ok = False
+        self.nl = None
+        self.nu = None
+        self.branch = None
         self.pop = None
         self.push = None
         self.resolver = None
@@ -63,6 +66,16 @@ class VM:
 def discover(src):
     """Find the interpreter's own primitives by the shape of their use."""
     vm = VM()
+    # The dispatch compares one difference against each opcode. Anchoring on
+    # that exact difference is what separates an opcode branch from the other
+    # comparisons the interpreter makes - its anti-analysis bit tests compare
+    # against numbers in the same way, and matching those instead hands back a
+    # body containing dozens of unrelated handlers.
+    d = re.search(r"\(\((\w+)-(\w+)\)%0[xX][0-9a-fA-F]+", src)
+    if d:
+        vm.nl, vm.nu = d.group(1), d.group(2)
+        vm.branch = re.compile(r"\(%s-%s\)%%[0-9a-fA-FxX]+==(\d+) then"
+                               % (re.escape(vm.nl), re.escape(vm.nu)))
     m = re.search(r"local (\w+)=\(\((\w+)-1\)\*\d+", src)
     if m:
         vm.pc = m.group(2)
@@ -74,7 +87,7 @@ def discover(src):
     if m:
         vm.resolver = m.group(1)
 
-    bodies = " ".join(_raw_bodies(src))
+    bodies = " ".join(_raw_bodies(src, vm))
     zero = Counter(re.findall(r"=\s*(\w+)\(\)", bodies))
     one = Counter(re.findall(r"(?:^|;|\s)(\w+)\([^();]{1,80}\)\s*(?:;|$)", bodies))
     if zero:
@@ -84,19 +97,22 @@ def discover(src):
             if name != vm.pop and name != vm.resolver:
                 vm.push = name
                 break
-    vm.ok = bool(vm.pop and vm.push and vm.row)
+    vm.ok = bool(vm.pop and vm.push and vm.row and vm.branch)
     if not vm.ok:
         vm.notes.append("could not identify %s"
                         % ", ".join(n for n, v in
-                                    (("the pop helper", vm.pop),
+                                    (("the dispatch comparison", vm.branch),
+                                     ("the pop helper", vm.pop),
                                      ("the push helper", vm.push),
                                      ("the operand row", vm.row)) if not v))
     return vm
 
 
-def _raw_bodies(src, limit=4000):
+def _raw_bodies(src, vm, limit=4000):
+    if vm.branch is None:
+        return []
     out = []
-    for m in re.finditer(r"==(\d+) then", src):
+    for m in vm.branch.finditer(src):
         out.append(_cut(src, m.end()))
         if len(out) >= limit:
             break
@@ -117,10 +133,12 @@ def _cut(src, start):
     return body.strip()
 
 
-def handlers(src):
+def handlers(src, vm):
     """Every candidate handler body, by opcode."""
     out = defaultdict(list)
-    for m in re.finditer(r"==(\d+) then", src):
+    if vm.branch is None:
+        return out
+    for m in vm.branch.finditer(src):
         body = _cut(src, m.end())
         if body and body not in out[int(m.group(1))]:
             out[int(m.group(1))].append(body)
@@ -207,7 +225,7 @@ def apply(models, src, steps):
     vm = discover(src)
     if not vm.ok:
         return vm, 0, {}
-    hs = handlers(src)
+    hs = handlers(src, vm)
     carried = defaultdict(int)
     for st in steps:
         carried[st.op] = max(carried[st.op], len(st.operands))
@@ -248,6 +266,48 @@ def apply(models, src, steps):
         why[op] = "read from the interpreter's handler"
         named += 1
     return vm, named, why
+
+
+def variables(src, vm, models, steps):
+    """Which opcodes read and write the program's variables.
+
+    A VM keeps a Lua local in a one-element box so closures can share it, and
+    reaches it through a table indexed by one of the instruction's operands. Both
+    halves are visible in the handler: a read is `= TABLE[row[i]][1]` and a write
+    is `TABLE[row[i]][1] =`. Reading them here is what makes variables recoverable
+    from a run too short to prove them by correspondence alone.
+
+    The operand is numbered as the interpreter numbers it, and the capture lists
+    operands from the second onwards, so the index is shifted to match. If that
+    shift is wrong for a build, the check in dataflow rejects the pair and
+    nothing is asserted."""
+    if not vm.ok:
+        return {}, {}
+    hs = handlers(src, vm)
+    carried = defaultdict(int)
+    for st in steps:
+        carried[st.op] = max(carried[st.op], len(st.operands))
+    rd = re.compile(r"=\s*(\w+)\[%s\[(\d+)\]\]\[1\]" % re.escape(vm.row))
+    wr = re.compile(r"(\w+)\[%s\[(\d+)\]\]\[1\]\s*=[^=]" % re.escape(vm.row))
+    reads, writes = {}, {}
+    for op, bodies in hs.items():
+        if op not in models:
+            continue
+        want = carried.get(op, 0) + 1
+        r_idx, w_idx = set(), set()
+        for body in bodies:
+            used = _operands(body, vm.row)
+            if used and max(used) > want:
+                continue
+            for m in wr.finditer(body):
+                w_idx.add(int(m.group(2)))
+            for m in rd.finditer(body):
+                r_idx.add(int(m.group(2)))
+        if len(w_idx) == 1:
+            writes[op] = w_idx.pop() - 2
+        if len(r_idx) == 1 and op not in writes:
+            reads[op] = r_idx.pop() - 2
+    return reads, writes
 
 
 def revoke(models, lift, why=None):
