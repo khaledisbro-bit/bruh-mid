@@ -223,6 +223,120 @@ async function finalize(traceText) {
   pushHistory(verdict || 'RECONSTRUCTED');
 }
 
+// ---- collect from the executor ----------------------------------------------
+// The route that does not need a terminal: start watching, run harness.lua in
+// the executor, and the files are picked up as they land.
+function showResult(r) {
+  const verdict = ((r.stages && r.stages.audit) || '').trim();
+  const main = r.finalSource || r.final;
+  setStage('audit', 'done', verdict || 'reconstructed');
+  $('#verdictBox').innerHTML = `<span class="verdict ok">${verdict || 'RECONSTRUCTED'}</span>`;
+  if (main) {
+    state.finalSource = main;
+    $('#finalLbl').textContent = r.finalSource ? 'Reconstruction (evidence-tagged)' : 'Analysis summary';
+    $('#finalCode').classList.remove('empty');
+    $('#finalCode').textContent = main;
+  }
+  const parts = [];
+  for (const k of ['final', 'plain', 'logic', 'flow', 'variableGroups', 'machinery',
+                   'controlFlow', 'programSize', 'exposure', 'repeatedCalls']) {
+    if (r[k] && String(r[k]).trim()) parts.push(String(r[k]).trim());
+  }
+  if (parts.length) {
+    const el = $('#constCode');
+    if (el) { el.classList.remove('empty'); el.textContent = parts.join('\n\n' + '='.repeat(46) + '\n\n'); }
+  }
+  state.reports = { summary: r.final, provenance: r.logic, variables: r.flow,
+                    variableGroups: r.variableGroups, values: r.disassembly,
+                    opcodes: r.opcodeMap, machinery: r.machinery,
+                    controlFlow: r.controlFlow, decoy: r.behavior,
+                    verification: r.verification, exposure: r.exposure,
+                    programSize: r.programSize, plain: r.plain,
+                    repeatedCalls: r.repeatedCalls,
+                    behaviourCheck: r.behaviourCheck };
+  state.behaviourCheck = r.behaviourCheck || state.behaviourCheck;
+  if (r.disassembly) { const el = $('#structRaw'); if (el) el.textContent = r.disassembly; }
+  pushHistory(verdict || 'RECONSTRUCTED');
+}
+
+let collectLines = [];
+function collectLog(line) {
+  collectLines.push(line);
+  if (collectLines.length > 400) collectLines = collectLines.slice(-400);
+  const el = $('#collectLog');
+  if (el) { el.classList.remove('empty'); el.textContent = collectLines.join('\n'); el.scrollTop = el.scrollHeight; }
+}
+if (window.vm.onCollectProgress) window.vm.onCollectProgress(collectLog);
+
+$('#collectBtn').addEventListener('click', async () => {
+  if (!state.filePath) { alert('Drop an obfuscated .lua first.'); return; }
+  collectLines = [];
+  collectLog('starting...');
+  $('#collectBtn').disabled = true;
+  $('#collectStopBtn').disabled = false;
+  setStage('harness', 'run', 'waiting for the executor');
+  const r = await window.vm.collect({
+    filePath: state.filePath,
+    runs: 1,
+    workspace: ($('#wsBox').value || '').trim() || null,
+    visibleHooks: $('#visibleHooks').checked
+  }).catch(e => ({ ok: false, error: String(e) }));
+  $('#collectBtn').disabled = false;
+  $('#collectStopBtn').disabled = true;
+  if (!r || r.ok === false) {
+    setStage('harness', '', 'collect failed');
+    collectLog('failed: ' + ((r && (r.error || r.stderr)) || 'unknown'));
+    return;
+  }
+  state.outDir = r.outDir;
+  state.harness = r.harness || state.harness;
+  setStage('harness', 'done', 'collected');
+  showResult(r);
+});
+
+$('#collectStopBtn').addEventListener('click', async () => {
+  await window.vm.collectStop();
+  collectLog('stopped.');
+  $('#collectBtn').disabled = false;
+  $('#collectStopBtn').disabled = true;
+});
+
+$('#findWsBtn').addEventListener('click', async () => {
+  collectLines = [];
+  collectLog('run this one line in your executor first:');
+  collectLog('    writefile("VMSMART_WHERE.txt", "here")');
+  collectLog('searching...');
+  const r = await window.vm.findWorkspace(state.filePath).catch(e => ({ stdout: String(e) }));
+  collectLog(String(r.stdout || '').trim() || 'nothing found');
+  if (r.folders && r.folders.length) $('#wsBox').value = r.folders[0];
+});
+
+$('#openHarnessBtn').addEventListener('click', async () => {
+  if (!state.outDir) { alert('Start collecting first - the harness is written then.'); return; }
+  await window.vm.openPath(state.outDir + '/harness.lua');
+});
+
+$('#copyBehaviourBtn').addEventListener('click', async () => {
+  const t = (state.reports && state.reports.behaviourCheck) || state.behaviourCheck || '';
+  if (!t) { alert('Run an analysis first - behaviour_check.lua is written with the reports.'); return; }
+  await window.vm.copy(t);
+  flash('#copyBehaviourBtn', 'Copied');
+});
+
+$('#behaviourBtn').addEventListener('click', async () => {
+  const t = $('#behaviourBox').value.trim();
+  if (!t) { alert('Paste what behaviour_check.lua printed first.'); return; }
+  if (!state.outDir) { alert('Run an analysis first.'); return; }
+  const r = await window.vm.behaviour({ filePath: state.filePath, outDir: state.outDir, text: t })
+    .catch(e => ({ ok: false, error: String(e) }));
+  if (!r || !r.ok) { alert('behaviour compare failed: ' + ((r && (r.error || r.stderr)) || 'unknown')); return; }
+  if (r.verification) {
+    const el = $('#constCode');
+    if (el) { el.classList.remove('empty'); el.textContent = r.verification; }
+  }
+  flash('#behaviourBtn', 'Compared');
+});
+
 // ---- final source actions ----
 $('#copyBtn').addEventListener('click', async () => { await window.vm.copy(state.finalSource || $('#finalCode').textContent); flash('#copyBtn', 'Copied'); });
 $('#saveBtn').addEventListener('click', async () => { const p = await window.vm.saveSource(state.finalSource || $('#finalCode').textContent); if (p) flash('#saveBtn', 'Saved'); });

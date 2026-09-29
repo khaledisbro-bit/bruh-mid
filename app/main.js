@@ -51,6 +51,37 @@ function runPython(args) {
   });
 }
 
+// Like runPython, but reports each line as it arrives and hands back a handle
+// so the caller can stop it. A collecting run sits waiting for the user to run
+// the harness, so buffering its output until it exits would show nothing for
+// as long as the part that needs watching lasts.
+function runPythonLive(args, onLine) {
+  let child = null;
+  const done = new Promise((resolve) => {
+    child = spawn(settings.python, args, { cwd: WORK });
+    let out = '', err = '', pending = '';
+    const feed = (chunk) => {
+      pending += chunk;
+      let i;
+      while ((i = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, i).replace(/\r$/, '');
+        pending = pending.slice(i + 1);
+        try { onLine(line); } catch (_) {}
+      }
+    };
+    child.stdout.on('data', d => { out += d; feed(String(d)); });
+    child.stderr.on('data', d => { err += d; feed(String(d)); });
+    child.on('error', e => resolve({ code: -1, out, err: String(e) }));
+    child.on('close', code => {
+      if (pending) { try { onLine(pending); } catch (_) {} }
+      resolve({ code, out, err });
+    });
+  });
+  return { done, stop: () => { try { child && child.kill(); } catch (_) {} } };
+}
+
+let collecting = null;
+
 // ---- MCP (Streamable HTTP / JSON-RPC) client -------------------------------
 function mcpPost(urlStr, token, sessionId, bodyObj) {
   return new Promise((resolve) => {
@@ -336,6 +367,79 @@ ipcMain.handle('run-all', async (_e, { filePath, extraTraces }) => {
   return { ok: true, code: r.code, stdout: r.out, stderr: r.err,
            stages: parseStages(r.out), verdict: (parseStages(r.out).audit || '').trim(),
            ...collect() };
+});
+
+// Ask the executor where it writes, instead of guessing at folders that happen
+// to hold an old capture.
+ipcMain.handle('find-workspace', async (_e, filePath) => {
+  const r = await runPython([DEOB, filePath || 'x', '--find-workspace']);
+  const folders = [];
+  for (const line of String(r.out || '').split(/\r?\n/)) {
+    const t = line.trim();
+    if (t && /^[A-Za-z]:\\|^\//.test(t) && !t.startsWith('python')) folders.push(t);
+  }
+  return { code: r.code, stdout: r.out, folders };
+});
+
+// The flow that works without a terminal: start a watching run, let the user
+// run out/harness.lua in their executor, and pick the files up when they land.
+ipcMain.handle('collect', async (_e, { filePath, runs, workspace, visibleHooks }) => {
+  if (collecting) return { ok: false, error: 'a collecting run is already going' };
+  const outDir = path.join(WORK, 'out_' + Date.now());
+  const send = (m) => { try { win.webContents.send('collect-progress', m); } catch (_) {} };
+  const args = [DEOB, filePath, '-o', outDir, '--collect', String(runs || 1)];
+  if (workspace) args.push('--workspace', workspace);
+  if (visibleHooks) args.push('--visible-hooks');
+
+  const job = runPythonLive(args, send);
+  collecting = job;
+  const r = await job.done;
+  collecting = null;
+
+  const readMaybe = (f) => { try { return fs.readFileSync(path.join(outDir, f), 'utf8'); } catch (_) { return null; } };
+  return {
+    ok: r.code === 0, code: r.code, stdout: r.out, stderr: r.err, outDir,
+    stages: parseStages(r.out),
+    harness: readMaybe('harness.lua'),
+    harnessPath: path.join(outDir, 'harness.lua'),
+    final: readMaybe('SUMMARY.txt'),
+    logic: readMaybe('PROVENANCE.txt'),
+    flow: readMaybe('VARIABLES.txt'),
+    variableGroups: readMaybe('VARIABLE_GROUPS.txt'),
+    controlFlow: readMaybe('CONTROL_FLOW.txt'),
+    disassembly: readMaybe('VALUES.txt'),
+    opcodeMap: readMaybe('OPCODES.txt'),
+    machinery: readMaybe('MACHINERY.txt'),
+    verification: readMaybe('VERIFICATION.txt'),
+    exposure: readMaybe('EXPOSURE.txt'),
+    programSize: readMaybe('PROGRAM_SIZE.txt'),
+    plain: readMaybe('WHAT_IT_DOES.txt'),
+    repeatedCalls: readMaybe('REPEATED_CALLS.txt'),
+    behaviourCheck: readMaybe('behaviour_check.lua'),
+    behavior: readMaybe('DECOY.txt'),
+    reconstructed: readMaybe('RECONSTRUCTED.lua'),
+    finalSource: readMaybe('RECONSTRUCTED.lua')
+  };
+});
+
+ipcMain.handle('collect-stop', () => {
+  if (!collecting) return { ok: false };
+  collecting.stop();
+  return { ok: true };
+});
+
+// Feed back what behaviour_check.lua printed, which is the only check that
+// shows the reconstruction behaves like the program rather than merely reading
+// like it.
+ipcMain.handle('behaviour', async (_e, { filePath, outDir, text }) => {
+  if (!outDir) return { ok: false, error: 'no analysis to compare against' };
+  const f = path.join(outDir, 'behaviour_result.txt');
+  fs.writeFileSync(f, normalizeBlock(text || ''));
+  const r = await runPython([DEOB, filePath, '-o', outDir, '--behaviour', f]);
+  const readMaybe = (g) => { try { return fs.readFileSync(path.join(outDir, g), 'utf8'); } catch (_) { return null; } };
+  return { ok: r.code === 0, code: r.code, stdout: r.out, stderr: r.err,
+           verification: readMaybe('VERIFICATION.txt'),
+           final: readMaybe('SUMMARY.txt') };
 });
 
 ipcMain.handle('copy', (_e, text) => { clipboard.writeText(text || ''); return true; });

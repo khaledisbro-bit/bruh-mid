@@ -89,15 +89,50 @@
           </div>
           <div class="tabpane" id="tab-run">
             <div style="padding:16px">
+
+              <div class="sec-title" style="margin-top:0">Collect from your executor</div>
+              <div class="sub" style="margin-bottom:10px">
+                The reliable route. Start watching, run <b>harness.lua</b> once in
+                your executor, and the files are picked up as they land - nothing
+                to copy. Do not run harness_chunk2.lua: it is for builds that
+                nest a second interpreter, records nothing when there is only
+                one, and overwrites the capture that worked.
+              </div>
+              <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap">
+                <button class="btn" id="collectBtn"><svg><use href="#i-play"/></svg> Start collecting</button>
+                <button class="btn ghost" id="collectStopBtn" disabled>Stop</button>
+                <button class="btn ghost" id="findWsBtn"><svg><use href="#i-folder"/></svg> Find my executor folder</button>
+                <button class="btn ghost" id="openHarnessBtn"><svg><use href="#i-folder"/></svg> Show harness.lua</button>
+                <label class="sub" style="display:flex; align-items:center; gap:6px">
+                  <input type="checkbox" id="visibleHooks"> visible hooks
+                </label>
+              </div>
+              <input class="paste" id="wsBox" style="min-height:0; height:34px"
+                     placeholder="executor folder (leave empty to search for it)">
+              <pre id="collectLog" class="empty" style="margin-top:10px; max-height:30vh; overflow:auto; font:12.5px/1.5 monospace; padding:10px">Not collecting.</pre>
+
+              <div class="sec-title">Behaviour check</div>
+              <div class="sub" style="margin-bottom:10px">
+                The only check that shows the reconstruction <b>behaves</b> like
+                the program rather than merely reading like it. Run
+                behaviour_check.lua in the executor and paste what it printed.
+              </div>
+              <textarea class="paste" id="behaviourBox" placeholder="Paste what behaviour_check.lua printed"></textarea>
+              <div class="row" style="margin-top:10px; gap:8px">
+                <button class="btn" id="behaviourBtn"><svg><use href="#i-shield"/></svg> Compare behaviour</button>
+                <button class="btn ghost" id="copyBehaviourBtn"><svg><use href="#i-copy"/></svg> Copy behaviour_check.lua</button>
+              </div>
+
+              <div class="sec-title">Other routes</div>
               <div class="row" style="justify-content:space-between; margin-bottom:12px">
-                <div class="sub">Executor step. Auto via MCP, or copy the harness and paste the result.</div>
+                <div class="sub">Auto via MCP, or copy the harness and paste the result.</div>
                 <div class="row">
-                  <button class="btn" id="mcpRunBtn"><svg><use href="#i-play"/></svg> Auto-run (MCP)</button>
+                  <button class="btn ghost" id="mcpRunBtn"><svg><use href="#i-play"/></svg> Auto-run (MCP)</button>
                   <button class="btn ghost" id="copyHarnessBtn"><svg><use href="#i-copy"/></svg> Copy harness</button>
                 </div>
               </div>
               <textarea class="paste" id="pasteBox" placeholder="Paste the BEGIN_UNOBF_RESULT..END block here if running manually"></textarea>
-              <div class="row" style="margin-top:10px"><button class="btn" id="finalizeBtn"><svg><use href="#i-shield"/></svg> Verify & finalize</button></div>
+              <div class="row" style="margin-top:10px"><button class="btn" id="finalizeBtn"><svg><use href="#i-shield"/></svg> Verify &amp; finalize</button></div>
             </div>
           </div>
         </div>
