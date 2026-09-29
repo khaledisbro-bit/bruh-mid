@@ -61,7 +61,8 @@ def detect(src, log):
     return inner_src, inner_data, "base85+Zstd Luau VM"
 
 
-def make_harness(src, outdir, template="universal.lua", safe=False):
+def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
+                 name="harness.lua"):
     """Embed the obfuscated source into the harness. The WHOLE file goes in,
     verbatim; a truncated sample would analyse a different program."""
     tmpl = open(os.path.join(HERE, template), encoding="utf-8").read()
@@ -74,9 +75,12 @@ def make_harness(src, outdir, template="universal.lua", safe=False):
     if safe:
         tmpl = tmpl.replace("local TRACE_OPCODES = true",
                             "local TRACE_OPCODES = false", 1)
+    if chunk != 1:
+        tmpl = tmpl.replace("local TRACE_CHUNK = 1",
+                            "local TRACE_CHUNK = %d" % chunk, 1)
     if src not in tmpl:
         raise RuntimeError("the harness does not contain the whole source")
-    path = os.path.join(outdir, "harness.lua")
+    path = os.path.join(outdir, name)
     open(path, "w", encoding="utf-8").write(tmpl)
     return path
 
@@ -102,6 +106,10 @@ def main():
     ap.add_argument("--workspace",
                     help="the executor's output folder, if --collect cannot "
                          "find it")
+    ap.add_argument("--chunks", type=int, default=2, metavar="N",
+                    help="write a harness for each of the first N nested "
+                         "interpreters (default 2). One run traces one of them; "
+                         "run each and merge the captures")
     ap.add_argument("--vm-source",
                     help="the interpreter's own source, if it is not where "
                          "the harness left it")
@@ -163,6 +171,15 @@ def main():
         print("              safe harness -> %s/harness_safe.lua" % a.out)
     harness = make_harness(src, a.out)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
+    # One run traces one interpreter, because patching two trips the VM's
+    # integrity check. The program's tail runs inside the later ones, so a
+    # harness for each is written and their captures merge as separate runs.
+    extra = []
+    for n in range(2, a.chunks + 1):
+        extra.append(make_harness(src, a.out, chunk=n,
+                                  name="harness_chunk%d.lua" % n))
+    for p2 in extra:
+        print("              also: %s  (traces the next interpreter down)" % p2)
 
     if a.collect:
         import collect as collector
@@ -195,9 +212,11 @@ def main():
         print("  3) python3 %s %s --trace capture.txt"
               % (os.path.basename(__file__), a.input))
         print("")
-        print("or skip the copying: python3 %s %s --collect 3"
+        print("or skip the copying: python3 %s %s --collect 2"
               % (os.path.basename(__file__), a.input))
-        print("  then just run the harness in your executor three times.")
+        print("  then run harness.lua once and harness_chunk2.lua once. Each")
+        print("  traces a different interpreter, and the program's tail runs in")
+        print("  the second, so both are needed to account for all of it.")
         return 0
 
     missing = [t for t in tracefmt.expand(a.trace) if not os.path.isfile(t)]

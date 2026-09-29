@@ -134,6 +134,13 @@ end
 -- the VM's self-integrity check is never disturbed and the run finishes clean
 -- (constants + behavior only). deob.py --safe sets this to false.
 local TRACE_OPCODES = true
+-- WHICH nested interpreter to trace. Patching two at once is what tripped the
+-- VM's self-integrity check and ended the run early, so exactly one is traced
+-- per run and this says which. Run once per chunk and merge the captures: the
+-- later chunks are where the program's tail runs, and a capture that only ever
+-- traces the first one cannot account for it.
+local TRACE_CHUNK = 1
+local patchable = 0          -- how many interpreters we have been able to patch
 local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
 local function patchDispatch(s)
     -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
@@ -188,21 +195,30 @@ env.loadstring = function(src, ...)
         use = patched
         behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
     end
-    -- on top of that, try to patch the dispatch loop so it traces opcodes.
-    -- HARDENING: trace only the FIRST chunk we can patch. Patching a second,
-    -- nested interpreter is what tripped the VM's self-integrity check and
-    -- crashed the run; one traced chunk gives the program's opcodes while
-    -- leaving nested layers untouched (they still get the safe resolver dump).
+    -- on top of that, trace the dispatch loop of ONE interpreter: the one this
+    -- run was asked for. Patching two at once trips the VM's self-integrity
+    -- check and ends the run, so each chunk gets its own run and the captures
+    -- are merged afterwards.
     local useD = use
     if TRACE_OPCODES and not dispatchDone then
-        local okD, patchedD, dn = pcall(patchDispatch, use)
-        if okD and patchedD then
-            useD = patchedD
-            dispatchDone = true
-            behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn) .. " -> tracing opcodes]"
+        local canPatch = select(2, pcall(patchDispatch, use))
+        if canPatch then
+            patchable = patchable + 1
+            if patchable == TRACE_CHUNK then
+                local okD, patchedD, dn = pcall(patchDispatch, use)
+                if okD and patchedD then
+                    useD = patchedD
+                    dispatchDone = true
+                    behavior[#behavior+1] = "  [patched dispatch " .. tostring(dn)
+                        .. " -> tracing interpreter #" .. patchable .. "]"
+                end
+            else
+                behavior[#behavior+1] = "  [interpreter #" .. patchable
+                    .. " left untraced; this run traces #" .. TRACE_CHUNK .. "]"
+            end
         end
     else
-        behavior[#behavior+1] = "  [dispatch trace skipped for nested chunk (integrity-safe)]"
+        behavior[#behavior+1] = "  [dispatch trace already placed for this run]"
     end
     -- compile, degrading gracefully: full (resolver+dispatch) -> resolver-only
     -- -> original. A broken dispatch patch never costs us the constant dump.
@@ -308,6 +324,7 @@ else
 end
 
 say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
+say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..patchable)
 say("mode: universal")
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
 say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
