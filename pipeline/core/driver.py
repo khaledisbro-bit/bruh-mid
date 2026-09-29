@@ -109,7 +109,26 @@ class Analysis:
         self.tables = dataflow.infer_tables(self.lift)
         self.calls, self.unmatched = exprs.match_calls(
             self.lift, capture.calls)
-        self.cfg = cfgx.build(self.lift, self.slots)
+        # The instruction array, where the capture carries it, is what lets a
+        # branch have a side that was never entered. The side that did not run
+        # has no numbers in the trace, so without the array nothing knows those
+        # instructions exist and the branch looks unconditional.
+        #
+        # It is only safe to use when instruction numbers already identify an
+        # instruction. The array numbers each function from zero, so if two
+        # functions share numbers, feeding it in would invent fall-through
+        # targets in whichever function happens to own that number - phantom
+        # branches, which is the failure this project has already been through
+        # once. When numbers collide, the array is left for the coverage
+        # report, which does not need to place it in a function.
+        universe = None
+        if self.capture.code and self.frames.get("unique_addresses"):
+            fns = {st.fn for st in self.lift.steps}
+            if len(fns) == 1:
+                fn = next(iter(fns))
+                universe = {(fn, pc) for pc in self.capture.code}
+                universe |= {st.key() for st in self.lift.steps}
+        self.cfg = cfgx.build(self.lift, self.slots, universe)
         # One slot is not one variable. A compiler reuses a slot, so the reads
         # and writes of a slot are grouped by what can reach what, and each
         # group is named on its own. Without this, two unrelated values written
@@ -237,7 +256,7 @@ class Analysis:
                  "the capture did not carry the instruction array, so every "
                  "figure here is a share of the run, not of the program")(
                      *staticcode.coverage(self.capture.code,
-                                          self.capture.rows))),
+                                          self.program))),
              "instructions explained     %d of %d (%.0f%%)"
              % (explained, total, 100 * cov),
              "verdicts                   real %d, unproven %d, decoy %d"
@@ -293,8 +312,12 @@ class Analysis:
             "VARIABLE_GROUPS.txt": webs.report(self.webs) + "\n\n" +
                                    induct.report(self.counters,
                                                  self._counter_names()),
+            # The program's records, not the capture's. The interpreter's own
+            # machinery runs at numbers that are not in the program's array and
+            # never could be, so counting it here reports a mismatch that is
+            # not one.
             "PROGRAM_SIZE.txt": staticcode.report(
-                self.capture.code, self.capture.rows, self.cfg),
+                self.capture.code, self.program, self.cfg),
             "REPEATED_CALLS.txt": probes.report(
                 self.probes, len(self.calls) + len(self.unmatched)),
             "DECOY.txt": decoy.report(self.verdicts, self.cfg) + "\n\n" +
@@ -426,16 +449,42 @@ def selftest():
         except ImportError:
             lua_ast = None
         if lua_ast is not None:
-            for name, text in (("the runnable reconstruction", a.runnable),
+            # `what`, not `name`: this used to reuse the fixture's own loop
+            # variable, so every result was printed under the name of the last
+            # thing parsed here instead of the fixture that produced it, and a
+            # check that asked which fixture it was looking at got the wrong
+            # answer.
+            for what, text in (("the runnable reconstruction", a.runnable),
                                ("the behaviour check",
                                 verify.behaviour_harness(a.runnable))):
                 try:
                     lua_ast.parse(text)
                 except Exception as e:
                     wrong.append("%s is not valid Lua: %s"
-                                 % (name, str(e)[:120]))
+                                 % (what, str(e)[:120]))
         if a.lift.divergences:
             wrong.append("%d stack desynchronisation(s)" % len(a.lift.divergences))
+
+        # The instruction array is ground truth here: the fixture VM dumps the
+        # program it compiled, so every number the trace shows must be in it,
+        # and anything in it that the trace does not show is code that really
+        # did not run. Both directions are checked, because each one caught a
+        # bug: machinery counted as program, and a halt slot left out of the
+        # array.
+        import staticcode as _sc
+        ran = {r["pc"] for r in a.program}
+        stray = sorted(ran - set(a.capture.code))
+        if stray:
+            wrong.append("ran at %s, which the instruction array does not have"
+                         % stray[:5])
+        never = sorted(set(a.capture.code) - ran)
+        expect_dead = name in ("branch",)
+        if expect_dead and not never:
+            wrong.append("every instruction ran, but this fixture has a side "
+                         "that cannot run on its input")
+        if not expect_dead and never:
+            wrong.append("%d instruction(s) never ran (%s), but this fixture "
+                         "has no unreachable code" % (len(never), never[:5]))
         status = "PASS" if not wrong else "FAIL"
         ok = ok and not wrong
         print("\n[%s] %s" % (status, name))

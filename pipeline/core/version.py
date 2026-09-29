@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 20
+VERSION = 21
 
 STAGES = (
     "captures read by shape",
@@ -41,6 +41,12 @@ STAGES = (
     "reported as that fact and matched against no table of names",
     "the harness shielded where tracing is measurable: a clock that advances "
     "as an untraced run would, and debug reporting the lines the file shipped",
+    "the instruction array fed to the graph, so a branch can have a side whose "
+    "instructions never appeared in the trace at all",
+    "a branch settled only when the run entered it more than once, because a "
+    "single pass never varies",
+    "machinery still found when the program sits in a loop and is as busy as "
+    "the interpreter, decided by the stack pointer being handed back unchanged",
 )
 
 

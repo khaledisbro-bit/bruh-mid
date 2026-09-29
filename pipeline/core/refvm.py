@@ -79,6 +79,7 @@ class Emitter:
         self.rows, self.resolved, self.calls, self.prints = [], [], [], []
         self.mach_pcs = [9000 + i for i in range(6)]
         self._pending = "nil"
+        self.code_rows = []
 
     def op(self, name):
         if name not in self.opnum:
@@ -110,7 +111,29 @@ class Emitter:
         out += self.resolved
         out.append("---OPCODES---")
         out += self.rows
+        if self.code_rows:
+            # The whole instruction array, the way the real harness dumps it
+            # from inside the dispatch loop. Without this the round-trip test
+            # can only ever measure coverage against the instructions that ran,
+            # and a branch whose untaken side was never reached is invisible:
+            # its instructions have no numbers in the trace, so nothing knows
+            # they exist. That is the one thing this section makes testable.
+            out.append("---CODE---")
+            out += self.code_rows
         return "BEGIN_UNOBF_RESULT\n" + "\n".join(out) + "\nEND_UNOBF_RESULT"
+
+    def dump_code(self, protos):
+        """Every instruction of every function, as `pc:operands` rows.
+
+        The slot one past the last instruction is included. A real
+        interpreter's array carries its own terminator there and the run stops
+        on it, so leaving it out would make the halt look like an instruction
+        that ran without being in the program."""
+        for code in protos:
+            for pc, ins in enumerate(code):
+                ops = [str(o) for o in ins[1:]]
+                self.code_rows.append("%d:%s" % (pc, ",".join(ops)))
+            self.code_rows.append("%d:" % len(code))
 
 
 class Proxy:
@@ -156,8 +179,10 @@ def _s(v):
     return str(v)
 
 
-def run(prog, seed=0, mach_every=2):
+def run(prog, seed=0, mach_every=2, dump_code=True):
     em = Emitter(seed)
+    if dump_code:
+        em.dump_code(prog.protos)
     for idx in sorted(prog.consts):
         v = prog.consts[idx]
         em.resolved.append(("S:%s" if isinstance(v, str) else "N:%s") % (v,))

@@ -45,6 +45,13 @@ from collections import defaultdict
 
 from evidence import OBSERVED, UNKNOWN, DECOY
 
+# A branch that ran once went one way once. That is not a value holding still
+# across the paths into it - a single sample never varies, whatever it is. So a
+# branch is only ever called settled when the run entered it more than once,
+# the same rule this project already applies to counters (three values before a
+# step is a step) and to proportions (no share printed below five checks).
+MIN_DECIDED = 2
+
 # facts
 CONST = "c"
 TRUTHY = "t"
@@ -276,7 +283,17 @@ def decide_branches(F, g, L, S):
                                "cannot run")}
             continue
         const = [f for f in facts if f[0] == CONST]
-        if len(const) == len(facts) and len({f[1] for f in const}) == 1:
+        settled = len(const) == len(facts) and len({f[1] for f in const}) == 1
+        if settled and len(facts) < MIN_DECIDED:
+            out[pc] = {"verdict": UNKNOWN, "evidence": UNKNOWN,
+                       "why": ("this branch ran %d time(s), and that one pass "
+                               "carried %r. A single sample never varies, so "
+                               "it says nothing about whether the other side "
+                               "can be entered. The side not taken stays, and "
+                               "no verdict is given."
+                               % (len(facts), const[0][1]))}
+            continue
+        if settled:
             out[pc] = {"verdict": DECOY, "evidence": OBSERVED,
                        "value": const[0][1],
                        "why": ("the value this branch tested was %r on every "
@@ -395,6 +412,9 @@ def _selftest():
 
     # the same constant every time: the other side cannot be entered
     assert run(["1", "1", "1"]) == DECOY, run(["1", "1", "1"])
+    # ONE pass is not "never varied" - a single sample never varies
+    assert run(["1"]) == UNKNOWN, run(["1"])
+    assert run(["1", "1"]) == DECOY, run(["1", "1"])
     # the tested value took both truth values, so the condition is real and the
     # side not taken is live code this run did not enter
     assert run(["true", "false"]) == OBSERVED, run(["true", "false"])

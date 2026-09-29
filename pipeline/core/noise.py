@@ -102,6 +102,24 @@ def analyse(rows, min_bursts=MIN_BURSTS, min_sites=MIN_SITES,
     median = counts[len(counts) // 2]
     hot = {pc for pc, n in freq.items()
            if n >= max(median * HOT_FACTOR, HOT_FLOOR)}
+    # The frequency gate only bounds the search. What actually decides a region
+    # is the burst/entry/exit test below: machinery is entered from many places
+    # and returns to many places, and a loop body is not.
+    #
+    # A gate of several times the median assumes the typical instruction runs
+    # far less often than the interpreter. In a program that spends its time in
+    # a loop that is false - the loop body runs as often as the machinery
+    # between its instructions - and the gate then admits nothing at all, so
+    # the interpreter is handed back as if it were the program.
+    #
+    # So when the strong gate finds nothing, fall back to "more often than the
+    # typical instruction" and let the same exit test decide. This cannot
+    # change a capture where the strong gate already found regions; it only
+    # gives the test something to look at where it previously saw nothing.
+    relaxed = False
+    if not hot:
+        hot = {pc for pc, n in freq.items() if n > max(median, 1)}
+        relaxed = True
     if not hot:
         return set(), []
 
@@ -124,15 +142,32 @@ def analyse(rows, min_bursts=MIN_BURSTS, min_sites=MIN_SITES,
                     restored += 1
         ok = (len(bursts) >= min_bursts and len(ent) >= min_sites
               and len(ex) >= min_exits)
+        if ok and relaxed:
+            # Under the relaxed gate a loop body can clear the entry/exit test:
+            # its condition branches two ways and its blocks are entered from
+            # several places, which looks like being called from many callers.
+            # One thing still separates them. Interpreter machinery computes
+            # where to go next and leaves the program's stack exactly as it
+            # found it. A loop body is the program: it pushes, pops and stores,
+            # and the stack pointer afterwards is not the one from before.
+            #
+            # So when the region was only found by relaxing the gate, every
+            # burst has to have given the stack pointer back unchanged. That is
+            # measured here already and was not being used.
+            ok = restored == len(bursts)
         r = sorted(reg)
         info = {"pcs": r, "rows": sum(freq[p] for p in reg),
                 "bursts": len(bursts), "sites": len(ent), "exits": len(ex),
-                "restored": restored, "machinery": ok,
+                "restored": restored, "machinery": ok, "relaxed": relaxed,
                 "why": ("run %d time(s) in %d burst(s); entered from %d "
                         "instruction(s) and left to %d, and %d burst(s) gave "
-                        "the stack pointer back unchanged"
+                        "the stack pointer back unchanged%s"
                         % (sum(freq[p] for p in reg), len(bursts), len(ent),
-                           len(ex), restored))}
+                           len(ex), restored,
+                           ("  (found under the relaxed frequency gate: "
+                            "nothing in this capture ran several times the "
+                            "median, which is what a program that sits in a "
+                            "loop looks like)" if relaxed else "")))}
         out.append(info)
         if ok:
             mach |= reg
