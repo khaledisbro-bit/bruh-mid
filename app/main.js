@@ -42,7 +42,11 @@ app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) creat
 // ---- helpers ----------------------------------------------------------------
 function runPython(args) {
   return new Promise((resolve) => {
-    const p = spawn(settings.python, args, { cwd: WORK });
+    // UTF-8 explicitly: a path in the user's own language cannot be encoded
+    // by the console code page Windows picks for a pipe, and Python raises
+    // rather than prints.
+    const p = spawn(settings.python, args,
+                    { cwd: WORK, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     let out = '', err = '';
     p.stdout.on('data', d => out += d);
     p.stderr.on('data', d => err += d);
@@ -58,7 +62,8 @@ function runPython(args) {
 function runPythonLive(args, onLine) {
   let child = null;
   const done = new Promise((resolve) => {
-    child = spawn(settings.python, args, { cwd: WORK });
+    child = spawn(settings.python, args,
+                  { cwd: WORK, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     let out = '', err = '', pending = '';
     const feed = (chunk) => {
       pending += chunk;

@@ -23,6 +23,22 @@ that the recovered graph does not contain.
 import argparse
 import json
 import os
+import sys as _sys
+
+# A path can hold characters the console's code page cannot encode - a Windows
+# Documents folder is named in the user's own language, and printing it under
+# cp1252 raises UnicodeEncodeError and takes the whole run down with it. That
+# happened while merely listing the folders being watched, before any work.
+#
+# Nothing here needs a particular encoding to be correct, so output is written
+# as UTF-8 and anything the terminal still cannot show is replaced rather than
+# raised. A character that prints as a question mark costs nothing; a traceback
+# instead of a run costs the run.
+for _stream in (_sys.stdout, _sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 import re
 import sys
 
