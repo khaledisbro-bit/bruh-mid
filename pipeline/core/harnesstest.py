@@ -354,6 +354,89 @@ def no_source_message(path=UNIVERSAL):
     return bad
 
 
+# The loop top of this family: the row is fetched, a field is taken from it,
+# the OPCODE is taken from index 0 with an `or 0` fallback, and only then does the
+# dispatch chain start. Every instruction passes through here.
+_LOOP_TOP = ("local function I(ed,Jq) while true do local Jg=ed[Jq];"
+             "Jg=pM and pM[Jq];local Jd=Jg and Jg[1]or -1;"
+             "local JY=Jg and Jg[0]or 0;Jq=Jq+1;"
+             "if JY==156 then elseif JY==339 then else "
+             "local JP=((Jq-1)*809834779+JL)%2147483647;"
+             "local JZ=(JY+JP)%2147483647;"
+             "if ((JZ-JP)%0x7FFFFFFF)==1 then end end end end;")
+
+
+def loop_top(path=UNIVERSAL):
+    """The logger must go at the loop top, and take the opcode the VM takes.
+
+    It used to be anchored on arithmetic in the dispatch chain's FINAL else, so it
+    only ever saw instructions whose opcode fell through every handler. Nine rows
+    came back from the real sample and were read as "the program ran nine
+    instructions and died". They were nine instructions out of however many ran,
+    selected by which handler they missed, and every count and every jump this
+    package reported for that build came from that filtered subset.
+
+    Checked here: the anchor is the loop top, the opcode comes from the row's own
+    index (0 for this family, read from the source and not assumed), the injection
+    is a pure insertion, and the row variable is trusted THERE - because the
+    interpreter has just read its opcode out of it - even though the array named
+    at the loop top is not the one the row came from.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        # from lastBefore, because the fallback path uses it and a mutant that
+        # disables the loop top must still be able to run
+        a = src.index("-- The last match of a pattern that starts at or before")
+        b = src.index("local function patchResolver(s)")
+    except ValueError:
+        return ["universal.lua has no loop-top patcher to test"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    pd = L.execute("local HID={}\nlocal PATCH_AT,PATCH_ADDED,ORIGINAL_LINES\n"
+                   + src[a:b] + "\nreturn patchDispatch\n")
+    chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
+                 " return f and 'OK' or tostring(e) end")
+    bad = []
+    got = pd(_LOOP_TOP)
+    if got is None:
+        return ["the loop top was not found at all, so the logger would fall "
+                "back to the dispatch chain and see only the instructions that "
+                "miss every handler"]
+    out, why = got[0], got[1]
+    if "loop top" not in why:
+        bad.append("the loop-top strategy should say so: %r" % why)
+    if "[0]" not in why:
+        bad.append("the opcode index should be read from the source and "
+                   "reported: %r" % why)
+    i = out.find("__OP(")
+    if i < 0:
+        bad.append("nothing was injected")
+        return bad
+    seg = out[i:i + 80]
+    if ",JY," not in seg:
+        bad.append("the injection must log the interpreter's OWN opcode "
+                   "variable: %s" % seg)
+    if ",true)" not in seg:
+        bad.append("a loop-top injection must mark the row variable as "
+                   "trustworthy: %s" % seg)
+    # it must land BEFORE the dispatch chain, not inside its final else
+    if out.find("__OP(") > out.find("if JY==156"):
+        bad.append("the injection landed after the dispatch chain started, so "
+                   "it would miss every instruction a handler takes")
+    if chk(out) != "OK":
+        bad.append("the patched source does not compile: %s" % chk(out))
+    # pure insertion
+    import re as _re
+    undone = _re.sub(r";if __OP then __OP\([^)]*\)end;if __CODE then "
+                     r"__CODE\([^)]*\)end", "", out)
+    if undone != _LOOP_TOP:
+        bad.append("the injection changed text around it")
+    return bad
+
+
 def dispatch_anchor(path=UNIVERSAL):
     """Every name in the injected call must come from ONE interpreter.
 
@@ -462,7 +545,7 @@ def op_rows(path=UNIVERSAL):
         return []
     src = io.open(path, encoding="utf-8").read()
     try:
-        a = src.index("HID.__OP = function(pc, oc, NO, sp, top, arr)")
+        a = src.index("HID.__OP = function(pc, oc, NO, sp, top, arr")
         b = src.index("-- SAFE MODE:")
     except ValueError:
         return ["universal.lua has no __OP to test"]
@@ -564,7 +647,7 @@ def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
              + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
-             + no_source_message(path))
+             + no_source_message(path) + loop_top(path))
     try:
         import lupa
     except ImportError:

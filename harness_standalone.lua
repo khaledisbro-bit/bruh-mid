@@ -309,7 +309,15 @@ local function readArray(arr)
             n = n + 1
             local a = {}
             if type(row) == "table" then
-                for i = 1, 12 do
+                -- From index ZERO. This interpreter keeps the opcode at [0] and
+                -- its operands from [2] up:
+                --     local OP = ROW and ROW[0] or 0
+                -- Reading from 1 meant the opcode field was never in the dump at
+                -- all - not for the instructions that ran and not for the two
+                -- thousand that did not. Every number this package reported per
+                -- opcode was derived from arithmetic in the dispatch loop instead
+                -- of from the field the interpreter actually reads.
+                for i = 0, 12 do
                     local v = row[i]
                     a[#a+1] = (v == nil) and "" or tostring(v)
                 end
@@ -340,7 +348,7 @@ HID.__CODE = function(arr)
     end)
 end
 
-HID.__OP = function(pc, oc, NO, sp, top, arr)
+HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
     opn = opn + 1
     if opn > 40000 then return end
     -- WHICH value is the instruction row.
@@ -361,8 +369,20 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
     -- row is read from THEM. The variable is still recorded, as a cross-check,
     -- and a disagreement is written down as a fault in this hook rather than as a
     -- fact about the program.
+    -- WHICH of the two is believed.
+    --
+    -- From the loop top, the row variable is the row: the interpreter has just
+    -- read its opcode out of it and is about to dispatch on that. The array
+    -- named there is not necessarily the one it came from - this family
+    -- re-fetches the row from a second array variable in between - so reading
+    -- arr[pc] instead would reintroduce the very mismatch that reading the array
+    -- was meant to fix.
+    --
+    -- From anywhere else, the row variable cannot be trusted and the array can.
     local row, fromArray = NO, false
-    if type(arr) == "table" then
+    if trustRow and NO ~= nil then
+        row, fromArray = NO, false
+    elseif type(arr) == "table" then
         local n = tonumber(pc)
         if n ~= nil then
             local direct = rawget(arr, n)
@@ -392,8 +412,20 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
     -- difference proves nothing on its own. It is recorded because a decode can
     -- only ever be established from it, and guessing at one from the decoded
     -- value alone is how this tool has gone wrong before.
-    if type(row) == "table" and type(rawget(row, 1)) == "number" then
-        note = (note ~= "" and (note .. "|") or "") .. "rawop=" .. tostring(row[1])
+    if type(row) == "table" then
+        -- The opcode as the interpreter reads it: index 0. rawop used to carry
+        -- index 1, which is not the opcode - it is a per-instruction number the
+        -- handlers never read as one, and calling it the opcode put a wrong fact
+        -- in every row of every capture.
+        local op0 = rawget(row, 0)
+        if op0 ~= nil then
+            note = (note ~= "" and (note .. "|") or "") .. "rowop=" .. tostring(op0)
+        else
+            note = (note ~= "" and (note .. "|") or "") .. "rowop=absent"
+        end
+        if type(rawget(row, 1)) == "number" then
+            note = note .. "|field1=" .. tostring(row[1])
+        end
     end
     if fromArray then
         -- The row came from the array. Say so, and say whether the loop's own
@@ -402,6 +434,18 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
         note = (note ~= "" and (note .. "|") or "") .. "src=array"
         if NO ~= row then
             note = note .. "|hook_var_disagrees=" .. vprev(NO)
+        end
+    elseif trustRow then
+        -- Taken at the loop top, where the interpreter had just read its opcode
+        -- from this very value. Whether the named array agrees is worth knowing
+        -- and is not a reason to prefer it.
+        note = (note ~= "" and (note .. "|") or "") .. "src=looptop"
+        if type(arr) == "table" then
+            local n = tonumber(pc)
+            local alt = (n ~= nil) and rawget(arr, n) or nil
+            if alt ~= nil and alt ~= row then
+                note = note .. "|named_array_differs"
+            end
         end
     elseif type(row) == "table" then
         note = (note ~= "" and (note .. "|") or "") .. "src=loopvar"
@@ -429,7 +473,7 @@ end
 -- build made it removes that inference, and the report can then say what a
 -- fresh capture would add instead of drawing a conclusion the capture cannot
 -- support.
-local HARNESS_ENGINE = 50
+local HARNESS_ENGINE = 51
 local TRACE_OPCODES = true
 -- WHICH nested interpreter to trace. Patching two at once is what tripped the
 -- VM's self-integrity check and ended the run early, so exactly one is traced
@@ -476,7 +520,72 @@ local function lastBefore(s, pat, limit)
     return at, a, b, c
 end
 
+-- The loop top, where the interpreter reads its own opcode.
+--
+-- This family fetches the instruction row and then takes the opcode straight out
+-- of it:
+--     local ROW = ARR[PC]; ... local OP = ROW and ROW[0] or 0
+-- and only then walks a chain of `elseif OP==N then <handler>` with a bit-tree
+-- in the final else.
+--
+-- The logger used to go into that final else, because it was anchored on the
+-- arithmetic there. So it only ever saw instructions whose opcode fell through
+-- the WHOLE chain. Nine rows came back and were read as "the program ran nine
+-- instructions and died" - they were nine instructions out of however many ran,
+-- selected by which handler they missed. Every count, every jump, every gap in
+-- this project's reports for this build came from that filtered subset.
+--
+-- Injecting after the opcode assignment sees every instruction, and takes the
+-- opcode the interpreter itself uses rather than recomputing it. The shape is
+-- the anchor: a row fetched by the counter, then a local assigned from that row
+-- indexed by a constant with an `or 0` fallback. No name appears in it, and the
+-- opcode's index is read from the source rather than assumed to be 1.
+-- Forward declaration: patchDispatch calls this when the loop top does not
+-- match, and without the declaration the call would resolve to a nil global.
+local patchDispatchFallback
+
+local function findLoopTop(s)
+    local from = 1
+    while true do
+        local a, b, row, arr, pc = s:find("local (%w+)=(%w+)%[(%w+)%];", from)
+        if not a then return nil end
+        -- the opcode assignment has to follow, close enough to be the same loop
+        local window = s:sub(b, math.min(#s, b + 4000))
+        local oa, ob, opv, idx = window:find("local (%w+)=" .. row
+                                            .. " and " .. row
+                                            .. "%[(%-?%d+)%]%s*or%s*0")
+        if oa then
+            return { row = row, arr = arr, pc = pc, op = opv,
+                     opindex = tonumber(idx), at = b + ob - 1 }
+        end
+        from = b + 1
+    end
+end
+
 local function patchDispatch(s)
+    -- Preferred: the loop top, which every instruction passes through.
+    local top = findLoopTop(s)
+    if top then
+        local arr2, sp2 = s:match("if %w+>=2 then (%w+)%[(%w+)%-1%]=")
+        sp2 = sp2 or "0"
+        local ny2 = s:match("if %w+>=1 then %w+%[%w+%]=(%w+) end")
+        local topexpr2 = ny2 or ((arr2 and sp2 ~= "0")
+                                 and ("(" .. arr2 .. " and " .. arr2 .. "["
+                                      .. sp2 .. "])")) or "nil"
+        local inject = ";if __OP then __OP(" .. top.pc .. "," .. top.op .. ","
+            .. top.row .. "," .. sp2 .. "," .. topexpr2 .. "," .. top.arr
+            .. ",true)end;if __CODE then __CODE(" .. top.arr .. ")end"
+        local before = select(2, s:sub(1, top.at):gsub("\n", ""))
+        PATCH_AT, PATCH_ADDED = before + 1, select(2, inject:gsub("\n", ""))
+        ORIGINAL_LINES = select(2, s:gsub("\n", "")) + 1
+        return s:sub(1, top.at) .. inject .. s:sub(top.at + 1),
+               ("loop top: " .. top.op .. "=" .. top.row .. "[" .. top.opindex
+                .. "] pc=" .. top.pc .. " sp=" .. sp2)
+    end
+    return patchDispatchFallback(s)
+end
+
+function patchDispatchFallback(s)
     -- The dispatch opcode expression, (NL-NU)%0x7fffffff. Everything else is
     -- found by walking BACK from here, so every name belongs to this one loop.
     --

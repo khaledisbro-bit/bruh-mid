@@ -431,6 +431,37 @@ def stopped_under_the_trace(capture):
             "that or from a run where the patch never went in." % len(capture.rows))
 
 
+def trace_was_filtered(capture):
+    """Whether this capture holds the instructions that ran, or a subset.
+
+    This family dispatches with a chain of equality tests on the opcode and a
+    bit-tree in the final else. A logger anchored in that else sees only the
+    instructions whose opcode fell through every handler - which looks exactly
+    like a short run, because what comes back is a handful of rows with gaps.
+
+    Captures written before engine 51 were anchored there. Their instruction
+    counts, their jumps and their gaps are all properties of which handler each
+    instruction missed, not of what the program did. A capture that says
+    src=looptop was taken where every instruction passes."""
+    notes = getattr(capture, "row_notes", None) or {}
+    if not notes:
+        return []
+    tops = sum(1 for kv in notes.values() if kv.get("src") == "looptop")
+    if tops:
+        return []
+    srcs = {kv.get("src") for kv in notes.values() if kv.get("src")}
+    if not srcs:
+        return []
+    return ["This capture's instructions were logged from inside the dispatch "
+            "chain, not at the loop top. In this family the chain tests the "
+            "opcode against one handler after another, so a logger there records "
+            "ONLY the instructions that missed every test. The rows below are "
+            "real, and the count, the jumps and the gaps between them are "
+            "properties of which handler each instruction missed - not of what "
+            "the program did. A capture from engine 51 or later is taken where "
+            "every instruction passes, and says src=looptop."]
+
+
 def opcode_grouping_doubt(capture):
     """Whether instructions grouped under one decoded opcode really are one.
 
@@ -1146,6 +1177,24 @@ def _selftest():
                 "10;0;1;0;nil;rawop=111\n11;0;2;0;nil;rawop=222\n"
                 "END_UNOBF_RESULT")
     check("consistent shapes claim nothing", opcode_grouping_doubt(c), [])
+
+    # 14) a capture logged inside the dispatch chain is a SUBSET and must say so
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "---OPCODES---\n2;354;;0;nil;src=array|arr=1\n"
+                "2010;0;1,2;0;nil;src=array|arr=1\nEND_UNOBF_RESULT")
+    said = " ".join(trace_was_filtered(c))
+    if "ONLY the instructions that missed every test" not in said:
+        bad.append("a capture logged inside the dispatch chain must be named a "
+                   "subset, got %r" % said[:140])
+    # one taken at the loop top claims nothing
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "---OPCODES---\n2;354;;0;nil;src=looptop|arr=1\n"
+                "END_UNOBF_RESULT")
+    check("a loop-top capture is not called filtered", trace_was_filtered(c), [])
+    # and a capture with no src note at all claims nothing either
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n"
+                "---OPCODES---\n2;354;;0;nil\nEND_UNOBF_RESULT")
+    check("no note, no claim", trace_was_filtered(c), [])
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

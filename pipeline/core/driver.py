@@ -273,6 +273,12 @@ class Analysis:
         # Whether the instructions grouped under one opcode really are one. This
         # belongs BEFORE anything measured per opcode is read, because every
         # number below inherits that grouping.
+        # Whether these instructions are the ones that ran, or the subset that
+        # missed every handler. This goes first: it decides how to read every
+        # number that follows.
+        filt = tracefmt.trace_was_filtered(cap)
+        if filt:
+            L += ["  " + x for x in filt] + [""]
         doubt = tracefmt.opcode_grouping_doubt(cap)
         if doubt:
             L += ["  " + x for x in doubt] + [""]

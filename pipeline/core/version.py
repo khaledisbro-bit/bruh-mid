@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 50
+VERSION = 51
 
 STAGES = (
     "captures read by shape",
@@ -185,6 +185,19 @@ STAGES = (
     "the row's own encoded opcode field recorded, because a decode can only be "
     "established from it - and NOT read as evidence on its own, since that field "
     "differs per program counter by design",
+    "the logger placed at the loop top, where the interpreter reads its own "
+    "opcode out of the row, instead of in the dispatch chain's final else - a "
+    "logger there records ONLY the instructions whose opcode missed every "
+    "handler, and nine such rows were read for several rounds as a program that "
+    "ran nine instructions and died",
+    "the opcode taken from the field the interpreter takes it from, at the index "
+    "the source names (0 for this family) rather than an assumed 1, and the "
+    "instruction array dumped from index 0 so that field is in the dump at all",
+    "the row variable believed at the loop top and the array believed anywhere "
+    "else, because this family re-fetches the row from a second array variable "
+    "and preferring the named array there would reintroduce the mismatch",
+    "a capture logged inside the dispatch chain named as the subset it is, so "
+    "its counts and gaps are not read as facts about the program",
     "instructions grouped under one decoded opcode checked by their operand "
     "shapes, so six instructions carrying one, two and three operands are not "
     "measured as one instruction, said as an observation with its evidence and "
