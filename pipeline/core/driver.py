@@ -212,6 +212,68 @@ class Analysis:
         _f, self.in_step, self.unaccounted = verify.fidelity(
             capture.calls, self.calls)
 
+    def _early_stop_lines(self):
+        """The warning that the rows below are not a whole program.
+
+        Two different captures need it and only one used to get it. A capture
+        whose traced run died says so in its headline. A capture whose UNTRACED
+        retry then finished says run_ok: true in its headline - while every
+        instruction row in it still came from the attempt that died. Keying this
+        off the headline alone would drop the warning from exactly the capture
+        that needs it most.
+        """
+        cap = self.capture
+        err = getattr(cap, "run_error", None)
+        from_failed = getattr(cap, "rows_from_failed_run", False)
+        if not err and not from_failed:
+            return []
+        if not err:
+            att = [a for a in (getattr(cap, "attempts", None) or [])
+                   if a["instructions"] > 0 and not a["ok"]]
+            err = (att[0]["error"] if att and att[0]["error"]
+                   else "the run that produced these instructions raised")
+        L = ["THE SCRIPT STOPPED EARLY",
+             "  %s" % err,
+             "  Everything below describes the %d instruction(s) that ran "
+             "before" % len(cap.rows),
+             "  that, which is not the program.",
+             ""]
+        if from_failed and getattr(cap, "run_error", None) is None:
+            L[4:4] = ["  A later attempt in the same capture DID finish, "
+                      "without the trace hook.",
+                      "  It logged no instructions, so it does not extend the "
+                      "rows below."]
+        note = tracefmt.stopped_under_the_trace(cap)
+        if note:
+            L += ["  " + note, ""]
+        return L
+
+    def _retry_records_lines(self):
+        """What the second run recorded, said rather than folded in.
+
+        The retry runs the same payload again, so its calls land in the same
+        behaviour log. They are kept out of the call comparison, because
+        counting one run's records against another's reconstruction twice is not
+        a fidelity measurement. But they are the records of the run that
+        FINISHED, which makes them the better account of what the program does,
+        and dropping them silently would be worse than either.
+        """
+        later = getattr(self.capture, "calls_after_retry", None) or []
+        if not later:
+            return []
+        L = ["THE SECOND RUN RECORDED MORE",
+             "  The untraced attempt made %d call(s) of its own. They are not "
+             "counted" % len(later),
+             "  against the reconstruction below, which describes the traced "
+             "attempt's",
+             "  instructions - but they are what the run that finished did:"]
+        for c in later[:40]:
+            L.append("    %s" % c["raw"])
+        if len(later) > 40:
+            L.append("    ... %d more" % (len(later) - 40))
+        L.append("")
+        return L
+
     def summary(self):
         cov, explained, total = verify.coverage(self.lift, self.verdicts)
         named = sum(1 for m in self.models.values() if m.operation)
@@ -223,17 +285,8 @@ class Analysis:
              "=" * 46,
              "produced by %s" % version.banner(),
              "",
-             ] + ([
-             "THE SCRIPT STOPPED EARLY",
-             "  %s" % self.capture.run_error,
-             "  Everything below describes the %d instruction(s) that ran "
-             "before" % len(self.capture.rows),
-             "  that, which is not the program.",
-             "",
-             ] + ([("  " + tracefmt.stopped_under_the_trace(self.capture)
-                    ).replace("\n  ", "\n  "), ""]
-                  if tracefmt.stopped_under_the_trace(self.capture) else []) + [
-             ] if getattr(self.capture, "run_error", None) else []) + [
+             ] + self._early_stop_lines() + [
+             ] + self._retry_records_lines() + [
              "captured instructions      %d" % len(self.capture.rows),
              "interpreter machinery      %d record(s) folded away"
              % (len(self.capture.rows) - len(self.program)),
@@ -678,6 +731,20 @@ def selftest():
     _metatab._selftest()
     _dispatch._selftest()
     _verify._selftest()
+    # The harness's own decision - one run or two - tested against the shipped
+    # text of universal.lua rather than a description of it.
+    import tracefmt as _tf
+    tprobs = _tf._selftest()
+    if tprobs:
+        ok = False
+    import harnesstest as _ht
+    hprobs, hran = _ht.selftest()
+    print("harness decision      : %d case(s), %d problem(s)%s"
+          % (len(_ht.CASES), len(hprobs), "" if hran else "  [NOT RUN]"))
+    for hp in hprobs:
+        print("  - %s" % hp)
+    if hprobs and hran:
+        ok = False
     _no_claims_from_nothing()
     print("\n%s" % ("all self-tests passed" if ok else "SELF-TEST FAILURES"))
     return 0 if ok else 1

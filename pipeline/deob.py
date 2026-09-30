@@ -77,6 +77,18 @@ def detect(src, log):
     return inner_src, inner_data, "base85+Zstd Luau VM"
 
 
+def _first_attempt_error(cap):
+    """The error from the attempt whose instructions we are about to describe.
+
+    When the untraced retry finishes, the capture's headline error is gone - but
+    the rows still came from the attempt that raised, and that error is what the
+    reader needs."""
+    for a in (getattr(cap, "attempts", None) or []):
+        if a["instructions"] > 0 and not a["ok"] and a["error"]:
+            return a["error"]
+    return "the run that produced these instructions raised"
+
+
 def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
                  name="harness.lua", visible_hooks=False):
     """Embed the obfuscated source into the harness. The WHOLE file goes in,
@@ -235,9 +247,15 @@ def main():
     harness = make_harness(src, a.out,
                            visible_hooks=a.visible_hooks)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
-    print("              also: %s  (traces constants but does NOT patch the "
-          "dispatch loop - run this one if the script dies under the other)"
-          % os.path.join(a.out, "harness_safe.lua"))
+    print("              Run THIS one. If the script dies with the trace hook "
+          "in it, this")
+    print("              harness re-runs the same payload without the hook by "
+          "itself, in")
+    print("              the same session, and writes both outcomes into the "
+          "capture.")
+    print("              also: %s  (never patches the dispatch loop; only "
+          "needed to" % os.path.join(a.out, "harness_safe.lua"))
+    print("              reproduce a clean run on its own)")
     # One run traces one interpreter, because patching two trips the VM's
     # integrity check. The program's tail runs inside the later ones, so a
     # harness for each is written and their captures merge as separate runs.
@@ -349,10 +367,18 @@ def main():
         if not cap.has_instructions():
             print("[4/4] ANALYSE : %s has no instruction records." % cap.name)
             print("              %s" % cap.why_no_instructions())
+            # A capture with no rows can still carry the harness's verdict on
+            # WHY there are none, and that is the whole answer for a build that
+            # objects to being traced. Dropping it here threw away the finding.
+            note = tracefmt.stopped_under_the_trace(cap)
+            if note:
+                print("              %s" % note)
             continue
-        if getattr(cap, "run_error", None) and len(cap.rows) < 100:
+        stopped = (getattr(cap, "run_error", None)
+                   or getattr(cap, "rows_from_failed_run", False))
+        if stopped and len(cap.rows) < 100:
             print("[4/4] ANALYSE : %s - the script stopped early." % cap.name)
-            print("              %s" % cap.run_error)
+            print("              %s" % (cap.run_error or _first_attempt_error(cap)))
             print("              Only %d instruction(s) ran before it did, so "
                   "what follows" % len(cap.rows))
             print("              describes those, not the program. This is not "

@@ -624,28 +624,153 @@ end)
 say("---PROBE---")
 for i = 1, #probe do say(probe[i]) end
 
--- run
-local f = realLoad(SOURCE)
-say("loaded: "..tostring(f ~= nil))
-local ret
-if f then
-  pcall(setfenv, f, env)
-  local ok, r = pcall(f)
-  ret = r
-  say("run_ok: "..tostring(ok).."  return_type: "..typeof(r))
-  if not ok then say("error: "..tostring(r)) end
-  -- BFS: exercise functions the chunk returned, to surface nested behavior
-  local function tryCall(fn) local okc = pcall(fn); return okc end
-  if type(ret) == "function" then tryCall(ret) end
-  if type(ret) == "table" then
-    for k, v in pairs(ret) do if type(v) == "function" then behavior[#behavior+1]="module fn: "..tostring(k); pcall(v) end end
-  end
+-- ------------------------------------------------------------------- the run
+-- Tracing the dispatch loop means EDITING the interpreter's own source. A build
+-- that checks its own source reacts to exactly that, and to nothing else the
+-- harness does. The symptom is a run that raises a few instructions in, and
+-- from one capture that is indistinguishable from a program that genuinely
+-- errors on its own.
+--
+-- Telling the two apart needs the SAME payload run again with the dispatch
+-- patch left out. That used to be a second file to run by hand. Choosing
+-- between two files is a step that can go wrong, and when it goes wrong the
+-- capture still looks like the one that was asked for, so the wrong conclusion
+-- gets drawn from it with nothing in the file to contradict it.
+--
+-- So the harness does both itself: traced first, and if that raised WHILE the
+-- dispatch patch was in, untraced immediately afterwards, same session, same
+-- payload, with both outcomes written down. Nothing downstream has to infer
+-- which file was run.
+local attempts = {}
+local function runPayload(mode)
+    local rec = { mode = mode, ok = false, rtype = "nil", loaded = false,
+                  err = nil, rows0 = #ops, res0 = #resolved }
+    local f = realLoad(SOURCE)
+    rec.loaded = (f ~= nil)
+    if not f then
+        rec.err = "loadstring failed"
+    else
+        pcall(setfenv, f, env)
+        local ok, r = pcall(f)
+        rec.ok = ok
+        -- Only a run that finished HAS a return value. On a failed run the
+        -- second pcall result is the error, and calling its type the chunk's
+        -- return type puts a wrong fact in a header.
+        rec.rtype = ok and tostring(typeof(r)) or "nil"
+        if not ok then
+            rec.err = tostring(r)
+        else
+            -- BFS: exercise functions the chunk returned, to surface nested
+            -- behavior. Only on a run that finished: on a failed run `r` is the
+            -- error value, and calling into that measures the error, not the
+            -- program.
+            if type(r) == "function" then pcall(r) end
+            if type(r) == "table" then
+                for k, v in pairs(r) do
+                    if type(v) == "function" then
+                        behavior[#behavior+1] = "module fn: " .. tostring(k)
+                        pcall(v)
+                    end
+                end
+            end
+        end
+    end
+    rec.rows_added = #ops - rec.rows0
+    rec.res_added = #resolved - rec.res0
+    attempts[#attempts+1] = rec
+    return rec
+end
+
+-- The run's own headers need a section of their own. Without this marker they
+-- land inside ---PROBE---, because that is the last section opened before the
+-- payload runs and nothing closed it. A reader that looks for scalar headers at
+-- the top of a capture then finds none of them, and "run_ok was not stated"
+-- reads the same as "run_ok: false".
+say("---RUN---")
+local first = runPayload(TRACE_OPCODES and "traced" or "untraced")
+local patchedFirst = dispatchDone
+local patchableFirst = patchable
+
+-- The retry condition is written in terms of what was OBSERVED and nothing
+-- else: the dispatch patch went in, and the run raised. Not "the error looks
+-- like a tamper check", and not a count of instructions - either of those
+-- would be guessing at the build. If the patch was never placed there is
+-- nothing to take back out, so a second run could not teach anything.
+local second
+if patchedFirst and not first.ok then
+    say("retry_reason: the traced run raised while the dispatch patch was in "
+        .. "place, so the same payload is run again with the patch left out")
+    TRACE_OPCODES = false     -- the loadstring hook reads this on every load
+    dispatchDone = false
+    patchable = 0
+    -- The line shield corrects for an injection that is no longer there. Left
+    -- set, it would keep answering the second run's questions about its own
+    -- source as if the first run's patch were still in the file.
+    ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
+    behavior[#behavior+1] = "  [retry: same payload, dispatch loop NOT patched]"
+    second = runPayload("untraced")
+end
+
+-- Which harness produced this capture, said by the harness instead of guessed
+-- from its side effects. Two modes ship in one file and a capture from one used
+-- to be distinguishable from the other only by reading the behaviour log
+-- sideways, which is exactly the inference that went wrong.
+local best = (second and second.ok) and second or first
+-- Four states, and they are not interchangeable. "The trace was asked for and
+-- the hook never matched this build" is a different capture from "no trace was
+-- asked for", and both used to print the same word.
+local hid
+if not first.loaded then
+    -- Nothing was traced because nothing compiled. Saying "the hook did not
+    -- match" here would send the reader after the wrong thing.
+    hid = "untested (the payload did not compile)"
+elseif patchedFirst then
+    hid = second and "traced+retry" or "traced"
+elseif first.mode == "traced" then
+    hid = "trace_requested_but_unpatched"
 else
-  say("run_ok: false  return_type: nil"); say("error: loadstring failed")
+    hid = "untraced"
+end
+say("harness: universal")
+say("harness_id: " .. hid)
+say("dispatch_patched: " .. tostring(patchedFirst))
+say("attempts: " .. #attempts)
+for i = 1, #attempts do
+    local a = attempts[i]
+    say(("attempt%d: mode=%s loaded=%s run_ok=%s return_type=%s "
+         .. "instructions=%d constants=%d"):format(
+        i, tostring(a.mode), tostring(a.loaded), tostring(a.ok),
+        tostring(a.rtype), a.rows_added, a.res_added))
+    if a.err then say("attempt" .. i .. "_error: " .. tostring(a.err)) end
+end
+-- The headline outcome is the best attempt, so a capture whose retry finished
+-- is not read as a failed run. The per-attempt lines above keep both.
+say("loaded: " .. tostring(best.loaded))
+say("run_ok: " .. tostring(best.ok) .. "  return_type: " .. tostring(best.rtype))
+if not best.ok then
+    say("error: " .. tostring(best.err or "the run did not finish"))
+end
+-- The comparison the two attempts exist to make, stated only when both ran and
+-- only as what was seen.
+if second then
+    if second.ok and not first.ok then
+        say("trace_verdict: patch_caught -- the payload raised WITH the "
+            .. "dispatch patch and finished WITHOUT it, same session, same "
+            .. "payload. Editing the interpreter's source is what it reacted "
+            .. "to.")
+    elseif not second.ok then
+        say("trace_verdict: not_the_trace -- the payload raised with AND "
+            .. "without the dispatch patch, so the failure is the program's "
+            .. "own, not the trace.")
+        if tostring(second.err) ~= tostring(first.err) then
+            say("trace_verdict_note: the two errors are not the same text, so "
+                .. "the patch is not irrelevant either")
+        end
+    end
 end
 
 say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
-say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..patchable)
+say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..patchableFirst)
 say("mode: universal")
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
 say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end

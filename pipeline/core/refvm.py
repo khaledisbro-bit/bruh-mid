@@ -102,7 +102,20 @@ class Emitter:
             self.produce(self.rng.randrange(1 << 40, 1 << 52))
 
     def text(self):
-        out = ["loaded: true", "run_ok: true  return_type: nil",
+        # The REAL layout, not a convenient one. A harness writes its probe
+        # answers before it runs anything, so the run's own headers arrive after
+        # ---PROBE--- has been opened. Putting them at the top of the fixture
+        # instead made the fixtures pass while the parser found no headers at
+        # all on a real capture, and a clean run read as a run that stopped
+        # early. A fixture that is easier to parse than the thing it stands for
+        # tests the wrong file.
+        out = ["---PROBE---", "clock_is_monotonic\ttrue", "---RUN---",
+               "harness: reference", "harness_id: untraced",
+               "dispatch_patched: false", "attempts: 1",
+               "attempt1: mode=untraced loaded=true run_ok=true "
+               "return_type=nil instructions=%d constants=%d"
+               % (len(self.rows), len(self.resolved)),
+               "loaded: true", "run_ok: true  return_type: nil",
                "mode: reference", "---PRINTS---"]
         out += ["PRINT: " + p for p in self.prints]
         out.append("---BEHAVIOR---")

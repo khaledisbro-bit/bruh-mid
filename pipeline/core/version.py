@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 40
+VERSION = 41
 
 STAGES = (
     "captures read by shape",
@@ -95,6 +95,18 @@ STAGES = (
     "reconstruction that calls a string or cannot terminate is caught here",
     "a script that dies just after the trace hook goes in named as what it "
     "looks like, with the untraced harness written beside it to settle it",
+    "the harness settling that by itself: when the traced run raises while the "
+    "dispatch patch is in, the same payload is run again unpatched in the same "
+    "session and both outcomes are written down, so the answer is a finding "
+    "rather than a suspicion and no capture has to be identified by hand",
+    "each capture naming the harness that made it, because inferring that from "
+    "its side effects is how the wrong file came to be read twice",
+    "the run's own headers in a section of their own, so run_ok is read at all: "
+    "they used to arrive inside the probe section and a clean run was reported "
+    "as a run that stopped early",
+    "the early-stop warning keyed on which attempt produced the instructions, "
+    "not on the headline, so a capture whose untraced retry finished is still "
+    "not read as a whole program",
 )
 
 

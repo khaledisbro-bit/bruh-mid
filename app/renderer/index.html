@@ -99,12 +99,13 @@
                 one, and overwrites the capture that worked.
               </div>
               <div class="sub" style="margin-bottom:10px">
-                If the report says the script stopped early, run
-                <b>harness_safe.lua</b> instead. It records constants but does
-                not patch the interpreter's dispatch loop, which is the one
-                thing a build that checks its own source would notice. Running
-                under both is how you tell a build that objects to being traced
-                from a fault in the trace.
+                You do not have to choose a file. If the script dies with the
+                trace hook in it, <b>harness.lua</b> runs the same payload again
+                without the hook by itself, in the same session, and writes both
+                outcomes into the capture. The report then says which one it was:
+                a build that objects to being traced, or a failure that is the
+                program's own. <b>harness_safe.lua</b> is still here, but only
+                to reproduce a clean run on its own.
               </div>
               <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap">
                 <button class="btn" id="collectBtn"><svg><use href="#i-play"/></svg> Start collecting</button>

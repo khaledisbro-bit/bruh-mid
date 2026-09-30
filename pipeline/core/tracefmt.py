@@ -35,15 +35,29 @@ class Capture:
         m = _BODY.search(text)
         self.body = m.group(1) if m else text
         self.sections = _split(self.body)
-        self.headers = _headers(self.sections.get("", []))
+        self.headers = _headers(_header_lines(self.sections))
         self.rows = _rows(self.body)
         self.constants = _constants(self.sections)
-        self.calls, self.notes = _calls(self.sections.get("BEHAVIOR", []))
+        # One capture can hold two runs of the same payload, and their call
+        # logs are written one after the other into the same section. Comparing
+        # a reconstruction against both concatenated would count every call
+        # twice, so the two are kept apart: `calls` are the ones from the run
+        # the instructions came from, which is the run a reconstruction
+        # describes, and `calls_after_retry` are what the second run added.
+        before, after = _split_on_retry(self.sections.get("BEHAVIOR", []))
+        self.calls, self.notes = _calls(before)
+        self.calls_after_retry, notes2 = _calls(after)
+        self.notes = self.notes + notes2
         self.code = _code(self.sections, self.body)
         self.prints = [l.split("PRINT:", 1)[1].strip()
                        for l in self.sections.get("PRINTS", []) if "PRINT:" in l]
         self.probe = _probe(self.sections)
+        self.attempts = _attempts(self.body)
+        self.harness_id = self.headers.get("harness_id")
+        self.trace_verdict = self.headers.get("trace_verdict")
         self.run_error = _run_error(self.headers, self.body)
+        self.rows_from_failed_run = _rows_from_failed_run(self.attempts,
+                                                         len(self.rows))
 
     def has_instructions(self):
         return len(self.rows) > 0
@@ -94,6 +108,27 @@ def _split(body):
     return out
 
 
+def _header_lines(sections):
+    """Where a capture's scalar headers actually are.
+
+    They were read from the top of the capture only, and on a real capture they
+    are not there: the harness interrogates its environment first, which opens
+    ---PROBE---, and nothing closes it before the run writes run_ok, loaded and
+    mode. So every real capture parsed with NO headers at all, and "run_ok was
+    never stated" is indistinguishable from "run_ok: false" - which is how a
+    clean run came to be reported as a run that stopped early.
+
+    The harness now opens ---RUN--- for them. PROBE is still read, because
+    captures made before that marker existed are still on disk and still worth
+    reading; its own rows are tag<TAB>value and carry no colon, so they cannot
+    be mistaken for headers.
+    """
+    out = []
+    for key in ("", "RUN", "PROBE"):
+        out.extend(sections.get(key, []))
+    return out
+
+
 def _headers(lines):
     h = {}
     for ln in lines:
@@ -134,6 +169,54 @@ def _rows(body):
     return out
 
 
+_ATTEMPT = re.compile(
+    r"^attempt(\d+):\s*mode=(\S+)\s+loaded=(\S+)\s+run_ok=(\S+)\s+"
+    r"return_type=(\S+)\s+instructions=(\d+)\s+constants=(\d+)")
+_ATTEMPT_ERR = re.compile(r"^attempt(\d+)_error:\s*(.*)$")
+
+
+def _attempts(body):
+    """The harness's own account of how many times it ran the payload.
+
+    One capture can now hold two runs of the same payload: traced, and - when
+    the traced run raised while the dispatch patch was in - untraced. Reading
+    the headline alone would describe one of them and lose the other, and which
+    one it lost would depend on which finished.
+    """
+    out, byi = [], {}
+    for ln in body.splitlines():
+        t = ln.strip()
+        m = _ATTEMPT.match(t)
+        if m:
+            rec = {"n": int(m.group(1)), "mode": m.group(2),
+                   "loaded": m.group(3) == "true", "ok": m.group(4) == "true",
+                   "return_type": m.group(5), "instructions": int(m.group(6)),
+                   "constants": int(m.group(7)), "error": None}
+            out.append(rec)
+            byi[rec["n"]] = rec
+            continue
+        m = _ATTEMPT_ERR.match(t)
+        if m and int(m.group(1)) in byi:
+            byi[int(m.group(1))]["error"] = m.group(2).strip()
+    return out
+
+
+def _rows_from_failed_run(attempts, nrows):
+    """Whether the instructions in this capture came from a run that raised.
+
+    This is the trap the retry opens. The headline outcome is the BEST attempt,
+    so a capture whose untraced retry finished reads run_ok: true - while every
+    instruction row in it came from the traced attempt, which died. Believing
+    the headline would mean treating a handful of rows as a whole program.
+    """
+    if not attempts or nrows == 0:
+        return False
+    producers = [a for a in attempts if a["instructions"] > 0]
+    if not producers:
+        return False
+    return all(not a["ok"] for a in producers)
+
+
 def _run_error(headers, body):
     """What the harness said about the payload's own run.
 
@@ -154,16 +237,42 @@ def _run_error(headers, body):
 
 
 def stopped_under_the_trace(capture):
-    """Whether the script died right after the trace hook went into it.
+    """Whether the dispatch patch is what ended this run - and how we know.
 
-    A build that checks its own source reacts to the dispatch patch and to
-    nothing else the harness does. The pattern is specific: the hook went in,
-    the run raised, and it raised after a handful of instructions - far too few
-    for a program that loaded a megabyte of interpreter. That is worth saying,
-    because the remedy is a harness that does not patch the dispatch loop, and
-    it is written beside this one.
+    There used to be one answer here, and it was a suspicion: the hook went in,
+    the run raised a few instructions later, and a build that checks its own
+    source would look exactly like that. Settling it needed the same payload run
+    again without the patch, which meant a second file and a person choosing
+    between them. That choice went wrong twice, and a capture from the wrong
+    file is indistinguishable from the right one at a glance, so the wrong
+    conclusion got drawn with nothing to contradict it.
 
-    It is a suspicion, not a finding, and is worded as one."""
+    The harness now runs both itself and writes down the comparison. When it
+    did, this reports a FINDING and says which way it went. When it did not,
+    the old suspicion still stands, worded as one.
+    """
+    v = getattr(capture, "trace_verdict", None) or ""
+    a = getattr(capture, "attempts", None) or []
+    if v.startswith("patch_caught"):
+        first = a[0] if a else {}
+        return ("FINDING - this build objects to being traced. The harness ran "
+                "the same payload twice in one session: WITH the dispatch loop "
+                "patched it raised (%s), and WITHOUT the patch it finished. "
+                "Editing the interpreter's source is what it reacted to, so "
+                "this is a self-checking build.\n"
+                "  What that costs: the %d instruction row(s) here come from "
+                "the traced attempt, the one that died. They are real, and they "
+                "are not the whole program. The untraced attempt recovered "
+                "constants and behaviour but logs no instructions, because "
+                "logging them is the thing this build catches."
+                % (first.get("error") or "no error recorded",
+                   len(capture.rows)))
+    if v.startswith("not_the_trace"):
+        return ("FINDING - the trace is not what ended this run. The harness "
+                "ran the same payload with the dispatch patch and without it, "
+                "in one session, and it raised both times. The failure is the "
+                "program's own: a missing service, a guard the environment "
+                "does not satisfy, or a path this executor cannot take.")
     if capture.run_error is None:
         return None
     notes = "\n".join(capture.sections.get("BEHAVIOR", []))
@@ -176,11 +285,11 @@ def stopped_under_the_trace(capture):
             "loaded an interpreter. A build that checks its own source would "
             "behave exactly like this, because patching the dispatch loop "
             "changes that source.\n"
-            "  This is a suspicion, not a finding. The way to settle it is "
-            "beside this report: harness_safe.lua traces constants but does "
-            "NOT patch the dispatch loop. If the script runs under that one "
-            "and dies under this one, the check is real and the dispatch patch "
-            "is what it caught." % len(capture.rows))
+            "  This is a suspicion, not a finding, because the capture holds "
+            "only the traced run. The harness settles it by running the payload "
+            "again unpatched in the same session and writing a trace_verdict "
+            "line; this capture has none, so it came from a harness older than "
+            "that or from a run where the patch never went in." % len(capture.rows))
 
 
 def _probe(sections):
@@ -242,6 +351,20 @@ def _constants(sections):
             if m:
                 out.append((m.group(1), m.group(2)))
     return out
+
+
+# The harness writes this line into the behaviour log when it re-runs the
+# payload with the dispatch patch left out. It is the boundary between two runs'
+# worth of records in one section.
+_RETRY_MARK = "[retry: same payload"
+
+
+def _split_on_retry(lines):
+    """Behaviour lines before the retry, and after it."""
+    for i, ln in enumerate(lines):
+        if _RETRY_MARK in ln:
+            return lines[:i], lines[i + 1:]
+    return lines, []
 
 
 def _calls(lines):
@@ -312,9 +435,25 @@ def combine(caps):
         elif other.code:
             base.code.update(other.code)
         base.calls = _union(base.calls, other.calls, lambda c: c["raw"])
+        # The retry's records stay on their own side of the fold too. Merging
+        # them into `calls` here would undo the split and count them twice.
+        base.calls_after_retry = _union(base.calls_after_retry,
+                                       other.calls_after_retry,
+                                       lambda c: c["raw"])
         base.constants = _union(base.constants, other.constants, lambda c: c)
         base.prints = _union(base.prints, other.prints, lambda p: p)
         base.headers.update(other.headers)
+        # The pieces are one run written out in parts, so the text is one text.
+        # Keeping only the first piece's body left every fact derived from it -
+        # the attempts, the error, which run the rows came from - describing one
+        # piece and claiming to describe the run.
+        base.body = base.body + "\n" + other.body
+        base.attempts = _attempts(base.body)
+        base.harness_id = base.headers.get("harness_id")
+        base.trace_verdict = base.headers.get("trace_verdict")
+        base.run_error = _run_error(base.headers, base.body)
+        base.rows_from_failed_run = _rows_from_failed_run(base.attempts,
+                                                          len(base.rows))
         for k, v in other.sections.items():
             base.sections.setdefault(k, []).extend(v)
         base.name = base.name + "+" + other.name
@@ -382,7 +521,104 @@ def expand(paths):
     return out
 
 
+def _selftest():
+    """Captures whose SHAPE has caught this parser out before.
+
+    Every case here is a layout a real harness produced, not a layout invented
+    to be easy. The first one is the important one: the run's headers arriving
+    inside ---PROBE--- because nothing closed that section. The reference
+    fixtures put headers at the very top, so they never exercised it, and a
+    clean run was being reported as a run that stopped early.
+    """
+    bad = []
+
+    def check(what, got, want):
+        if got != want:
+            bad.append("%s: %r, expected %r" % (what, got, want))
+
+    # 1) headers after an unclosed PROBE section - the real pre-RUN layout
+    c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nclock_is_monotonic\ttrue\n"
+                "loaded: true\nrun_ok: true  return_type: nil\nmode: universal\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("clean run under an unclosed PROBE", c.run_error, None)
+    check("probe survives the header scan", c.probe.get("clock_is_monotonic"),
+          "true")
+
+    # 2) the same, failing
+    c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nloaded: true\n"
+                "run_ok: false  return_type: nil\nerror: boom\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("failed run under an unclosed PROBE", c.run_error, "boom")
+
+    # 3) headers in their own RUN section, single attempt
+    c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nx\ty\n---RUN---\n"
+                "harness_id: untraced\nattempts: 1\n"
+                "attempt1: mode=untraced loaded=true run_ok=true "
+                "return_type=nil instructions=0 constants=3\n"
+                "loaded: true\nrun_ok: true  return_type: nil\n"
+                "---OPCODES---\nEND_UNOBF_RESULT")
+    check("harness_id read", c.harness_id, "untraced")
+    check("one attempt parsed", len(c.attempts), 1)
+    check("no rows, so nothing came from a failed run",
+          c.rows_from_failed_run, False)
+    check("clean single run", c.run_error, None)
+
+    # 4) two attempts: the traced one died, the untraced one finished. The
+    #    headline says run_ok true and every row still came from the dead one.
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nharness_id: traced+retry\n"
+                "attempts: 2\n"
+                "attempt1: mode=traced loaded=true run_ok=false return_type=nil "
+                "instructions=9 constants=1\n"
+                "attempt1_error: it raised\n"
+                "attempt2: mode=untraced loaded=true run_ok=true "
+                "return_type=table instructions=0 constants=402\n"
+                "run_ok: true  return_type: table\n"
+                "trace_verdict: patch_caught -- x\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("retry headline is not an error", c.run_error, None)
+    check("rows came from the attempt that died", c.rows_from_failed_run, True)
+    check("attempt error kept", c.attempts[0]["error"], "it raised")
+    note = stopped_under_the_trace(c)
+    if not note or not note.startswith("FINDING"):
+        bad.append("a settled trace verdict should read as a finding, got %r"
+                   % (note or "")[:40])
+
+    # 5) both attempts died: the trace is exonerated, the run still failed
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nattempts: 2\n"
+                "attempt1: mode=traced loaded=true run_ok=false return_type=nil "
+                "instructions=9 constants=1\n"
+                "attempt1_error: a\n"
+                "attempt2: mode=untraced loaded=true run_ok=false "
+                "return_type=nil instructions=0 constants=1\n"
+                "attempt2_error: b\n"
+                "run_ok: false  return_type: nil\nerror: a\n"
+                "trace_verdict: not_the_trace -- x\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("both-failed run still reports the error", c.run_error, "a")
+    note = stopped_under_the_trace(c) or ""
+    if "not what ended this run" not in note:
+        bad.append("an exonerated trace should say so, got %r" % note[:60])
+
+    # 6) no attempt block at all (an older harness): the old suspicion stands
+    c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nrun_ok: false\nerror: e\n"
+                "---BEHAVIOR---\n  [patched dispatch a/b/c sp=d]\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    note = stopped_under_the_trace(c) or ""
+    if "suspicion, not a finding" not in note:
+        bad.append("an unsettled capture should stay a suspicion, got %r"
+                   % note[:60])
+    check("no attempts, so no claim about which run made the rows",
+          c.rows_from_failed_run, False)
+
+    print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
+    for b in bad:
+        print("  - %s" % b)
+    return bad
+
+
 if __name__ == "__main__":
     import sys
+    if "--selftest" in sys.argv:
+        raise SystemExit(1 if _selftest() else 0)
     for c in load(sys.argv[1:]):
         print(c.summary())
