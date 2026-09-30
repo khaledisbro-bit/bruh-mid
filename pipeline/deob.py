@@ -90,16 +90,24 @@ def _first_attempt_error(cap):
 
 
 def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
-                 name="harness.lua", visible_hooks=False):
+                 name="harness.lua", visible_hooks=False, standalone=False):
     """Embed the obfuscated source into the harness. The WHOLE file goes in,
-    verbatim; a truncated sample would analyse a different program."""
+    verbatim; a truncated sample would analyse a different program.
+
+    standalone=True leaves the source OUT and keeps the harness reading obf.lua
+    from the executor's own folder instead. That is worth having for one reason:
+    four times in a row a capture arrived from the harness already on disk
+    because getting a new one meant loading the script and re-running the
+    analysis, and the new harness is written at the moment the old capture is
+    being read. A standalone harness updates by replacing one file."""
     tmpl = open(os.path.join(HERE, template), encoding="utf-8").read()
-    op, cl = safe_long_bracket(src)
-    embedded = "local SOURCE\nSOURCE = " + op + "\n" + src + "\n" + cl
-    tmpl, n = re.subn(r"local SOURCE\ndo\n.*?\nend", lambda _m: embedded,
-                      tmpl, count=1, flags=re.S)
-    if n != 1:
-        raise RuntimeError("could not embed the source into the harness")
+    if not standalone:
+        op, cl = safe_long_bracket(src)
+        embedded = "local SOURCE\nSOURCE = " + op + "\n" + src + "\n" + cl
+        tmpl, n = re.subn(r"local SOURCE\ndo\n.*?\nend", lambda _m: embedded,
+                          tmpl, count=1, flags=re.S)
+        if n != 1:
+            raise RuntimeError("could not embed the source into the harness")
     # Stamp the build in, so a capture says which harness wrote it instead of
     # leaving that to be inferred from which features its output happens to have.
     tmpl, ns = re.subn(r"local HARNESS_ENGINE = 0",
@@ -116,7 +124,7 @@ def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
     if visible_hooks:
         tmpl = tmpl.replace("local HIDE_HOOKS = true",
                             "local HIDE_HOOKS = false", 1)
-    if src not in tmpl:
+    if not standalone and src not in tmpl:
         raise RuntimeError("the harness does not contain the whole source")
     path = os.path.join(outdir, name)
     open(path, "w", encoding="utf-8").write(tmpl)
@@ -251,6 +259,12 @@ def main():
     os.replace(make_harness(src, a.out, safe=True,
                             visible_hooks=a.visible_hooks),
                os.path.join(a.out, "harness_safe.lua"))
+    # A copy that carries no script and reads obf.lua from the executor's folder.
+    # Updating this package then means replacing ONE file instead of re-running
+    # the analysis to get a fresh harness - which is what went wrong four times:
+    # the capture came from the harness already on disk.
+    make_harness(src, a.out, visible_hooks=a.visible_hooks, standalone=True,
+                 name="harness_standalone.lua")
     harness = make_harness(src, a.out,
                            visible_hooks=a.visible_hooks)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
@@ -267,6 +281,14 @@ def main():
     print("              also: %s  (never patches the dispatch loop; only "
           "needed to" % os.path.join(a.out, "harness_safe.lua"))
     print("              reproduce a clean run on its own)")
+    print("              also: %s"
+          % os.path.join(a.out, "harness_standalone.lua"))
+    print("              The same harness with NO script inside it. Put your "
+          "script in your")
+    print("              executor's folder as obf.lua and run this instead. "
+          "Updating then")
+    print("              means replacing this one file - no re-analysis to get "
+          "a fresh harness.")
     # One run traces one interpreter, because patching two trips the VM's
     # integrity check. The program's tail runs inside the later ones, so a
     # harness for each is written and their captures merge as separate runs.

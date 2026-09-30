@@ -786,6 +786,12 @@ def selftest():
     import naming as _nm
     if _nm._selftest():
         ok = False
+    # The desktop app's own wiring: a button with no handler, a handler with no
+    # button, a channel the preload offers and main.js does not answer. All three
+    # are invisible in review and none of them needs the app to be launched.
+    import apptest as _app
+    if _app.selftest():
+        ok = False
     # The harness's own decision - one run or two - tested against the shipped
     # text of universal.lua rather than a description of it.
     import tracefmt as _tf

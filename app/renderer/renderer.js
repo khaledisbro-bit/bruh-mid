@@ -316,6 +316,11 @@ $('#openSafeBtn').addEventListener('click', async () => {
   await window.vm.openPath(state.outDir + '/harness_safe.lua');
 });
 
+$('#openStandaloneBtn').addEventListener('click', async () => {
+  if (!state.outDir) { alert('Start collecting first - the harnesses are written then.'); return; }
+  await window.vm.openPath(state.outDir + '/harness_standalone.lua');
+});
+
 $('#openHarnessBtn').addEventListener('click', async () => {
   if (!state.outDir) { alert('Start collecting first - the harness is written then.'); return; }
   await window.vm.openPath(state.outDir + '/harness.lua');

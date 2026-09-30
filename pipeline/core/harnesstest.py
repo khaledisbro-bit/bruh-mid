@@ -320,6 +320,40 @@ _TWO_VMS = {
 }
 
 
+def no_source_message(path=UNIVERSAL):
+    """What the harness says when it has no script to run.
+
+    The standalone copy carries no script and reads obf.lua from the executor's
+    own folder, so this is the message a person sees most often when something is
+    set up wrong. It used to be `assert(SOURCE, "no source")`, which names
+    nothing anyone can act on."""
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    if "readfile(\"obf.lua\")" not in src:
+        return ["universal.lua no longer reads obf.lua"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    g = L.globals()
+    g.readfile = L.eval("function() error('not found') end")
+    g.print = L.eval("function(s) MSG = tostring(s) end")
+    try:
+        _ok, err = L.eval("function(s) return pcall(load(s)) end")(src)
+    except Exception as exc:                          # noqa: BLE001
+        return ["the harness would not even load: %s" % exc]
+    msg = str(g.MSG or err or "")
+    bad = []
+    if msg.strip() == "no source":
+        bad.append("the no-script message is still the bare assert, which tells "
+                   "a person nothing they can act on")
+    for want in ("obf.lua", "harness.lua"):
+        if want not in msg:
+            bad.append("the no-script message should name %s, got %r"
+                       % (want, msg[:120]))
+    return bad
+
+
 def dispatch_anchor(path=UNIVERSAL):
     """Every name in the injected call must come from ONE interpreter.
 
@@ -529,7 +563,8 @@ def _declared_locals(path=UNIVERSAL):
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
-             + slice_hook(path) + op_rows(path) + dispatch_anchor(path))
+             + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
+             + no_source_message(path))
     try:
         import lupa
     except ImportError:

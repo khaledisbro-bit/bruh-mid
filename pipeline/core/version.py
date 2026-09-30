@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 48
+VERSION = 49
 
 STAGES = (
     "captures read by shape",
@@ -176,6 +176,12 @@ STAGES = (
     "a bulk list never opened among the run headers, so the headers after it are "
     "still read as headers - the slice list had swallowed the attempt lines, the "
     "error and the verdict, exactly as the probe section once did",
+    "a standalone harness that carries no script and reads obf.lua from the "
+    "executor's own folder, so updating this package means replacing one 60KB "
+    "file instead of re-running the analysis - four captures in a row came from "
+    "the harness already on disk because getting a new one was work",
+    "the no-script message naming obf.lua and where to put it, instead of an "
+    "assert that said 'no source' and nothing a person could act on",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

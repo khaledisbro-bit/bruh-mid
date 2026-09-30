@@ -109,12 +109,20 @@
                 is its own. <b>harness_safe.lua</b> is still here, but only to
                 reproduce a run with the logger left out from the start.
               </div>
+              <div class="sub" style="margin-bottom:10px">
+                <b>harness_standalone.lua</b> is the same harness with no script
+                inside it. Put your script in your executor's folder as
+                <b>obf.lua</b> and run that one instead. It is about 60KB, so
+                when a new version of this tool arrives you replace one small
+                file rather than generating a harness again.
+              </div>
               <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap">
                 <button class="btn" id="collectBtn"><svg><use href="#i-play"/></svg> Start collecting</button>
                 <button class="btn ghost" id="collectStopBtn" disabled>Stop</button>
                 <button class="btn ghost" id="findWsBtn"><svg><use href="#i-folder"/></svg> Find my executor folder</button>
                 <button class="btn ghost" id="openHarnessBtn"><svg><use href="#i-folder"/></svg> Show harness.lua</button>
                 <button class="btn ghost" id="openSafeBtn"><svg><use href="#i-shield"/></svg> Show harness_safe.lua</button>
+                <button class="btn ghost" id="openStandaloneBtn"><svg><use href="#i-folder"/></svg> Show harness_standalone.lua</button>
                 <label class="sub" style="display:flex; align-items:center; gap:6px">
                   <input type="checkbox" id="visibleHooks"> visible hooks
                 </label>

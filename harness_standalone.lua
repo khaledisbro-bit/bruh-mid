@@ -421,7 +421,7 @@ end
 -- build made it removes that inference, and the report can then say what a
 -- fresh capture would add instead of drawing a conclusion the capture cannot
 -- support.
-local HARNESS_ENGINE = 0
+local HARNESS_ENGINE = 49
 local TRACE_OPCODES = true
 -- WHICH nested interpreter to trace. Patching two at once is what tripped the
 -- VM's self-integrity check and ended the run early, so exactly one is traced
