@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 47
+VERSION = 48
 
 STAGES = (
     "captures read by shape",
@@ -156,6 +156,26 @@ STAGES = (
     "type, whether the row is there under that number as an integer, and how "
     "long the array is, which tells a key-type fault apart from an index past "
     "the end",
+    "the instruction row read from the ARRAY and the counter, which is what the "
+    "interpreter itself indexes, instead of from the loop variable this tool "
+    "guessed the name of - that variable was nil on six of nine instructions of "
+    "the real sample while the array held a full row at each of them, and the "
+    "capture reported the build failing when the fault was here",
+    "a disagreement between the array and the loop variable written down as a "
+    "limitation of this tool, never as a fact about the program",
+    "the slice watch and the prototype hook given a flag each, because sharing "
+    "one made a capture say protos_hooked: true three lines under a log saying "
+    "no prototype maker matched",
+    "every name in the injected logger taken from ONE dispatch loop, anchored on "
+    "the opcode expression and found by walking back from it: each name used to "
+    "come from the first match in the whole source, which on a one-line file "
+    "holding several interpreters is a different loop nearly every time",
+    "an injection refused outright when the instruction row is declared after "
+    "the point the logger would go, because the name is not in scope there and "
+    "Lua resolves it to a nil global",
+    "a bulk list never opened among the run headers, so the headers after it are "
+    "still read as headers - the slice list had swallowed the attempt lines, the "
+    "error and the verdict, exactly as the probe section once did",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

@@ -283,11 +283,19 @@ def _slices(lines):
     out = []
     for ln in lines:
         parts = ln.strip().split(":")
-        if len(parts) < 3:
+        # Strict about the shape. A loose reading of "anything with two colons"
+        # swallowed run headers that had landed in this section by accident and
+        # reported `attempt1_error` as a slice request, which is nonsense stated
+        # with a straight face.
+        if len(parts) != 4:
             continue
-        out.append({"accessor": parts[0], "index": _int(parts[1]),
-                    "present": parts[2] == "ok",
-                    "count": _int(parts[3]) if len(parts) > 3 else None})
+        idx, cnt = _int(parts[1]), _int(parts[3])
+        if idx is None or cnt is None or parts[2] not in ("ok", "MISSING"):
+            continue
+        if not re.match(r"^[\w.]+$", parts[0]):
+            continue
+        out.append({"accessor": parts[0], "index": idx,
+                    "present": parts[2] == "ok", "count": cnt})
     return out
 
 
@@ -482,6 +490,19 @@ def what_the_arrays_did(capture):
                      "back less than it should, not anything the interpreter "
                      "does with it.")
     notes = getattr(capture, "row_notes", None) or {}
+    # A row the harness read from the array, where its own loop variable said
+    # something else. That is worth saying out loud: it is the difference between
+    # this tool misreading the run and the run misbehaving.
+    disagreed = [pc for pc, kv in sorted(notes.items())
+                 if "hook_var_disagrees" in kv]
+    if disagreed:
+        L.append("At %d instruction(s) the dispatch loop's own variable did not "
+                 "hold the row the array holds at that number, so the row was "
+                 "read from the array instead (pc %s%s). The reading is sound; "
+                 "what it says is that this tool's hook cannot rely on that "
+                 "variable in this build, and it no longer does."
+                 % (len(disagreed), ", ".join(str(p) for p in disagreed[:8]),
+                    ", ..." if len(disagreed) > 8 else ""))
     nonrows = {pc: kv["row"] for pc, kv in notes.items() if "row" in kv}
     if nonrows:
         sample = sorted(nonrows.items())[:6]
@@ -492,26 +513,28 @@ def what_the_arrays_did(capture):
                  % (len(nonrows),
                     ", ".join("pc %d = %s" % (pc, v) for pc, v in sample)
                     + (", ..." if len(nonrows) > 6 else "")))
-        # Why the row is absent, from what the capture recorded rather than from
-        # a guess. A dumped array holding a full row at the same number is not a
-        # contradiction once the key is looked at.
+        # Why the row is absent, from what the capture recorded rather than
+        # from a guess.
         bykey = [(pc, kv) for pc, kv in sorted(notes.items())
                  if "row" in kv and "as_number" in kv]
         if bykey:
             pc, kv = bykey[0]
             if kv.get("as_number") == "present":
-                L.append("At pc %d the row is absent under the key the "
-                         "interpreter used, and PRESENT under the same number as "
-                         "an integer (the counter's type here is %s%s). The "
-                         "array is not missing the instruction - it is being "
-                         "asked for it with the wrong kind of key."
-                         % (pc, kv.get("pctype", "unknown"),
-                            ", and not integral" if "pc_not_integral" in kv
-                            else ""))
+                # This is the shape of a capture from a harness that read the
+                # wrong variable: the row is in the array and the logger saw nil.
+                # It is a fault in the harness, and calling it a fault in the
+                # build sent this work down the wrong road for several rounds.
+                L.append("At pc %d the row is PRESENT in the array under that "
+                         "number, and the harness that wrote this capture logged "
+                         "nil for it. That is this tool's own hook reading a "
+                         "variable that is not the array - not the build doing "
+                         "anything. The operands at these instructions are "
+                         "recoverable and this capture does not carry them; a "
+                         "capture from engine 48 or later reads the row from the "
+                         "array and does." % pc)
             else:
-                L.append("At pc %d the row is absent under the key the "
-                         "interpreter used AND under that number as an integer%s"
-                         ", so the instruction is genuinely not in the array. "
+                L.append("At pc %d the row is absent from the array under that "
+                         "number%s, so the instruction is genuinely not there. "
                          "The counter's type is %s. An index past the end means "
                          "the array is shorter than the program expects."
                          % (pc,
@@ -1009,11 +1032,19 @@ def _selftest():
                 "---OPCODES---\n2010;0;;0;nil;row=nil|pctype=number|"
                 "as_number=absent|arrlen=2108|arr=1\nEND_UNOBF_RESULT")
     check("both slice requests read", len(c.slices), 2)
+    # a header that lands in this section by accident is not a slice request
+    c2 = Capture("BEGIN_UNOBF_RESULT\n---SLICES---\noS:4:MISSING:3\n"
+                 "attempt1_error: :1: attempt to index nil with number\n"
+                 "trace_verdict: not_the_patches -- x\n"
+                 "counts: prints=0 loads=4 behavior=24\n"
+                 "---OPCODES---\nEND_UNOBF_RESULT")
+    check("only the real slice row is read", len(c2.slices), 1)
+    check("and it is the right one", c2.slices[0]["accessor"], "oS")
     check("the missing one is marked", c.slices[1]["present"], False)
     check("its index is kept", c.slices[1]["index"], 4)
     said = " ".join(what_the_arrays_did(c))
     for want in ("oS(4) of 3", "not in the payload it was given",
-                 "genuinely not in the array", "shorter than the program"):
+                 "genuinely not there", "shorter than the program"):
         if want not in said:
             bad.append("the slice report should say %r, got %r"
                        % (want, said[:160]))
@@ -1025,11 +1056,26 @@ def _selftest():
                 "---OPCODES---\n2010;0;;0;nil;row=nil|pctype=string|"
                 "as_number=present|arrlen=2108|arr=1\nEND_UNOBF_RESULT")
     said = " ".join(what_the_arrays_did(c))
-    if "wrong kind of key" not in said or "string" not in said:
-        bad.append("a key-type fault should be named as one, got %r"
-                   % said[:160])
-    if "genuinely not in the array" in said:
-        bad.append("a present-as-integer row must not be called absent")
+    if "own hook reading a variable" not in said:
+        bad.append("a row present in the array that the harness logged as nil "
+                   "is this tool's fault and must be named as one, got %r"
+                   % said[:200])
+    if "genuinely not there" in said:
+        bad.append("a row present in the array must not be called absent")
+
+    # 12) a capture from the fixed harness: the row came from the array and the
+    #     loop variable disagreed. The operands are real and the note is a
+    #     statement about this tool, not about the build.
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "---OPCODES---\n2010;0;7,8;0;nil;src=array|"
+                "hook_var_disagrees=nil|arr=1\nEND_UNOBF_RESULT")
+    check("the operands are read", c.rows[0]["operands"], [7, 8])
+    said = " ".join(what_the_arrays_did(c))
+    if "did not hold the row" not in said or "no longer does" not in said:
+        bad.append("a hook disagreement should be reported as this tool's "
+                   "limitation, got %r" % said[:200])
+    if "not an instruction row" in said:
+        bad.append("a row that WAS read must not be reported as absent")
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

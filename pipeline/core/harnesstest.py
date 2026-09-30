@@ -47,6 +47,7 @@ local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
 local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
 local protoN = 0
 local slices, sliceN = {}, 0
+local slicesDone = false
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
 local function realLoad(src)
   if SCEN.noload then return nil end
@@ -287,6 +288,200 @@ def slice_hook(path=UNIVERSAL):
     return bad
 
 
+# The shape the production bug needed: the row statement comes AFTER the opcode
+# expression, so the name is not in scope where the logger goes. Taking the first
+# `local X=Y[PC];` in the file finds this one anyway and injects a name Lua then
+# resolves to a nil global - which is precisely what the real sample did.
+_ROW_AFTER = ("local function I(C,P) while true do "
+              "local U=((P-1)*7919+3)%2147483647;"
+              "local L=(Q+U)%2147483647;"
+              "local R=C[P];"
+              "if ((L-U)%0x7FFFFFFF)==3 then end end end;")
+
+# Two loops SHARING the counter's name, which obfuscated output does constantly.
+# The pc name then cannot tell them apart and only position can.
+_SHARED_PC = (
+    "local function A(Ca,P) while true do local Ra=Ca[P];"
+    "local Ua=((P-1)*11+1)%2147483647;local La=(Qa+Ua)%2147483647;"
+    "if ((La-Ua)%0x7FFFFFFF)==1 then end end end;"
+    "local function B(Cb,P) while true do local Rb=Cb[P];"
+    "local Ub=((P-1)*13+2)%2147483647;local Lb=(Qb+Ub)%2147483647;"
+    "if ((Lb-Ub)%0x7FFFFFFF)==2 then end end end;")
+
+_TWO_VMS = {
+    "I1": ("local function I1(C1,P1) while true do local R1=C1[P1];"
+           "local U1=((P1-1)*1146147578+7)%2147483647;"
+           "local L1=(Q1+U1)%2147483647;"
+           "if ((L1-U1)%0x7FFFFFFF)==3 then end end end;"),
+    "I2": ("local function I2(C2,P2) while true do local R2=C2[P2];"
+           "local U2=((P2-1)*999983+11)%2147483647;"
+           "local L2=(Q2+U2)%2147483647;"
+           "if ((L2-U2)%0x7FFFFFFF)==5 then end end end;"),
+}
+
+
+def dispatch_anchor(path=UNIVERSAL):
+    """Every name in the injected call must come from ONE interpreter.
+
+    Each name used to be taken with its own match against the whole source, which
+    returns the first occurrence in the file. A build with more than one
+    interpreter on one line - which is every build of this family - then gave a
+    row variable from one loop and an injection point in another. The logger read
+    a name that was not in scope, saw nil, and the capture said the interpreter
+    had read a missing instruction. Six rounds of this work believed that.
+
+    So the opcode expression is the anchor and everything else is found by
+    walking back from it. These cases put two interpreters on one line in both
+    orders and demand that the injection never mixes them.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("-- The last match of a pattern that starts at or before")
+        b = src.index("local function patchResolver(s)")
+    except ValueError:
+        return ["universal.lua has no anchored patchDispatch to test"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    mk = L.execute("local HID = {}\nlocal PATCH_AT, PATCH_ADDED, ORIGINAL_LINES\n"
+                   + src[a:b] + "\nreturn patchDispatch\n")
+    chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
+                 " return f and 'OK' or tostring(e) end")
+    bad = []
+    for first, second in (("I1", "I2"), ("I2", "I1")):
+        text = _TWO_VMS[first] + _TWO_VMS[second]
+        got = mk(text)
+        if got is None:
+            bad.append("%s first: no dispatch loop was found at all"
+                       % first)
+            continue
+        out = got[0]
+        i = out.find("__OP(")
+        if i < 0:
+            bad.append("%s first: nothing was injected" % first)
+            continue
+        seg = out[i:i + 64]
+        n = first[-1]
+        other = "2" if n == "1" else "1"
+        if ("P%s," % n) not in seg or ("R%s," % n) not in seg:
+            bad.append("%s first: the injection does not use that loop's own "
+                       "names: %s" % (first, seg))
+        if ("P%s," % other) in seg or ("R%s," % other) in seg:
+            bad.append("%s first: the injection mixed in the OTHER loop's "
+                       "names: %s" % (first, seg))
+        verdict = chk(out)
+        if verdict != "OK":
+            bad.append("%s first: the patched source does not compile: %s"
+                       % (first, verdict))
+
+    # The row declared AFTER the injection point. Injecting there names a
+    # variable that is not in scope yet, so this must be refused outright rather
+    # than patched with a name that will read nil.
+    got = mk(_ROW_AFTER)
+    if got is not None:
+        out = got[0]
+        i = out.find("__OP(")
+        if i >= 0 and ",R," in out[i:i + 48]:
+            bad.append("a row declared after the injection point was used "
+                       "anyway, so the logger would read a nil global: %s"
+                       % out[i:i + 48])
+
+    # Two loops sharing the counter's name: only position separates them.
+    got = mk(_SHARED_PC)
+    if got is None:
+        bad.append("two loops sharing a counter name: nothing was found")
+    else:
+        out = got[0]
+        i = out.find("__OP(")
+        seg = out[i:i + 56]
+        if "Ra," not in seg:
+            bad.append("with a shared counter name the first loop's row should "
+                       "be used: %s" % seg)
+        if "Rb," in seg or "Cb)" in seg:
+            bad.append("with a shared counter name the SECOND loop's names were "
+                       "mixed in: %s" % seg)
+        if chk(out) != "OK":
+            bad.append("shared-counter patch does not compile: %s" % chk(out))
+    return bad
+
+
+def op_rows(path=UNIVERSAL):
+    """Where the instruction logger reads the row from.
+
+    It used to read the variable the dispatch loop assigns it to, matched from one
+    place in a one-line megabyte source while the call is injected at another. On
+    the real sample that variable was nil for six of nine instructions, and the
+    capture reported the interpreter reading something that was not an
+    instruction row - which was believed, and was wrong: the same capture recorded
+    a full row in the array at those very numbers.
+
+    So the row comes from the array and the counter, which is what the
+    interpreter itself indexes, and a disagreement with the loop variable is
+    recorded as a fault in this hook rather than as a fact about the program.
+    These cases pin all four outcomes.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("HID.__OP = function(pc, oc, NO, sp, top, arr)")
+        b = src.index("-- SAFE MODE:")
+    except ValueError:
+        return ["universal.lua has no __OP to test"]
+    pre = ("\nlocal ops, opn = {}, 0\nlocal HID = {}\n"
+           "local function vprev(v)\n"
+           "  local t = type(v)\n"
+           "  if t == 'string' then return '\"'..v..'\"'\n"
+           "  elseif t == 'nil' then return 'nil'\n"
+           "  elseif t == 'table' then return '{}'\n"
+           "  else return tostring(v) end\n"
+           "end\n"
+           "local ids, idn = {}, 0\n"
+           "local function arrayId(a) local k=tostring(a)\n"
+           "  if ids[k]==nil then idn=idn+1; ids[k]=idn end; return ids[k] end\n")
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    op, ops = L.execute(pre + src[a:b] + "\nreturn HID.__OP, ops\n")
+    arr = L.table_from({2010: L.table_from([111, 7, 8]),
+                        4: L.table_from([222, 418462, 1])})
+    bad = []
+
+    # the case that was being misread: loop variable nil, array row present
+    op(2010, 0, None, 0, None, arr)
+    r = ops[1]
+    if "7,8" not in r:
+        bad.append("the operands in the array were not recovered: %s" % r)
+    if "src=array" not in r:
+        bad.append("the row's source was not recorded: %s" % r)
+    if "hook_var_disagrees" not in r:
+        bad.append("a hook that read the wrong variable must say so: %s" % r)
+    if "row=nil" in r:
+        bad.append("a row that IS in the array must not be reported absent: %s"
+                   % r)
+
+    # agreeing case: no complaint
+    op(4, 297, arr[4], 0, None, arr)
+    r = ops[2]
+    if "418462,1" not in r or "hook_var_disagrees" in r:
+        bad.append("an agreeing row should be quiet: %s" % r)
+
+    # genuinely absent: still reported absent
+    op(9999, 5, None, 0, None, arr)
+    if "row=nil" not in ops[3]:
+        bad.append("a row that is really absent must be reported: %s" % ops[3])
+
+    # no array handed over: fall back to the variable and say which
+    op(3, 92, L.table_from([1, 5, 6]), 0, None, None)
+    r = ops[4]
+    if "5,6" not in r or "src=loopvar" not in r:
+        bad.append("with no array, the loop variable is the only source and the "
+                   "row should say so: %s" % r)
+    return bad
+
+
 def _headers(text):
     out = {}
     for ln in text.splitlines():
@@ -307,7 +502,7 @@ _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
                   "codeArrays", "codeArrayN", "codeMap", "codeRefs",
                   "codeOrdered", "codeRows", "missing", "missingSeen",
                   "missingN", "HARNESS_ENGINE", "protosDone", "protoSeen",
-                  "protoN", "slices", "sliceN")
+                  "protoN", "slices", "sliceN", "slicesDone")
 
 
 def _declared_locals(path=UNIVERSAL):
@@ -333,7 +528,8 @@ def _declared_locals(path=UNIVERSAL):
 
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
-    leaks = _declared_locals(path) + proto_hook(path) + slice_hook(path)
+    leaks = (_declared_locals(path) + proto_hook(path)
+             + slice_hook(path) + op_rows(path) + dispatch_anchor(path))
     try:
         import lupa
     except ImportError:

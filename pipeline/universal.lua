@@ -331,37 +331,60 @@ end
 HID.__OP = function(pc, oc, NO, sp, top, arr)
     opn = opn + 1
     if opn > 40000 then return end
+    -- WHICH value is the instruction row.
+    --
+    -- This used to log the variable the dispatch loop assigns it to, found by
+    -- matching `local NO = ARR[PC];` in the source. That variable was nil on six
+    -- of nine traced instructions, and the capture reported "the interpreter read
+    -- something that was not an instruction row" - which was then read, for
+    -- several rounds of this work, as the build failing.
+    --
+    -- It was not. The same capture also recorded that ARR[PC] held a full row at
+    -- those very numbers. So the variable is not ARR[PC] at the point the logger
+    -- reads it: the name is matched from one place in a one-line megabyte source
+    -- and the call is injected at another, and nothing guarantees the two are the
+    -- same scope, or that the counter has not moved on in between.
+    --
+    -- The array and the counter are what the interpreter itself indexes, so the
+    -- row is read from THEM. The variable is still recorded, as a cross-check,
+    -- and a disagreement is written down as a fault in this hook rather than as a
+    -- fact about the program.
+    local row, fromArray = NO, false
+    if type(arr) == "table" then
+        local n = tonumber(pc)
+        if n ~= nil then
+            local direct = rawget(arr, n)
+            if direct ~= nil then
+                row, fromArray = direct, true
+            end
+        end
+    end
     local a = {}
     local note = ""
-    if type(NO) == "table" then
-        for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
+    if type(row) == "table" then
+        for i = 2, 8 do local v = row[i]; if v ~= nil then a[#a+1] = tostring(v) end end
     else
-        -- A row that is not a table used to be recorded as a row with no
-        -- operands, which is what a real instruction with no operands looks
-        -- like. So the one moment worth seeing - the interpreter reading an
-        -- instruction that is not there, right before it indexes it and raises -
-        -- was written down as an ordinary instruction. What it was is the
-        -- evidence; say it.
-        note = "row=" .. vprev(NO)
-        -- WHY the row is not there is the whole question, and a capture that
-        -- only says "nil" cannot answer it. The dumped array had a full row at
-        -- this very number, so either the array changed (the end-of-run recheck
-        -- answers that) or the KEY is not the number it prints as. A program
-        -- counter that is a string, or a float that is not integral, indexes a
-        -- different slot from the integer of the same name and tostring hides
-        -- the difference completely.
+        note = "row=" .. vprev(row)
         note = note .. "|pctype=" .. type(pc)
         if type(arr) == "table" then
             local n = tonumber(pc)
-            local byNumber = (n ~= nil) and rawget(arr, n) or nil
-            note = note .. "|as_number=" .. ((byNumber ~= nil) and "present"
-                                             or "absent")
             if n ~= nil and n ~= math.floor(n) then
                 note = note .. "|pc_not_integral"
             end
             local ok, len = pcall(function() return #arr end)
             if ok then note = note .. "|arrlen=" .. tostring(len) end
         end
+    end
+    if fromArray then
+        -- The row came from the array. Say so, and say whether the loop's own
+        -- variable agreed: when it did not, the reading below is the array's and
+        -- the mismatch is this hook's placement, not the build's behaviour.
+        note = (note ~= "" and (note .. "|") or "") .. "src=array"
+        if NO ~= row then
+            note = note .. "|hook_var_disagrees=" .. vprev(NO)
+        end
+    elseif type(row) == "table" then
+        note = (note ~= "" and (note .. "|") or "") .. "src=loopvar"
     end
     if arr ~= nil then
         local id = arrayId(arr)
@@ -370,8 +393,7 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
     -- format: pc;opcode;operands;stackpointer;topvalue;note
     -- topvalue is the real value the VM just produced (the pending write slot),
     -- so the lifter sees actual strings/numbers flowing between opcodes. The
-    -- note carries what the instruction row itself was when it was not one, and
-    -- which array it was read from.
+    -- note says where the row was read from and what it was when it was not one.
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
                   .. ";" .. tostring(sp) .. ";" .. vprev(top)
                   .. ";" .. note
@@ -408,21 +430,54 @@ local TRACE_CHUNK = 1
 --   0 = nothing touched
 --   3 = prototype makers hooked, resolver rewritten AND dispatch loop traced
 local PATCH_LEVEL = TRACE_OPCODES and 3 or 1
-local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
+local LEVEL_NAME = { [3] = "watched+traced", [2] = "traced",
                      [1] = "resolver-only", [0] = "unpatched" }
 local patchable = 0          -- how many interpreters we have been able to patch
 local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
 local resolverDone = false   -- whether the resolver rewrite went in this round
 local protosDone = false     -- whether the prototype-maker hook went in
+-- The slice watch is a DIFFERENT edit from the prototype hook and needs its own
+-- flag. Sharing one made the capture say protos_hooked: true on a run whose
+-- behaviour log said, three lines up, that no prototype maker matched.
+local slicesDone = false
+-- The last match of a pattern that starts at or before `limit`. Anchoring
+-- matters more than it looks: a dispatch loop's names must all come from the
+-- SAME loop, and this source is one line of a megabyte with several interpreters
+-- in it, so "the first match in the file" is a different loop nearly every time.
+local function lastBefore(s, pat, limit)
+    local at, a, b, c
+    local from = 1
+    while true do
+        local i, j, x, y = s:find(pat, from)
+        if not i or i > limit then break end
+        at, a, b, c = i, x, y, j
+        from = i + 1
+    end
+    return at, a, b, c
+end
+
 local function patchDispatch(s)
-    -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
-    local nl, nu = s:match("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
+    -- The dispatch opcode expression, (NL-NU)%0x7fffffff. Everything else is
+    -- found by walking BACK from here, so every name belongs to this one loop.
+    --
+    -- Each name used to be taken with its own s:match, which returns the first
+    -- occurrence in the whole file. On the real sample that produced a row
+    -- variable from one interpreter and an injection point in another: the
+    -- logger then read a name that was not in scope, saw nil, and the capture
+    -- reported the interpreter reading a missing instruction. It was reading the
+    -- wrong variable. This is that bug's root, and the fix is the shape the
+    -- Luraph v15 devirtualizer's find_dispatchers already has - it takes op, arr
+    -- and pc from a single statement in a single scope, which is the whole point.
+    -- find returns start, END, then the captures. Reading it as start, cap1,
+    -- cap2 put a byte offset where a variable name belongs.
+    local opAt, _opEnd, nl, nu = s:find("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
     if not nl then return nil end
     -- program counter from NU's own assignment: local NU=((PC-1)*<digits>...
-    local pc = s:match("local " .. nu .. "=%(%((%w+)%-1%)%*%d+")
+    local _, pc = lastBefore(s, "local " .. nu .. "=%(%((%w+)%-1%)%*%d+", opAt)
     if not pc then return nil end
     -- instruction row NO from the loop top: local NO = CODE[PC];
-    local no, code = s:match("local (%w+)=(%w+)%[" .. pc .. "%];")
+    local rowAt, no, code = lastBefore(s, "local (%w+)=(%w+)%[" .. pc .. "%];",
+                                       opAt)
     if not no then return nil end
     -- register array + stack pointer from the register-write-buffer flush the
     -- handlers share:  if n>=2 then YL[Ym-1]=NN end  -> capture YL and Ym
@@ -446,10 +501,17 @@ local function patchDispatch(s)
     local topexpr = ny or ((arr and sp ~= "0")
                            and ("(" .. arr .. " and " .. arr .. "[" .. sp .. "])"))
                        or "nil"
-    -- inject the logger right after the NL assignment `local NL=...;`
+    -- inject the logger right after THIS loop's NL assignment. Taking the first
+    -- `local NL=` in the file put the call in another interpreter entirely,
+    -- where the row variable this patch names does not exist.
     local mark = "local " .. nl .. "="
-    local i = s:find(mark, 1, true); if not i then return nil end
+    local i = lastBefore(s, mark:gsub("[%-%[%]%(%)%.%+%*%?%^%$%%]", "%%%0"),
+                         opAt)
+    if not i then return nil end
     local j = s:find(";", i + #mark, true); if not j then return nil end
+    -- The row must be read BEFORE the logger runs, or the name is not in scope
+    -- yet and Lua resolves it to a nil global - which is exactly what happened.
+    if rowAt > j then return nil end
     -- The trace only shows instructions that RAN. The array they are read
     -- from holds every instruction the program has, including the ones this
     -- run never reached, and reachability, branch targets and real coverage
@@ -631,7 +693,7 @@ env.loadstring = function(src, ...)
         local okS, patchedS, sn = pcall(patchSlices, src)
         if okS and patchedS then
             src = patchedS
-            protosDone = true
+            slicesDone = true
             behavior[#behavior+1] = "  [watching slice accessor -> " .. tostring(sn) .. "]"
         else
             behavior[#behavior+1] = "  [no slice accessor matched]"
@@ -961,6 +1023,7 @@ local function runPayload()
     dispatchDone = false
     resolverDone = false
     protosDone = false
+    slicesDone = false
     patchable = 0
     -- The line shield corrects for an injection. On a round where the injection
     -- is not going in, leaving it set would answer the payload's questions about
@@ -1006,12 +1069,13 @@ local function runPayload()
     rec.applied_dispatch = dispatchDone
     rec.applied_resolver = resolverDone
     rec.applied_protos = protosDone
+    rec.applied_slices = slicesDone
     rec.patchable = patchable
     -- The round's name comes from what was APPLIED, not from what was asked for.
     -- A level-2 round whose dispatch hook never matched this build is a
     -- resolver-only round, and calling it "traced" would put an edit in the
     -- record that is not in the chunk.
-    rec.mode = (protosDone and LEVEL_NAME[3])
+    rec.mode = ((protosDone or slicesDone) and LEVEL_NAME[3])
                or (dispatchDone and LEVEL_NAME[2])
                or (resolverDone and LEVEL_NAME[1])
                or LEVEL_NAME[0]
@@ -1029,8 +1093,13 @@ while not last.ok do
     -- the next round repeats this one and reads as evidence that it is not the
     -- patches.
     local step
-    if last.applied_protos then
-        step = "the prototype-maker hook"
+    if last.applied_protos or last.applied_slices then
+        -- Name what was actually in the chunk, not the level's label. Both of
+        -- these live at level 3 and either can be the only one that went in.
+        local parts = {}
+        if last.applied_slices then parts[#parts+1] = "the slice watch" end
+        if last.applied_protos then parts[#parts+1] = "the prototype-maker hook" end
+        step = table.concat(parts, " and ")
         PATCH_LEVEL = 2
     elseif last.applied_dispatch then
         step = "the dispatch logger"
@@ -1065,7 +1134,8 @@ if not first.loaded then
     hid = "untested (the payload did not compile)"
 elseif #attempts > 1 then
     hid = table.concat(chain, "->")
-elseif first.level >= 2 and not first.applied_dispatch and not first.applied_protos then
+elseif first.level >= 2 and not first.applied_dispatch
+       and not first.applied_protos and not first.applied_slices then
     hid = "trace_requested_but_unpatched"
 else
     hid = first.mode
@@ -1081,23 +1151,19 @@ say("harness_id: " .. hid)
 say("dispatch_patched: " .. tostring(first.applied_dispatch))
 say("resolver_patched: " .. tostring(first.applied_resolver))
 say("protos_hooked: " .. tostring(first.applied_protos))
+say("slices_hooked: " .. tostring(first.applied_slices))
 say("protos_seen: " .. protoN)
--- Every slice the payload asked the accessor for, and whether it was there. The
--- LAST line of this is the request the run died on.
 say("slice_requests: " .. sliceN)
-if #slices > 0 then
-    say("---SLICES---")
-    for i = 1, math.min(#slices, 600) do say(slices[i]) end
-end
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
     say(("attempt%d: mode=%s level=%d loaded=%s run_ok=%s return_type=%s "
-         .. "instructions=%d constants=%d resolver=%s dispatch=%s protos=%s"):format(
+         .. "instructions=%d constants=%d resolver=%s dispatch=%s protos=%s "
+         .. "slices=%s"):format(
         i, tostring(a.mode), a.level, tostring(a.loaded), tostring(a.ok),
         tostring(a.rtype), a.rows_added, a.const_added,
         tostring(a.applied_resolver), tostring(a.applied_dispatch),
-        tostring(a.applied_protos)))
+        tostring(a.applied_protos), tostring(a.applied_slices)))
     if a.err then say("attempt" .. i .. "_error: " .. tostring(a.err)) end
 end
 -- The headline outcome is the best attempt, so a capture whose later round
@@ -1116,7 +1182,8 @@ if #attempts > 1 then
         for i = 2, #attempts do
             if attempts[i] == best then prev = attempts[i - 1] break end
         end
-        local edit = (prev.applied_protos and "the prototype-maker hook")
+        local edit = (prev.applied_slices and "the slice watch")
+                     or (prev.applied_protos and "the prototype-maker hook")
                      or (prev.applied_dispatch and "the dispatch logger")
                      or "the resolver rewrite"
         say("trace_verdict: patch_caught -- the payload raised at patch level "
@@ -1231,6 +1298,15 @@ if codeRows then
         end
     end
     say("code_rows_written=" .. said)
+end
+-- Every slice the payload asked the accessor for, and whether it was there.
+-- This is a LIST, so it goes down here with the other lists. Opening its section
+-- up among the run headers meant every header after it - the attempt lines, the
+-- error, the verdict - landed inside it and was never read as a header at all.
+-- The probe section had done exactly this once before.
+if #slices > 0 then
+    say("---SLICES---")
+    for i = 1, math.min(#slices, 600) do say(slices[i]) end
 end
 say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
 pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)
