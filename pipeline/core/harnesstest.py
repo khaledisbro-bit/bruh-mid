@@ -46,6 +46,7 @@ local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
                      [1] = "resolver-only", [0] = "unpatched" }
 local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
 local protoN = 0
+local slices, sliceN = {}, 0
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
 local function realLoad(src)
   if SCEN.noload then return nil end
@@ -216,6 +217,76 @@ def proto_hook(path=UNIVERSAL):
     return bad
 
 
+# The accessor this family hands slices out through. The shape is what matters:
+# a one-parameter local function that indexes a captured table by that parameter
+# and returns nil when the entry is absent. The caller then indexes the nil, and
+# the engine says "attempt to index nil with number".
+_SLICE_CASES = {
+    "the real shape": (
+        "local function oS(ow)local oM=oz[ow];if not oM then return nil end;"
+        "return {oD,oM[2],oM[1]}end", True),
+    # a one-parameter function that does NOT guard is not this accessor
+    "no nil guard": (
+        "local function f(i)local m=t[i];return m end", False),
+    # the guard must be on the value taken from the table, not on something else
+    "guard on another value": (
+        "local function f(i)local m=t[i];if not other then return nil end;"
+        "return m end", False),
+}
+
+
+def slice_hook(path=UNIVERSAL):
+    """The slice-accessor watch, checked on the shape it exists for.
+
+    Also checked as a PURE INSERTION: the patched text must differ from the
+    original by the injected call and by nothing else. An injection that rewrote
+    any of the surrounding text would be changing the program it is there to
+    observe, and on a one-line megabyte source no one would see it happen.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("local slices, sliceN = {}, 0")
+        b = src.index("local function patchProtos(s)")
+    except ValueError:
+        return ["universal.lua has no patchSlices to test"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    mk = L.execute(src[a:b].replace("HID.__SLICE", "local _unused")
+                   + "\nreturn patchSlices\n")
+    chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
+                 " return f and 'OK' or tostring(e) end")
+    bad = []
+    for name, (text, should) in _SLICE_CASES.items():
+        got = mk(text)
+        if should and got is None:
+            bad.append("%s: the accessor was not matched, so no slice request "
+                       "would be recorded" % name)
+            continue
+        if not should:
+            if got is not None:
+                bad.append("%s: matched something that is not this accessor"
+                           % name)
+            continue
+        out = got[0]
+        if "__SLICE(" not in out:
+            bad.append("%s: nothing was injected" % name)
+            continue
+        verdict = chk(out)
+        if verdict != "OK":
+            bad.append("%s: the patched source does not compile: %s"
+                       % (name, verdict))
+        # pure insertion: deleting the injected call must give the original back
+        import re as _re
+        undone = _re.sub(r"if __SLICE then __SLICE\([^)]*\)end;", "", out)
+        if undone != text:
+            bad.append("%s: the injection changed text around it. original %r, "
+                       "recovered %r" % (name, text[:60], undone[:60]))
+    return bad
+
+
 def _headers(text):
     out = {}
     for ln in text.splitlines():
@@ -236,7 +307,7 @@ _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
                   "codeArrays", "codeArrayN", "codeMap", "codeRefs",
                   "codeOrdered", "codeRows", "missing", "missingSeen",
                   "missingN", "HARNESS_ENGINE", "protosDone", "protoSeen",
-                  "protoN")
+                  "protoN", "slices", "sliceN")
 
 
 def _declared_locals(path=UNIVERSAL):
@@ -262,7 +333,7 @@ def _declared_locals(path=UNIVERSAL):
 
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
-    leaks = _declared_locals(path) + proto_hook(path)
+    leaks = _declared_locals(path) + proto_hook(path) + slice_hook(path)
     try:
         import lupa
     except ImportError:
@@ -303,9 +374,9 @@ def selftest(path=UNIVERSAL):
 
 if __name__ == "__main__":
     probs, ran = selftest()
-    print("harness decision self-test: %d case(s) + %d proto case(s), "
+    print("harness decision self-test: %d case(s) + %d proto + %d slice, "
           "%d problem(s)%s"
-          % (len(CASES), len(_PROTO_CASES), len(probs),
+          % (len(CASES), len(_PROTO_CASES), len(_SLICE_CASES), len(probs),
              "" if ran else "  [NOT RUN]"))
     for p in probs:
         print("  - %s" % p)

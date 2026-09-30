@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 46
+VERSION = 47
 
 STAGES = (
     "captures read by shape",
@@ -148,6 +148,14 @@ STAGES = (
     "the same substitution applied to the readable rendering and to the one the "
     "behaviour comparison executes, so a rename cannot make the comparison "
     "measure the rename",
+    "the deserialiser's slice accessor watched, found by its SHAPE - a "
+    "one-parameter local function that indexes a captured table by that "
+    "parameter and returns nil when the entry is absent - so the request a run "
+    "dies on is named instead of guessed at",
+    "an absent instruction row explained rather than reported: the counter's "
+    "type, whether the row is there under that number as an integer, and how "
+    "long the array is, which tells a key-type fault apart from an index past "
+    "the end",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

@@ -343,6 +343,25 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
         -- was written down as an ordinary instruction. What it was is the
         -- evidence; say it.
         note = "row=" .. vprev(NO)
+        -- WHY the row is not there is the whole question, and a capture that
+        -- only says "nil" cannot answer it. The dumped array had a full row at
+        -- this very number, so either the array changed (the end-of-run recheck
+        -- answers that) or the KEY is not the number it prints as. A program
+        -- counter that is a string, or a float that is not integral, indexes a
+        -- different slot from the integer of the same name and tostring hides
+        -- the difference completely.
+        note = note .. "|pctype=" .. type(pc)
+        if type(arr) == "table" then
+            local n = tonumber(pc)
+            local byNumber = (n ~= nil) and rawget(arr, n) or nil
+            note = note .. "|as_number=" .. ((byNumber ~= nil) and "present"
+                                             or "absent")
+            if n ~= nil and n ~= math.floor(n) then
+                note = note .. "|pc_not_integral"
+            end
+            local ok, len = pcall(function() return #arr end)
+            if ok then note = note .. "|arrlen=" .. tostring(len) end
+        end
     end
     if arr ~= nil then
         local id = arrayId(arr)
@@ -500,6 +519,48 @@ HID.__PROTO = function(p)
     pcall(function() HID.__CODE(p) end)
 end
 
+-- The accessor that hands out slices, and the request that kills the run.
+--
+-- This family deserialises its payload into a table of (length, offset) pairs
+-- and hands out a small descriptor per index through a one-parameter closure:
+--
+--   local function S(i) local m = TBL[i]; if not m then return nil end
+--                       return {DATA, m[2], m[1]} end
+--
+-- The `return nil` is the interesting part. A caller that asks for an index the
+-- data does not carry gets nil and then indexes it - S(4)[1] - and the engine
+-- says "attempt to index nil with number" from line 1 of the chunk. That is the
+-- shape of the error this build dies with, and nothing in the capture could say
+-- WHICH index was asked for, because nothing was watching the accessor.
+--
+-- The pattern is the accessor's SHAPE, not its names: a local function of one
+-- parameter whose body indexes a captured table by that parameter and returns
+-- nil when the entry is absent. Lua back-references tie the three uses of the
+-- parameter together, so no name appears here either.
+local slices, sliceN = {}, 0
+HID.__SLICE = function(name, idx, present, count)
+    sliceN = sliceN + 1
+    if sliceN > 2000 then return end
+    slices[#slices+1] = tostring(name) .. ":" .. tostring(idx) .. ":"
+                        .. (present and "ok" or "MISSING") .. ":"
+                        .. tostring(count)
+end
+
+local function patchSlices(s)
+    local hits = 0
+    local out = s:gsub(
+        "local function (%w+)%((%w+)%)local (%w+)=(%w+)%[%2%];if not %3 then return nil end",
+        function(fn, arg, v, tbl)
+            hits = hits + 1
+            return ("local function %s(%s)local %s=%s[%s];"
+                    .. "if __SLICE then __SLICE(%q,%s,%s~=nil,#%s)end;"
+                    .. "if not %s then return nil end"):format(
+                fn, arg, v, tbl, arg, fn, arg, v, tbl, v)
+        end)
+    if hits == 0 then return nil end
+    return out, hits .. " accessor(s)"
+end
+
 local function patchProtos(s)
     -- The self-indexed variable: X[X[...]]. Lua patterns carry back-references,
     -- so this is one match and no name appears in it.
@@ -512,7 +573,12 @@ local function patchProtos(s)
     local out = s
     for i = 1, #order do
         local nm = order[i]
-        -- the nearest function header whose parameter list carries that name
+        -- The ENCLOSING function header, found by walking forward and keeping
+        -- the last one that both declares this name AND starts before the place
+        -- the name is used that way. Keeping the last match anywhere in the file
+        -- instead picked a function further down that happens to share the
+        -- parameter name, which on a one-line megabyte source is every time.
+        local at = out:find(nm .. "%[" .. nm .. "%[")
         local best
         local from = 1
         while true do
@@ -522,6 +588,7 @@ local function patchProtos(s)
             local a, b, params = out:find("function[%s]*[%w_.:]*[%s]*%(([^)]*)%)",
                                           from)
             if not a then break end
+            if at and a > at then break end
             local found = false
             for tok in params:gmatch("[%a_][%w_]*") do
                 if tok == nm then found = true break end
@@ -561,6 +628,14 @@ env.loadstring = function(src, ...)
     -- functions this run never calls are seen too.
     local src0 = src
     if PATCH_LEVEL >= 3 then
+        local okS, patchedS, sn = pcall(patchSlices, src)
+        if okS and patchedS then
+            src = patchedS
+            protosDone = true
+            behavior[#behavior+1] = "  [watching slice accessor -> " .. tostring(sn) .. "]"
+        else
+            behavior[#behavior+1] = "  [no slice accessor matched]"
+        end
         local okP, patchedP, pn = pcall(patchProtos, src)
         if okP and patchedP then
             src = patchedP
@@ -1007,6 +1082,13 @@ say("dispatch_patched: " .. tostring(first.applied_dispatch))
 say("resolver_patched: " .. tostring(first.applied_resolver))
 say("protos_hooked: " .. tostring(first.applied_protos))
 say("protos_seen: " .. protoN)
+-- Every slice the payload asked the accessor for, and whether it was there. The
+-- LAST line of this is the request the run died on.
+say("slice_requests: " .. sliceN)
+if #slices > 0 then
+    say("---SLICES---")
+    for i = 1, math.min(#slices, 600) do say(slices[i]) end
+end
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]

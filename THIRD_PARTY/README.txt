@@ -22,6 +22,13 @@ caomod2077/Deobfuscator-Luraph-V15  (MIT, LICENSE beside this file)
     plural, and taking the last segment of a string argument so
     GetService("Players") names its result `players`. Their names.py.
 
+  TAKEN, in pipeline/universal.lua (patchSlices / HID.__SLICE):
+    Their issue #6 diagnosis - that builds of this family decrypt or deserialise
+    incrementally and that the operand arrays "remain nil until earlier decrypt
+    instructions execute" - is what pointed at the deserialiser's accessor as the
+    thing worth watching. The accessor is matched here by its own shape, not by
+    anything they wrote.
+
   NOT TAKEN:
     names.py's tables. METHOD_NAMES (GetChildren -> children), GLOBAL_CALLS
     (tostring -> str), DATATYPES, SIGNAL_PARAMS - about a hundred rows of "when

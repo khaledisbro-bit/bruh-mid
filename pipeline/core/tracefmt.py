@@ -57,6 +57,7 @@ class Capture:
         self.harness_engine = _int(self.headers.get("harness_engine"))
         self.code_arrays = _int(self.headers.get("code_arrays"))
         self.protos_seen = _int(self.headers.get("protos_seen"))
+        self.slices = _slices(self.sections.get("SLICES", []))
         self.recheck = _recheck(self.body)
         self.env_missing = [l.strip() for l in
                             self.sections.get("ENVMISSING", []) if l.strip()]
@@ -273,6 +274,23 @@ def _row_notes(body):
     return out
 
 
+def _slices(lines):
+    """Every slice the payload asked the deserialiser's accessor for.
+
+    Rows are name:index:ok|MISSING:count. The accessor returns nil for an index
+    the data does not carry, and its caller indexes that nil straight away - so a
+    MISSING row is the request a run of this family dies on, named at last."""
+    out = []
+    for ln in lines:
+        parts = ln.strip().split(":")
+        if len(parts) < 3:
+            continue
+        out.append({"accessor": parts[0], "index": _int(parts[1]),
+                    "present": parts[2] == "ok",
+                    "count": _int(parts[3]) if len(parts) > 3 else None})
+    return out
+
+
 def _int(x):
     try:
         return int(x)
@@ -440,6 +458,29 @@ def what_the_arrays_did(capture):
                  "never reached has no readable row at all."
                  % (r["arr"], r["changed"], r["appeared"],
                     r["rows_first"], r["rows_last"]))
+    sl = getattr(capture, "slices", None) or []
+    if sl:
+        missing = [r for r in sl if not r["present"]]
+        counts = [r["count"] for r in sl if r["count"] is not None]
+        L.append("The deserialiser's accessor was watched: %d request(s), %d of "
+                 "them for an index the data does not carry%s."
+                 % (len(sl), len(missing),
+                    (", out of %d entries" % counts[0]) if counts else ""))
+        if missing:
+            first = missing[0]
+            L.append("The first request that came back empty was %s(%s)%s. The "
+                     "accessor returns nil there and its caller indexes that nil "
+                     "immediately, which is the \"attempt to index nil with "
+                     "number\" this run reports. So the run does not die of a "
+                     "guard or a check: it asks for a slice that is not in the "
+                     "payload it was given."
+                     % (first["accessor"], first["index"],
+                        (" of %d" % first["count"]) if first["count"] else ""))
+            L.append("Where to look next: what produced the payload. An index "
+                     "past the end means the data arrived shorter than the "
+                     "program expects - a decode or decompress step that gave "
+                     "back less than it should, not anything the interpreter "
+                     "does with it.")
     notes = getattr(capture, "row_notes", None) or {}
     nonrows = {pc: kv["row"] for pc, kv in notes.items() if "row" in kv}
     if nonrows:
@@ -451,6 +492,32 @@ def what_the_arrays_did(capture):
                  % (len(nonrows),
                     ", ".join("pc %d = %s" % (pc, v) for pc, v in sample)
                     + (", ..." if len(nonrows) > 6 else "")))
+        # Why the row is absent, from what the capture recorded rather than from
+        # a guess. A dumped array holding a full row at the same number is not a
+        # contradiction once the key is looked at.
+        bykey = [(pc, kv) for pc, kv in sorted(notes.items())
+                 if "row" in kv and "as_number" in kv]
+        if bykey:
+            pc, kv = bykey[0]
+            if kv.get("as_number") == "present":
+                L.append("At pc %d the row is absent under the key the "
+                         "interpreter used, and PRESENT under the same number as "
+                         "an integer (the counter's type here is %s%s). The "
+                         "array is not missing the instruction - it is being "
+                         "asked for it with the wrong kind of key."
+                         % (pc, kv.get("pctype", "unknown"),
+                            ", and not integral" if "pc_not_integral" in kv
+                            else ""))
+            else:
+                L.append("At pc %d the row is absent under the key the "
+                         "interpreter used AND under that number as an integer%s"
+                         ", so the instruction is genuinely not in the array. "
+                         "The counter's type is %s. An index past the end means "
+                         "the array is shorter than the program expects."
+                         % (pc,
+                            (" (the array holds %s)" % kv["arrlen"])
+                            if "arrlen" in kv else "",
+                            kv.get("pctype", "unknown")))
     arrs = sorted({kv["arr"] for kv in notes.values() if "arr" in kv})
     if len(arrs) > 1:
         L.append("The traced instructions came from %d different arrays (%s), "
@@ -673,6 +740,7 @@ def combine(caps):
         base.harness_engine = _int(base.headers.get("harness_engine"))
         base.code_arrays = _int(base.headers.get("code_arrays"))
         base.protos_seen = _int(base.headers.get("protos_seen"))
+        base.slices = _slices(base.sections.get("SLICES", []))
         base.recheck = _recheck(base.body)
         base.env_missing = _union(base.env_missing, other.env_missing,
                                   lambda x: x)
@@ -932,6 +1000,36 @@ def _selftest():
     check("no recheck claimed", c.recheck, [])
     check("no environment claim", env_did_not_have(c), [])
     check("no array claim", what_the_arrays_did(c), [])
+
+    # 11) the slice log and the key probe - the two facts that turn "it died
+    #     indexing nil" into a named request
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "slice_requests: 2\ncode_arrays=1\n"
+                "---SLICES---\noS:1:ok:3\noS:4:MISSING:3\n"
+                "---OPCODES---\n2010;0;;0;nil;row=nil|pctype=number|"
+                "as_number=absent|arrlen=2108|arr=1\nEND_UNOBF_RESULT")
+    check("both slice requests read", len(c.slices), 2)
+    check("the missing one is marked", c.slices[1]["present"], False)
+    check("its index is kept", c.slices[1]["index"], 4)
+    said = " ".join(what_the_arrays_did(c))
+    for want in ("oS(4) of 3", "not in the payload it was given",
+                 "genuinely not in the array", "shorter than the program"):
+        if want not in said:
+            bad.append("the slice report should say %r, got %r"
+                       % (want, said[:160]))
+
+    # the other way round: absent under the interpreter's key, present as an
+    # integer. That is a key-type fault, not a missing instruction, and saying
+    # the wrong one of those sends the reader after the wrong thing entirely.
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "---OPCODES---\n2010;0;;0;nil;row=nil|pctype=string|"
+                "as_number=present|arrlen=2108|arr=1\nEND_UNOBF_RESULT")
+    said = " ".join(what_the_arrays_did(c))
+    if "wrong kind of key" not in said or "string" not in said:
+        bad.append("a key-type fault should be named as one, got %r"
+                   % said[:160])
+    if "genuinely not in the array" in said:
+        bad.append("a present-as-integer row must not be called absent")
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:
