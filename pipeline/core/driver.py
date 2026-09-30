@@ -212,6 +212,17 @@ class Analysis:
         _f, self.in_step, self.unaccounted = verify.fidelity(
             capture.calls, self.calls)
 
+    def _harness_age_lines(self):
+        """Which harness wrote this capture, said before anything is read from it.
+
+        A report that does not say this invites the reader - me included - to
+        treat an old capture as evidence about the current code.
+        """
+        note = tracefmt.which_harness(self.capture, version.VERSION)
+        if not note:
+            return []
+        return ["WHICH HARNESS WROTE THIS", "  " + note, ""]
+
     def _early_stop_lines(self):
         """The warning that the rows below are not a whole program.
 
@@ -295,7 +306,7 @@ class Analysis:
              "=" * 46,
              "produced by %s" % version.banner(),
              "",
-             ] + self._early_stop_lines() + [
+             ] + self._harness_age_lines() + self._early_stop_lines() + [
              ] + self._retry_records_lines() + [
              "captured instructions      %d" % len(self.capture.rows),
              "interpreter machinery      %d record(s) folded away"
@@ -433,7 +444,8 @@ class Analysis:
             "PROGRAM_SIZE.txt": staticcode.report(
                 self.capture.code, self.program, self.cfg),
             "EXPOSURE.txt": exposure.report(
-                getattr(self.capture, "probe", {})),
+                getattr(self.capture, "probe", {}),
+                _tri(self.capture.headers.get("hooks_hidden"))),
             "METATABLES.txt": metatab.report(self.meta),
             "CALL_SITES.txt": dispatch.report(self.sites),
             "REPEATED_CALLS.txt": probes.report(
@@ -449,6 +461,19 @@ class Analysis:
             with open(os.path.join(outdir, name), "w", encoding="utf-8") as f:
                 f.write(body if body.endswith("\n") else body + "\n")
         return sorted(files)
+
+
+def _tri(v):
+    """A header's true/false, or None when the capture does not say. An absent
+    answer is not a false one."""
+    if v is None:
+        return None
+    t = str(v).strip().lower()
+    if t.startswith("true"):
+        return True
+    if t.startswith("false"):
+        return False
+    return None
 
 
 def merge_summary(analyses):

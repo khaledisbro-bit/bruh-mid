@@ -285,6 +285,14 @@ end
 -- SAFE MODE: when false, the opcode-dispatch trace is not applied at all, so
 -- the VM's self-integrity check is never disturbed and the run finishes clean
 -- (constants + behavior only). deob.py --safe sets this to false.
+-- Which build of this package wrote this harness. deob.py stamps it in. Three
+-- captures in a row were read as evidence about the CURRENT code when they came
+-- from the harness the user already had on disk, which is the normal case: the
+-- new one arrives after they have run the old one. A capture that says which
+-- build made it removes that inference, and the report can then say what a
+-- fresh capture would add instead of drawing a conclusion the capture cannot
+-- support.
+local HARNESS_ENGINE = 0
 local TRACE_OPCODES = true
 -- WHICH nested interpreter to trace. Patching two at once is what tripped the
 -- VM's self-integrity check and ended the run early, so exactly one is traced
@@ -788,6 +796,12 @@ else
     hid = first.mode
 end
 say("harness: universal")
+say("harness_engine: " .. tostring(HARNESS_ENGINE))
+-- Whether the hooks were hidden behind the environment's metatable this run.
+-- With them visible on purpose, two of the exposure checks come back EXPOSED by
+-- design, and a report that cannot tell that apart from a leak reads the
+-- requested mode as a defect.
+say("hooks_hidden: " .. tostring(HIDE_HOOKS))
 say("harness_id: " .. hid)
 say("dispatch_patched: " .. tostring(first.applied_dispatch))
 say("resolver_patched: " .. tostring(first.applied_resolver))

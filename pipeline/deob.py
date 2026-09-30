@@ -100,6 +100,13 @@ def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
                       tmpl, count=1, flags=re.S)
     if n != 1:
         raise RuntimeError("could not embed the source into the harness")
+    # Stamp the build in, so a capture says which harness wrote it instead of
+    # leaving that to be inferred from which features its output happens to have.
+    tmpl, ns = re.subn(r"local HARNESS_ENGINE = 0",
+                       "local HARNESS_ENGINE = %d" % version.VERSION, tmpl,
+                       count=1)
+    if ns != 1:
+        raise RuntimeError("the harness template has no engine stamp to set")
     if safe:
         tmpl = tmpl.replace("local TRACE_OPCODES = true",
                             "local TRACE_OPCODES = false", 1)

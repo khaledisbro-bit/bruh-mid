@@ -54,6 +54,7 @@ class Capture:
         self.probe = _probe(self.sections)
         self.attempts = _attempts(self.body)
         self.harness_id = self.headers.get("harness_id")
+        self.harness_engine = _int(self.headers.get("harness_engine"))
         self.trace_verdict = self.headers.get("trace_verdict")
         self.run_error = _run_error(self.headers, self.body)
         self.rows_from_failed_run = _rows_from_failed_run(self.attempts,
@@ -347,6 +348,41 @@ def stopped_under_the_trace(capture):
             "that or from a run where the patch never went in." % len(capture.rows))
 
 
+def which_harness(capture, current):
+    """Whether this capture was written by the harness in this package.
+
+    It normally is not, and that is not anyone's mistake: the new harness is
+    written at the same moment the report is read, so the capture in hand came
+    from the copy already on disk. Three captures in a row were read as evidence
+    about the current code when they came from an older harness, and what the
+    report concluded from them was limited by a harness that had already been
+    replaced.
+
+    So the capture says which build wrote it, and this says what that means. It
+    never guesses from which features the output happens to have."""
+    got = getattr(capture, "harness_engine", None)
+    if got == current:
+        return None
+    if got is None:
+        return ("This capture was written by a harness older than the one in "
+                "this package (it does not stamp its build, which harnesses "
+                "from engine 42 on do). Everything below is read from it as it "
+                "stands - but where it says a question is not settled, the "
+                "current harness.lua may already settle it. Re-run the "
+                "harness.lua beside this report before concluding anything "
+                "about what the harness could not reach.")
+    if got < current:
+        return ("This capture was written by engine %d; this package is engine "
+                "%d. It is read as it stands, and nothing below is invented to "
+                "fill the gap - but a question this capture leaves open may "
+                "already be answered by the harness.lua beside this report."
+                % (got, current))
+    return ("This capture was written by engine %d, which is NEWER than this "
+            "package (engine %d). It may hold sections this reader does not "
+            "know about; those are ignored rather than guessed at."
+            % (got, current))
+
+
 def _probe(sections):
     """What the harness could still tell about itself.
 
@@ -505,6 +541,7 @@ def combine(caps):
         base.body = base.body + "\n" + other.body
         base.attempts = _attempts(base.body)
         base.harness_id = base.headers.get("harness_id")
+        base.harness_engine = _int(base.headers.get("harness_engine"))
         base.trace_verdict = base.headers.get("trace_verdict")
         base.run_error = _run_error(base.headers, base.body)
         base.rows_from_failed_run = _rows_from_failed_run(base.attempts,

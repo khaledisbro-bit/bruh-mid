@@ -110,7 +110,9 @@ class Emitter:
         # early. A fixture that is easier to parse than the thing it stands for
         # tests the wrong file.
         out = ["---PROBE---", "clock_is_monotonic\ttrue", "---RUN---",
-               "harness: reference", "harness_id: untraced",
+               "harness: reference",
+               "harness_engine: %d" % __import__("version").VERSION,
+               "harness_id: untraced",
                "dispatch_patched: false", "attempts: 1",
                "attempt1: mode=untraced loaded=true run_ok=true "
                "return_type=nil instructions=%d constants=%d"

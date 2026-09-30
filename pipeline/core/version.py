@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 42
+VERSION = 43
 
 STAGES = (
     "captures read by shape",
@@ -109,6 +109,10 @@ STAGES = (
     "each round's constants counted raw rather than from the de-duplicated "
     "list, so a later round is not reported as having got nowhere when it got "
     "exactly as far as the first",
+    "each capture stamped with the build of the harness that wrote it, and the "
+    "report saying when that is not this one, because the new harness is "
+    "written at the moment the old capture is read and three in a row were read "
+    "as evidence about code that had already been replaced",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "
