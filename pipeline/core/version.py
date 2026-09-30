@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 45
+VERSION = 46
 
 STAGES = (
     "captures read by shape",
@@ -138,6 +138,16 @@ STAGES = (
     "devirtualizer (MIT) and not the literal variable names it also carries",
     "four patch levels bisected rather than two, so the outermost edit is taken "
     "back out first and an edit that never went in is never stepped over",
+    "a variable named from the value it holds, by rule rather than from a table "
+    "of API names: a verb stripped off a method, the last segment of a string "
+    "argument, a plural made singular - so GetChildren becomes children because "
+    "Get is a verb, and names nobody wrote down are reached too",
+    "a name refused where the value says nothing, including the emitter's own "
+    "placeholder for an operation it could not read, because a name that "
+    "pretends to know is worse than the number it replaces",
+    "the same substitution applied to the readable rendering and to the one the "
+    "behaviour comparison executes, so a rename cannot make the comparison "
+    "measure the rename",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

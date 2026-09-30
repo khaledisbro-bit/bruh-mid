@@ -35,6 +35,7 @@ import frames          # noqa: E402
 import dispatch        # noqa: E402
 import induct          # noqa: E402
 import metatab         # noqa: E402
+import naming          # noqa: E402
 import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
@@ -205,6 +206,13 @@ class Analysis:
             counters=self.counters)
         self.runner.run()
         self.runnable = self.runner.runnable_text()
+        # Names derived from the values the variables hold. Applied to BOTH
+        # renderings with the same substitution, so the readable one and the one
+        # the behaviour comparison actually executes stay the same program - a
+        # rename that landed on only one of them would make the comparison
+        # measure the rename.
+        self.source, self.names = naming.rename(self.source)
+        self.runnable, _ = naming.rename(self.runnable)
         self.verification, self.consistent = verify.report(
             self.lift, self.models, self.verdicts, capture.calls, self.calls,
             (getattr(self, "type_withdrawn", 0),
@@ -426,6 +434,7 @@ class Analysis:
                 self.unmatched, self.models, self.verdicts, self.slots,
                 self.env_names, self.webs, self.facts),
             "RECONSTRUCTED.lua": self.source,
+            "NAMES.txt": naming.report(getattr(self, "names", [])),
             "PROVENANCE.txt": self.emitter.provenance(),
             "FUNCTIONS.txt": frames.report(self.frames),
             "MACHINERY.txt": noise.report(self.capture.rows),
@@ -774,6 +783,9 @@ def selftest():
     _metatab._selftest()
     _dispatch._selftest()
     _verify._selftest()
+    import naming as _nm
+    if _nm._selftest():
+        ok = False
     # The harness's own decision - one run or two - tested against the shipped
     # text of universal.lua rather than a description of it.
     import tracefmt as _tf

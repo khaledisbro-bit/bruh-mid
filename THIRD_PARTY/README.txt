@@ -16,7 +16,21 @@ caomod2077/Deobfuscator-Luraph-V15  (MIT, LICENSE beside this file)
     its own entries. That is their vmmap._maker_params. It survives renaming,
     which is why it is worth having.
 
+  TAKEN, in pipeline/core/naming.py:
+    The idea that a variable should be named from the value assigned to it, and
+    the text rules that make a name out of one: camel-casing, singularising a
+    plural, and taking the last segment of a string argument so
+    GetService("Players") names its result `players`. Their names.py.
+
   NOT TAKEN:
+    names.py's tables. METHOD_NAMES (GetChildren -> children), GLOBAL_CALLS
+    (tostring -> str), DATATYPES, SIGNAL_PARAMS - about a hundred rows of "when
+    you see this API name, write that". Every row is harmless and the whole is
+    the thing this project refuses: a table of API names deciding how a sample
+    reads. The same names are reached here by rule instead - GetChildren becomes
+    children because "Get" is a verb and "Children" is what is left - which also
+    reaches names nobody wrote down, and cannot silently become the analysis.
+
     vmmap.loop_names(), and the reg="Z", pc="W" defaults in instrument_post().
     Those are literal variable names from particular builds. A table of names
     that decides how to read a sample is the lookup table this project refuses,
