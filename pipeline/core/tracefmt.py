@@ -55,6 +55,11 @@ class Capture:
         self.attempts = _attempts(self.body)
         self.harness_id = self.headers.get("harness_id")
         self.harness_engine = _int(self.headers.get("harness_engine"))
+        self.code_arrays = _int(self.headers.get("code_arrays"))
+        self.recheck = _recheck(self.body)
+        self.env_missing = [l.strip() for l in
+                            self.sections.get("ENVMISSING", []) if l.strip()]
+        self.row_notes = _row_notes(self.body)
         self.trace_verdict = self.headers.get("trace_verdict")
         self.run_error = _run_error(self.headers, self.body)
         self.rows_from_failed_run = _rows_from_failed_run(self.attempts,
@@ -216,6 +221,57 @@ def _attempts(body):
     return out
 
 
+_RECHECK = re.compile(r"^code_recheck:\s*(.*)$")
+
+
+def _recheck(body):
+    """What each instruction array held at the end compared with when it was
+    first seen.
+
+    A row that appeared or changed means the array rewrites itself as it runs, so
+    a dump taken at one moment describes that moment. Reading it as the program's
+    instructions is then a claim the capture cannot support."""
+    out = []
+    for ln in body.splitlines():
+        m = _RECHECK.match(ln.strip())
+        if not m:
+            continue
+        kv = dict(_KV.findall(m.group(1)))
+        if "arr" not in kv:
+            out.append({"arr": None, "raw": m.group(1).strip()})
+            continue
+        out.append({"arr": _int(kv.get("arr")),
+                    "rows_first": _int(kv.get("rows_first")) or 0,
+                    "rows_last": _int(kv.get("rows_last")) or 0,
+                    "same": _int(kv.get("same")) or 0,
+                    "changed": _int(kv.get("changed")) or 0,
+                    "appeared": _int(kv.get("appeared")) or 0,
+                    "vanished": _int(kv.get("vanished")) or 0,
+                    "raw": m.group(1).strip()})
+    return out
+
+
+def _row_notes(body):
+    """The sixth field of an instruction row: what the row itself was when the
+    interpreter read something that was not an instruction, and which array it
+    came from. An instruction whose row is nil used to be recorded as an
+    instruction with no operands, which is what a real no-operand instruction
+    looks like - so the one moment worth seeing was written down as ordinary."""
+    out = {}
+    for ln in body.splitlines():
+        m = _ROW.match(ln.strip())
+        if not m or not m.group(6):
+            continue
+        kv = {}
+        for part in m.group(6).split("|"):
+            k, _, v = part.partition("=")
+            if k:
+                kv[k.strip()] = v.strip()
+        if kv:
+            out[int(m.group(1))] = kv
+    return out
+
+
 def _int(x):
     try:
         return int(x)
@@ -346,6 +402,71 @@ def stopped_under_the_trace(capture):
             "again unpatched in the same session and writing a trace_verdict "
             "line; this capture has none, so it came from a harness older than "
             "that or from a run where the patch never went in." % len(capture.rows))
+
+
+def what_the_arrays_did(capture):
+    """Whether the instructions in this capture describe the program.
+
+    Two things stop them doing that, and both are facts the capture now carries
+    rather than suspicions. One: a build of this class runs a prototype per
+    function, each with its own instruction array, so ONE array is one function.
+    Two: some of those arrays decrypt their rows as they run, so a row read at
+    the start is not the row the interpreter later executes.
+
+    Returns a list of lines, empty when the capture says neither happened."""
+    L = []
+    n = getattr(capture, "code_arrays", None)
+    if n is not None and n > 1:
+        L.append("This run handed over %d separate instruction arrays. A build "
+                 "of this class keeps one per function, so the array in the CODE "
+                 "section is ONE function's instructions, not the program's. "
+                 "Coverage below is measured against that one." % n)
+    moved = [r for r in (getattr(capture, "recheck", None) or [])
+             if r.get("arr") is not None
+             and (r["changed"] or r["appeared"])]
+    for r in moved:
+        L.append("Array %d rewrote itself while it ran: %d row(s) changed and "
+                 "%d appeared between the first read and the end (%d rows then, "
+                 "%d now). Its rows are decrypted as earlier instructions "
+                 "execute, so a dump is a snapshot and an instruction the run "
+                 "never reached has no readable row at all."
+                 % (r["arr"], r["changed"], r["appeared"],
+                    r["rows_first"], r["rows_last"]))
+    notes = getattr(capture, "row_notes", None) or {}
+    nonrows = {pc: kv["row"] for pc, kv in notes.items() if "row" in kv}
+    if nonrows:
+        sample = sorted(nonrows.items())[:6]
+        L.append("At %d traced instruction(s) the interpreter read something "
+                 "that was not an instruction row: %s. That is the interpreter "
+                 "about to index a value it cannot index, which is what this "
+                 "run's error says happened."
+                 % (len(nonrows),
+                    ", ".join("pc %d = %s" % (pc, v) for pc, v in sample)
+                    + (", ..." if len(nonrows) > 6 else "")))
+    arrs = sorted({kv["arr"] for kv in notes.values() if "arr" in kv})
+    if len(arrs) > 1:
+        L.append("The traced instructions came from %d different arrays (%s), "
+                 "so their numbers are not one sequence and a jump between them "
+                 "is not a jump inside one function."
+                 % (len(arrs), ", ".join(arrs)))
+    return L
+
+
+def env_did_not_have(capture):
+    """Names the payload read that this environment did not carry.
+
+    Not errors: a script testing for a feature reads nil on purpose. But a run
+    that dies indexing nil has to be explained by something, and the report kept
+    ending at "the program, or something this environment does not give it" with
+    nothing to say about which."""
+    m = getattr(capture, "env_missing", None) or []
+    if not m:
+        return []
+    return ["The payload read %d name(s) this environment does not carry. Any "
+            "of them coming back nil is normal on its own - a script testing "
+            "for a feature reads nil on purpose - but a run that died indexing "
+            "nil has to be explained, and this is the list:" % len(m),
+            "  " + ", ".join(m[:60]) + (", ..." if len(m) > 60 else "")]
 
 
 def which_harness(capture, current):
@@ -542,6 +663,11 @@ def combine(caps):
         base.attempts = _attempts(base.body)
         base.harness_id = base.headers.get("harness_id")
         base.harness_engine = _int(base.headers.get("harness_engine"))
+        base.code_arrays = _int(base.headers.get("code_arrays"))
+        base.recheck = _recheck(base.body)
+        base.env_missing = _union(base.env_missing, other.env_missing,
+                                  lambda x: x)
+        base.row_notes = _row_notes(base.body)
         base.trace_verdict = base.headers.get("trace_verdict")
         base.run_error = _run_error(base.headers, base.body)
         base.rows_from_failed_run = _rows_from_failed_run(base.attempts,
@@ -758,6 +884,45 @@ def _selftest():
                    % note[:60])
     check("no attempts, so no claim about which run made the rows",
           c.rows_from_failed_run, False)
+
+    # 9) several arrays, one of them rewriting itself, a row that was not a row,
+    #    and names the environment did not carry. Each of these used to be
+    #    thrown away before it reached the report.
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "code_arrays=3\n"
+                "code_recheck: arr=1 rows_first=2108 rows_last=2108 same=2102 "
+                "changed=6 appeared=0 vanished=0\n"
+                "code_recheck: arr=2 rows_first=40 rows_last=51 same=40 "
+                "changed=0 appeared=11 vanished=0\n"
+                "env_missing=2\n---ENVMISSING---\nbuffer\nsomename\n"
+                "---OPCODES---\n2;354;;0;nil;arr=1\n"
+                "2010;0;;0;nil;row=nil|arr=2\nEND_UNOBF_RESULT")
+    check("array count read", c.code_arrays, 3)
+    check("both rechecks read", len(c.recheck), 2)
+    check("a changed array is seen", c.recheck[0]["changed"], 6)
+    check("an appeared row is seen", c.recheck[1]["appeared"], 11)
+    check("env names read", c.env_missing, ["buffer", "somename"])
+    check("a non-row is recorded as what it was",
+          c.row_notes.get(2010, {}).get("row"), "nil")
+    check("an ordinary row carries only its array",
+          c.row_notes.get(2, {}).get("arr"), "1")
+    said = " ".join(what_the_arrays_did(c))
+    for want in ("3 separate instruction arrays", "rewrote itself",
+                 "was not an instruction row", "2 different arrays"):
+        if want not in said:
+            bad.append("the array report should say %r, got %r"
+                       % (want, said[:120]))
+    env = " ".join(env_did_not_have(c))
+    if "buffer" not in env:
+        bad.append("the environment report should name what was missing")
+
+    # 10) a capture that says none of that must claim none of it
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("no array count claimed", c.code_arrays, None)
+    check("no recheck claimed", c.recheck, [])
+    check("no environment claim", env_did_not_have(c), [])
+    check("no array claim", what_the_arrays_did(c), [])
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

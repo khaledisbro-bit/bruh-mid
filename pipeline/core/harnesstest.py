@@ -143,7 +143,10 @@ def _headers(text):
 # that reason, and these would walk straight past that work.
 _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
                   "TRACE_CHUNK", "dispatchDone", "resolverDone", "patchable",
-                  "HIDE_HOOKS", "PATCH_LEVEL", "LEVEL_NAME", "constSeen")
+                  "HIDE_HOOKS", "PATCH_LEVEL", "LEVEL_NAME", "constSeen",
+                  "codeArrays", "codeArrayN", "codeMap", "codeRefs",
+                  "codeOrdered", "codeRows", "missing", "missingSeen",
+                  "missingN", "HARNESS_ENGINE")
 
 
 def _declared_locals(path=UNIVERSAL):

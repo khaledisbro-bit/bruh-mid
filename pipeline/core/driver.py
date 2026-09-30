@@ -257,6 +257,14 @@ class Analysis:
         note = tracefmt.stopped_under_the_trace(cap)
         if note:
             L += ["  " + note, ""]
+        # What the instruction arrays did, and what the environment did not have.
+        # The report used to stop at "the program, or the environment" and then
+        # say nothing about either, while the capture carried the answer.
+        for ln in tracefmt.what_the_arrays_did(cap):
+            L += ["  " + ln, ""]
+        env = tracefmt.env_did_not_have(cap)
+        if env:
+            L += ["  " + x for x in env] + [""]
         return L
 
     def _retry_records_lines(self):

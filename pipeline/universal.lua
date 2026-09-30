@@ -156,10 +156,24 @@ local env
 -- is what happened.
 local HIDE_HOOKS = true
 local HID = {}
+-- Every global the payload read that this environment did not have. The report
+-- kept ending at "the program, or something this environment does not give it"
+-- and then had nothing to say about which - because the one place that knows is
+-- this lookup, and it was throwing the answer away. A nil read is not an error:
+-- a script testing `if getgenv then` reads nil on purpose. This is a list of
+-- names the environment did not carry, for a reader to judge.
+local missing, missingSeen, missingN = {}, {}, 0
 env = setmetatable({}, { __index = function(_, k)
     local h = HID[k]; if h ~= nil then return h end
     local rv = realenv[k]; if rv ~= nil then return rv end
-    return ES[k]
+    local sv = ES[k]
+    if sv == nil and missingN < 400 and type(k) == "string"
+       and not missingSeen[k] then
+        missingSeen[k] = true
+        missingN = missingN + 1
+        missing[#missing+1] = k
+    end
+    return sv
 end })
 env.debug = DBG
 env.os = setmetatable({ clock = vclock, time = vtime },
@@ -239,13 +253,42 @@ local function vprev(v)
 end
 
 local codeRows = nil
--- Dump the instruction array once. Every row is one instruction: its operands
--- as the interpreter stores them. Rows the run never reached are exactly what
--- makes this worth having, so nothing is filtered.
-HID.__CODE = function(arr)
-    if codeRows ~= nil or type(arr) ~= "table" then return end
-    codeRows = {}
-    local n = 0
+-- Which instruction arrays the run has handed over, and in what order. A build
+-- of this class does not have ONE instruction array: every function the program
+-- defines is its own prototype with its own array, and the dispatch loop runs
+-- whichever one the current call holds.
+--
+-- This used to dump the first array it was given and stop, and the report then
+-- called that array "every instruction the program has". It is one function's
+-- instructions. The give-away was a capture whose traced rows at a given number
+-- carried no operands while the dumped array had a full row at that same number
+-- - two different arrays, read as one.
+local codeArrays, codeArrayN = {}, 0
+local codeMap = {}
+local codeRefs = {}          -- the arrays themselves, to read again at the end
+local function arrayId(arr)
+    local k = tostring(arr)
+    if codeArrays[k] == nil then
+        codeArrayN = codeArrayN + 1
+        codeArrays[k] = codeArrayN
+    end
+    return codeArrays[k]
+end
+-- Dump an instruction array. Every row is one instruction: its operands as the
+-- interpreter stores them. Rows the run never reached are exactly what makes
+-- this worth having, so nothing is filtered.
+local codeOrdered = {}
+local function orderRows(byPc)
+    local pcs = {}
+    for pc in pairs(byPc) do pcs[#pcs+1] = pc end
+    table.sort(pcs)
+    local out = {}
+    for i = 1, #pcs do out[i] = byPc[pcs[i]] end
+    return out
+end
+
+local function readArray(arr)
+    local rows, n = {}, 0
     for pc = 1, 200000 do
         local row = arr[pc]
         if row == nil then
@@ -259,27 +302,60 @@ HID.__CODE = function(arr)
                     a[#a+1] = (v == nil) and "" or tostring(v)
                 end
             end
-            codeRows[#codeRows+1] = tostring(pc) .. ":" .. table.concat(a, ",")
+            rows[pc] = tostring(pc) .. ":" .. table.concat(a, ",")
         end
         if n > 100000 then break end
     end
+    return rows
+end
+
+HID.__CODE = function(arr)
+    if type(arr) ~= "table" then return end
+    local id = arrayId(arr)
+    codeRefs[id] = arr
+    if codeMap[id] ~= nil then return end      -- this one is already written
+    local byPc = readArray(arr)
+    codeMap[id] = byPc
+    local rows = orderRows(byPc)
+    -- The first array keeps the name the reader already knows; the rest get
+    -- their own files rather than overwriting it.
+    if id == 1 then codeRows = rows end
+    codeOrdered[id] = rows
     pcall(function()
-        writefile("code_array.txt", table.concat(codeRows, "\n"))
+        writefile(id == 1 and "code_array.txt"
+                  or ("code_array_" .. id .. ".txt"),
+                  table.concat(rows, "\n"))
     end)
 end
 
-HID.__OP = function(pc, oc, NO, sp, top)
+HID.__OP = function(pc, oc, NO, sp, top, arr)
     opn = opn + 1
     if opn > 40000 then return end
     local a = {}
+    local note = ""
     if type(NO) == "table" then
         for i = 2, 8 do local v = NO[i]; if v ~= nil then a[#a+1] = tostring(v) end end
+    else
+        -- A row that is not a table used to be recorded as a row with no
+        -- operands, which is what a real instruction with no operands looks
+        -- like. So the one moment worth seeing - the interpreter reading an
+        -- instruction that is not there, right before it indexes it and raises -
+        -- was written down as an ordinary instruction. What it was is the
+        -- evidence; say it.
+        note = "row=" .. vprev(NO)
     end
-    -- format: pc;opcode;operands;stackpointer;topvalue
+    if arr ~= nil then
+        local id = arrayId(arr)
+        note = (note ~= "" and (note .. "|") or "") .. "arr=" .. id
+    end
+    -- format: pc;opcode;operands;stackpointer;topvalue;note
     -- topvalue is the real value the VM just produced (the pending write slot),
-    -- so the lifter sees actual strings/numbers flowing between opcodes.
+    -- so the lifter sees actual strings/numbers flowing between opcodes. The
+    -- note carries what the instruction row itself was when it was not one, and
+    -- which array it was read from.
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
                   .. ";" .. tostring(sp) .. ";" .. vprev(top)
+                  .. ";" .. note
 end
 
 -- SAFE MODE: when false, the opcode-dispatch trace is not applied at all, so
@@ -358,7 +434,13 @@ local function patchDispatch(s)
     -- cannot be judged without it. It is handed over once, from inside the
     -- dispatch loop, where it is certain to be fully built.
     local dump = code and (";if __CODE then __CODE(" .. code .. ")end") or ""
-    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. ")end" .. dump
+    -- The array the row was read FROM goes in too. A build of this class runs a
+    -- prototype per function, each with its own array, and without this a row
+    -- logged at number N cannot be told from a row logged at N in another
+    -- array - which is how a dumped array with a full row at N sat beside a
+    -- traced row at N with no operands, and the two were read as one thing.
+    local whicharr = code and ("," .. code) or ",nil"
+    local inject = ";if __OP then __OP(" .. pc .. ",(" .. nl .. "-" .. nu .. ")%2147483647," .. no .. "," .. sp .. "," .. topexpr .. whicharr .. ")end" .. dump
     -- Tell the debug shield what this injection did to the file's line
     -- numbering, measured rather than assumed: where it went in, and how many
     -- lines it added. Today it adds none - the whole logger is written on one
@@ -492,12 +574,23 @@ do
       __index = function(_, k)
         if k == "GetService" or k == "FindService" or k == "service" then
           return function(_, name)
-            behavior[#behavior + 1] = "GetService: " .. tostring(name)
-            if serverStubs[name] then return logProxy(name) end
+            if serverStubs[name] then
+              behavior[#behavior + 1] = "GetService: " .. tostring(name)
+                                        .. "  -> logging proxy (server-only)"
+              return logProxy(name)
+            end
             -- everything else stays REAL (client services like HttpService work
             -- fine and must not be proxied, or the VM's integrity ops break).
             local ok, svc = pcall(function() return realGame:GetService(name) end)
-            return ok and svc or logProxy(name)
+            -- WHICH of the two was handed back matters and was not recorded. A
+            -- proxy answers every field with a function, so a program that asked
+            -- for a service this engine does not have gets something shaped
+            -- nothing like what it expected, and the report could not tell that
+            -- from a service that resolved.
+            behavior[#behavior + 1] = "GetService: " .. tostring(name) .. "  -> "
+                .. ((ok and svc ~= nil) and "real service"
+                    or "logging proxy (this engine has no such service)")
+            return (ok and svc ~= nil) and svc or logProxy(name)
           end
         end
         local v = realGame[k]
@@ -871,6 +964,59 @@ say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
 pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
 -- devirtualization: the executed instruction stream (pc;opcode;operands)
 say("opcodes="..#ops.."  (logged, cap 40000; total executed may be higher)")
+-- How many instruction arrays the run handed over, and what became of them.
+--
+-- A build of this class holds a prototype per function, each with its own
+-- instruction array, and some of them decrypt their rows AS THEY RUN: a row is
+-- nil until an earlier instruction writes it. Both of those make a single dump
+-- taken at one moment a description of that moment, not of the program - and the
+-- report was calling it "every instruction the program has".
+--
+-- So each array is read again at the end and compared with what it held when it
+-- was first seen. A row that appeared, or changed, is the array rewriting itself
+-- while it runs, which is a fact about the build and not a guess about it.
+say("code_arrays=" .. codeArrayN)
+for id = 1, codeArrayN do
+    local before = codeMap[id]
+    local arr = codeRefs[id]
+    if before and arr then
+        local okr, after = pcall(readArray, arr)
+        if okr and after then
+            local same, changed, appeared, vanished, now = 0, 0, 0, 0, 0
+            for pc, line in pairs(after) do
+                now = now + 1
+                if before[pc] == nil then appeared = appeared + 1
+                elseif before[pc] == line then same = same + 1
+                else changed = changed + 1 end
+            end
+            local was = 0
+            for pc in pairs(before) do
+                was = was + 1
+                if after[pc] == nil then vanished = vanished + 1 end
+            end
+            say(("code_recheck: arr=%d rows_first=%d rows_last=%d same=%d "
+                 .. "changed=%d appeared=%d vanished=%d"):format(
+                id, was, now, same, changed, appeared, vanished))
+            if changed > 0 or appeared > 0 then
+                pcall(function()
+                    writefile("code_array_" .. id .. "_final.txt",
+                              table.concat(orderRows(after), "\n"))
+                end)
+            end
+        else
+            say("code_recheck: arr=" .. id .. " could not be read again")
+        end
+    end
+end
+-- Names the payload read that this environment did not carry. Not errors: a
+-- script testing for a feature reads nil on purpose. But when a run dies
+-- indexing nil, this is the shortest list of candidates there is, and it was
+-- not being written down at all.
+say("env_missing=" .. #missing)
+if #missing > 0 then
+    say("---ENVMISSING---")
+    for i = 1, math.min(#missing, 400) do say(missing[i]) end
+end
 if codeRows then
     say("code_rows="..#codeRows)
     say("---CODE---")

@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 43
+VERSION = 44
 
 STAGES = (
     "captures read by shape",
@@ -113,6 +113,23 @@ STAGES = (
     "report saying when that is not this one, because the new harness is "
     "written at the moment the old capture is read and three in a row were read "
     "as evidence about code that had already been replaced",
+    "every instruction array the run hands over dumped, not the first one: a "
+    "build of this class keeps a prototype per function, so one array is one "
+    "function and calling it the program is a claim the capture cannot support",
+    "each traced instruction saying WHICH array its row came from, so two rows "
+    "logged at the same number in different arrays are not read as one",
+    "each array read again at the end and compared with what it held when first "
+    "seen, so an array that decrypts its rows as it runs is a recorded fact "
+    "rather than a contradiction between the dump and the trace",
+    "an interpreter reading something that is not an instruction row recorded "
+    "as what it actually read, instead of as an instruction with no operands, "
+    "which is what a real no-operand instruction looks like",
+    "names the payload read that the environment did not carry written down, so "
+    "a run that died indexing nil has candidates instead of a shrug",
+    "GetService saying whether it handed back the real service or a logging "
+    "proxy, because a proxy answers every field with a function and a program "
+    "that asked for a service this engine lacks gets nothing like what it "
+    "expected",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "
