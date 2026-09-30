@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 51
+VERSION = 52
 
 STAGES = (
     "captures read by shape",
@@ -196,6 +196,10 @@ STAGES = (
     "the row variable believed at the loop top and the array believed anywhere "
     "else, because this family re-fetches the row from a second array variable "
     "and preferring the named array there would reintroduce the mismatch",
+    "the jump decoder watched, and whether each branch target was READ from its "
+    "lookup table or COMPUTED from a base because the table had no entry - a "
+    "computed target is not a branch the program wrote, and it can land outside "
+    "every block the interpreter knows about",
     "a capture logged inside the dispatch chain named as the subset it is, so "
     "its counts and gaps are not read as facts about the program",
     "instructions grouped under one decoded opcode checked by their operand "

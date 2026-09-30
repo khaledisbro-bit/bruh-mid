@@ -58,6 +58,7 @@ class Capture:
         self.code_arrays = _int(self.headers.get("code_arrays"))
         self.protos_seen = _int(self.headers.get("protos_seen"))
         self.slices = _slices(self.sections.get("SLICES", []))
+        self.jumps = _jumps(self.sections.get("JUMPS", []))
         self.recheck = _recheck(self.body)
         self.env_missing = [l.strip() for l in
                             self.sections.get("ENVMISSING", []) if l.strip()]
@@ -271,6 +272,23 @@ def _row_notes(body):
                 kv[k.strip()] = v.strip()
         if kv:
             out[int(m.group(1))] = kv
+    return out
+
+
+def _jumps(lines):
+    """Every branch target this run resolved, and how.
+
+    Rows are decoder:from_pc:operand:table|COMPUTED:target. A COMPUTED row means
+    the decoder's lookup table had no entry for that operand, so the target was
+    derived from a base instead - and a derived target can land outside every
+    block the interpreter knows about."""
+    out = []
+    for ln in lines:
+        p = ln.strip().split(":")
+        if len(p) != 5 or p[3] not in ("table", "COMPUTED"):
+            continue
+        out.append({"decoder": p[0], "from": _int(p[1]), "operand": _int(p[2]),
+                    "looked_up": p[3] == "table", "target": _int(p[4])})
     return out
 
 
@@ -542,6 +560,25 @@ def what_the_arrays_did(capture):
                  "never reached has no readable row at all."
                  % (r["arr"], r["changed"], r["appeared"],
                     r["rows_first"], r["rows_last"]))
+    jp = getattr(capture, "jumps", None) or []
+    if jp:
+        bad = [j for j in jp if not j["looked_up"]]
+        L.append("The jump decoder was watched: %d branch target(s) resolved, %d "
+                 "of them NOT found in its lookup table."
+                 % (len(jp), len(bad)))
+        if bad:
+            f = bad[0]
+            L.append("The first miss was at pc %s: operand %s is not in the "
+                     "table, so the target was computed from a base instead and "
+                     "came out as %s. A computed target is not a branch the "
+                     "program wrote - it is what this decoder does when it does "
+                     "not recognise the operand, and it can land outside every "
+                     "block the interpreter knows about."
+                     % (f["from"], f["operand"], f["target"]))
+            L.append("Where to look next: why the table has no entry for that "
+                     "operand. Either the table was not fully built when the "
+                     "jump ran, or the operand was decoded with the wrong key - "
+                     "both are upstream of the interpreter, not in it.")
     sl = getattr(capture, "slices", None) or []
     if sl:
         missing = [r for r in sl if not r["present"]]
@@ -840,6 +877,7 @@ def combine(caps):
         base.code_arrays = _int(base.headers.get("code_arrays"))
         base.protos_seen = _int(base.headers.get("protos_seen"))
         base.slices = _slices(base.sections.get("SLICES", []))
+        base.jumps = _jumps(base.sections.get("JUMPS", []))
         base.recheck = _recheck(base.body)
         base.env_missing = _union(base.env_missing, other.env_missing,
                                   lambda x: x)
@@ -1195,6 +1233,27 @@ def _selftest():
     c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n"
                 "---OPCODES---\n2;354;;0;nil\nEND_UNOBF_RESULT")
     check("no note, no claim", trace_was_filtered(c), [])
+
+    # 15) a branch target that was computed rather than looked up
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: false\nerror: e\n"
+                "---JUMPS---\nel:3:5551:table:120\nel:6:889496670:COMPUTED:2009\n"
+                "---OPCODES---\n1;354;;0;nil;src=looptop\nEND_UNOBF_RESULT")
+    check("both jumps read", len(c.jumps), 2)
+    check("the miss is marked", c.jumps[1]["looked_up"], False)
+    check("its target is kept", c.jumps[1]["target"], 2009)
+    said = " ".join(what_the_arrays_did(c))
+    for want in ("1 of them NOT found", "pc 6", "came out as 2009",
+                 "outside every block"):
+        if want not in said:
+            bad.append("the jump report should say %r, got %r"
+                       % (want, said[:200]))
+    # all looked up -> no alarm
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n"
+                "---JUMPS---\nel:3:5551:table:120\n---OPCODES---\n"
+                "1;354;;0;nil;src=looptop\nEND_UNOBF_RESULT")
+    said = " ".join(what_the_arrays_did(c))
+    if "NOT found in its lookup table" in said and "0 of them" not in said:
+        bad.append("a clean jump log must not raise an alarm: %r" % said[:120])
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

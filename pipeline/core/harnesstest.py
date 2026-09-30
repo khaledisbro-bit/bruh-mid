@@ -47,6 +47,7 @@ local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
 local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
 local protoN = 0
 local slices, sliceN = {}, 0
+local jumps, jumpN = {}, 0
 local slicesDone = false
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
 local function realLoad(src)
@@ -255,8 +256,9 @@ def slice_hook(path=UNIVERSAL):
     except ValueError:
         return ["universal.lua has no patchSlices to test"]
     L = lupa.LuaRuntime(unpack_returned_tuples=True)
-    mk = L.execute(src[a:b].replace("HID.__SLICE", "local _unused")
-                   + "\nreturn patchSlices\n")
+    # a bare HID table, so any other hook that shares this slice of the file
+    # can define itself without the extraction needing to know about it
+    mk = L.execute("local HID={}\n" + src[a:b] + "\nreturn patchSlices\n")
     chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
                  " return f and 'OK' or tostring(e) end")
     bad = []
@@ -364,6 +366,57 @@ _LOOP_TOP = ("local function I(ed,Jq) while true do local Jg=ed[Jq];"
              "local JP=((Jq-1)*809834779+JL)%2147483647;"
              "local JZ=(JY+JP)%2147483647;"
              "if ((JZ-JP)%0x7FFFFFFF)==1 then end end end end;")
+
+
+_JUMP_DECODER = ("local function el(x,k,s,o)if k~=0 then x=Nn(x,k)end;"
+                 "local e=eO[x] or {eK[3]+x,-1,-1,-1};local z=e[1];return z end;")
+_NOT_A_DECODER = ("local function f(a,b,c,d)local e=tbl[a] end;")
+
+
+def jump_hook(path=UNIVERSAL):
+    """The jump decoder's lookup, and whether it hit or fell back.
+
+    This family resolves a branch target through a table with an `or {...}`
+    fallback: a miss means the target is COMPUTED from a base rather than read,
+    and a computed target can land outside every block the interpreter knows.
+    On the real sample the run dies six instructions after its first jump, so
+    which of the two happened is the question the capture has to answer."""
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("local jumps, jumpN = {}, 0")
+        b = src.index("local function patchProtos(s)")
+    except ValueError:
+        return ["universal.lua has no patchJumps to test"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    mk = L.execute("local HID={}\n" + src[a:b] + "\nreturn patchJumps\n")
+    chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
+                 " return f and 'OK' or tostring(e) end")
+    bad = []
+    got = mk(_JUMP_DECODER)
+    if got is None:
+        bad.append("the jump decoder was not matched, so a computed target "
+                   "would go unrecorded")
+    else:
+        out = got[0]
+        if "__JMP(" not in out:
+            bad.append("nothing was injected into the decoder")
+        if out.find("__JMP(") > out.find("local e=eO[x]"):
+            bad.append("the log must go BEFORE the lookup's fallback, or it "
+                       "cannot say whether the table had the entry")
+        if chk(out) != "OK":
+            bad.append("the patched decoder does not compile: %s" % chk(out))
+        import re as _re
+        undone = _re.sub(r";if __JMP then __JMP\([^;]*\)end;", "", out)
+        if undone.replace(";;", ";") != _JUMP_DECODER.replace(";;", ";"):
+            bad.append("the injection changed text around it")
+    # a four-parameter function with no `or {` fallback is not this decoder
+    if mk(_NOT_A_DECODER) is not None:
+        bad.append("matched a function that has no lookup fallback")
+    return bad
 
 
 def loop_top(path=UNIVERSAL):
@@ -619,7 +672,8 @@ _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
                   "codeArrays", "codeArrayN", "codeMap", "codeRefs",
                   "codeOrdered", "codeRows", "missing", "missingSeen",
                   "missingN", "HARNESS_ENGINE", "protosDone", "protoSeen",
-                  "protoN", "slices", "sliceN", "slicesDone")
+                  "protoN", "slices", "sliceN", "slicesDone",
+                  "jumps", "jumpN")
 
 
 def _declared_locals(path=UNIVERSAL):
@@ -647,7 +701,7 @@ def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
              + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
-             + no_source_message(path) + loop_top(path))
+             + no_source_message(path) + loop_top(path) + jump_hook(path))
     try:
         import lupa
     except ImportError:

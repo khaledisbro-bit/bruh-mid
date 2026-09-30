@@ -752,6 +752,46 @@ local function patchSlices(s)
     return out, hits .. " accessor(s)"
 end
 
+-- The jump decoder, and whether its target was looked up or invented.
+--
+-- This family resolves a branch target through a table:
+--     local function J(x,k,s,o) if k~=0 then x=D(x,k) end
+--       local e = TBL[x] or {BASE+x,-1,-1,-1,-1,-1,-1}
+--       ... return e[1]-ish
+-- The `or {...}` is the part that matters. When TBL has no entry for the decoded
+-- operand, the target is COMPUTED from a base instead of looked up, and a
+-- computed target can land anywhere - including outside every block the
+-- interpreter knows about, where the row fetch returns nil and the next opcode
+-- read falls back to 0.
+--
+-- Matched by shape: a four-parameter local function whose body indexes a
+-- captured table by its first parameter with an `or {` fallback. No name here.
+local jumps, jumpN = {}, 0
+HID.__JMP = function(fn, x, hit, target, from)
+    jumpN = jumpN + 1
+    if jumpN > 2000 then return end
+    jumps[#jumps+1] = tostring(fn) .. ":" .. tostring(from) .. ":" .. tostring(x)
+                      .. ":" .. (hit and "table" or "COMPUTED") .. ":"
+                      .. tostring(target)
+end
+
+local function patchJumps(s)
+    local hits = 0
+    local out = s:gsub(
+        "local function (%w+)%((%w+),(%w+),(%w+),(%w+)%)(.-)local (%w+)=(%w+)%[%2%] or {",
+        function(fn, x, k, sp, o, mid, e, tbl)
+            if #mid > 200 then return nil end     -- not the same statement run
+            hits = hits + 1
+            return ("local function %s(%s,%s,%s,%s)%slocal %s=%s[%s] or {"):format(
+                fn, x, k, sp, o,
+                mid .. (";if __JMP then __JMP(%q,%s,%s[%s]~=nil,(%s[%s] or {})[1],%s)end;")
+                      :format(fn, x, tbl, x, tbl, x, sp),
+                e, tbl, x)
+        end)
+    if hits == 0 then return nil end
+    return out, hits .. " jump decoder(s)"
+end
+
 local function patchProtos(s)
     -- The self-indexed variable: X[X[...]]. Lua patterns carry back-references,
     -- so this is one match and no name appears in it.
@@ -826,6 +866,14 @@ env.loadstring = function(src, ...)
             behavior[#behavior+1] = "  [watching slice accessor -> " .. tostring(sn) .. "]"
         else
             behavior[#behavior+1] = "  [no slice accessor matched]"
+        end
+        local okJ, patchedJ, jn = pcall(patchJumps, src)
+        if okJ and patchedJ then
+            src = patchedJ
+            slicesDone = true
+            behavior[#behavior+1] = "  [watching jump decoder -> " .. tostring(jn) .. "]"
+        else
+            behavior[#behavior+1] = "  [no jump decoder matched]"
         end
         local okP, patchedP, pn = pcall(patchProtos, src)
         if okP and patchedP then
@@ -1283,6 +1331,7 @@ say("protos_hooked: " .. tostring(first.applied_protos))
 say("slices_hooked: " .. tostring(first.applied_slices))
 say("protos_seen: " .. protoN)
 say("slice_requests: " .. sliceN)
+say("jump_decodes: " .. jumpN)
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
@@ -1433,6 +1482,10 @@ end
 -- up among the run headers meant every header after it - the attempt lines, the
 -- error, the verdict - landed inside it and was never read as a header at all.
 -- The probe section had done exactly this once before.
+if #jumps > 0 then
+    say("---JUMPS---")
+    for i = 1, math.min(#jumps, 600) do say(jumps[i]) end
+end
 if #slices > 0 then
     say("---SLICES---")
     for i = 1, math.min(#slices, 600) do say(slices[i]) end
