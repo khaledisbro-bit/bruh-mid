@@ -191,7 +191,13 @@ end
 -- (keys, field names, numbers). All guarded by pcall so it can never break the
 -- run: if the patch does not apply, the original chunk is loaded unchanged.
 local resolved, seenR = {}, {}
+-- Raw count of constants the resolver handed back, counted before the
+-- de-duplication and before the cap. The de-duplicated list cannot say how far
+-- a SECOND round got: every constant it resolves is already in the list, so the
+-- round reads as having got nowhere when it got exactly as far as the first.
+local constSeen = 0
 HID.__SL = function(r)
+    constSeen = constSeen + 1
     if #resolved > 4000 then return end
     if type(r) == "string" then
         if #r >= 2 and #r <= 120 and not seenR["S"..r] then
@@ -286,8 +292,22 @@ local TRACE_OPCODES = true
 -- later chunks are where the program's tail runs, and a capture that only ever
 -- traces the first one cannot account for it.
 local TRACE_CHUNK = 1
+-- The harness makes TWO edits to the inner chunk, not one: it rewrites the
+-- constant resolver so constants are dumped, and it injects a logger into the
+-- dispatch loop. Turning off "the trace" only ever took the second one back
+-- out, so a payload that raised both ways was reported as raising "without the
+-- patch" while the resolver rewrite was still in the file. That is a wrong fact
+-- reached by the machinery built to avoid wrong facts.
+--
+-- So the edits are a LEVEL, and the harness removes them one at a time:
+--   2 = resolver rewritten AND dispatch loop traced
+--   1 = resolver rewritten only
+--   0 = nothing touched
+local PATCH_LEVEL = TRACE_OPCODES and 2 or 1
+local LEVEL_NAME = { [2] = "traced", [1] = "resolver-only", [0] = "unpatched" }
 local patchable = 0          -- how many interpreters we have been able to patch
 local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
+local resolverDone = false   -- whether the resolver rewrite went in this round
 local function patchDispatch(s)
     -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
     local nl, nu = s:match("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
@@ -364,17 +384,22 @@ env.loadstring = function(src, ...)
     end
     -- try to patch the inner resolver so it dumps real constants (guarded)
     local use = src
-    local ok, patched, rn = pcall(patchResolver, src)
-    if ok and patched then
-        use = patched
-        behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
+    if PATCH_LEVEL >= 1 then
+        local ok, patched, rn = pcall(patchResolver, src)
+        if ok and patched then
+            use = patched
+            resolverDone = true
+            behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
+        end
+    else
+        behavior[#behavior+1] = "  [resolver left alone at this patch level]"
     end
     -- on top of that, trace the dispatch loop of ONE interpreter: the one this
     -- run was asked for. Patching two at once trips the VM's self-integrity
     -- check and ends the run, so each chunk gets its own run and the captures
     -- are merged afterwards.
     local useD = use
-    if TRACE_OPCODES and not dispatchDone then
+    if PATCH_LEVEL >= 2 and not dispatchDone then
         local canPatch = select(2, pcall(patchDispatch, use))
         if canPatch then
             patchable = patchable + 1
@@ -391,8 +416,12 @@ env.loadstring = function(src, ...)
                     .. " left untraced; this run traces #" .. TRACE_CHUNK .. "]"
             end
         end
-    else
+    elseif PATCH_LEVEL >= 2 then
         behavior[#behavior+1] = "  [dispatch trace already placed for this run]"
+    else
+        -- "already placed" was printed here for a round where the trace was
+        -- deliberately taken OUT, which reads as the opposite of what happened.
+        behavior[#behavior+1] = "  [dispatch loop left alone at this patch level]"
     end
     -- compile, degrading gracefully: full (resolver+dispatch) -> resolver-only
     -- -> original. A broken dispatch patch never costs us the constant dump.
@@ -625,26 +654,43 @@ say("---PROBE---")
 for i = 1, #probe do say(probe[i]) end
 
 -- ------------------------------------------------------------------- the run
--- Tracing the dispatch loop means EDITING the interpreter's own source. A build
--- that checks its own source reacts to exactly that, and to nothing else the
--- harness does. The symptom is a run that raises a few instructions in, and
--- from one capture that is indistinguishable from a program that genuinely
--- errors on its own.
+-- The harness EDITS the inner chunk to observe it: it rewrites the constant
+-- resolver, and it injects a logger into the dispatch loop. Either edit is
+-- something a program can react to, and a program that raises under them looks
+-- the same as one that raises on its own.
 --
--- Telling the two apart needs the SAME payload run again with the dispatch
--- patch left out. That used to be a second file to run by hand. Choosing
--- between two files is a step that can go wrong, and when it goes wrong the
--- capture still looks like the one that was asked for, so the wrong conclusion
--- gets drawn from it with nothing in the file to contradict it.
+-- Telling those apart means running the SAME payload again with an edit taken
+-- back out. That used to be a second file to run by hand, and choosing between
+-- files went wrong twice; a capture from the wrong file looks exactly like the
+-- right one, so the wrong conclusion got drawn with nothing to contradict it.
 --
--- So the harness does both itself: traced first, and if that raised WHILE the
--- dispatch patch was in, untraced immediately afterwards, same session, same
--- payload, with both outcomes written down. Nothing downstream has to infer
--- which file was run.
+-- So the harness does it, and does it all the way down: on a run that raises it
+-- removes ONE edit and runs again, until either the payload finishes or there is
+-- no edit left to remove. Removing only the dispatch logger was not enough - the
+-- resolver rewrite was still in the file, and a run that raised at that level
+-- was being reported as raising "without the patch".
+--
+-- The step condition is what was observed: the edit at this level actually went
+-- in, and the run raised. Not a count of instructions, not what the error text
+-- looks like. Either of those would be guessing at the build.
+-- The run's own headers need a section of their own. Without this marker they
+-- land inside ---PROBE---, because that is the last section opened before the
+-- payload runs and nothing closed it. A reader that looks for scalar headers at
+-- the top of a capture then finds none of them, and "run_ok was not stated"
+-- reads the same as "run_ok: false".
+say("---RUN---")
 local attempts = {}
-local function runPayload(mode)
-    local rec = { mode = mode, ok = false, rtype = "nil", loaded = false,
-                  err = nil, rows0 = #ops, res0 = #resolved }
+local function runPayload()
+    dispatchDone = false
+    resolverDone = false
+    patchable = 0
+    -- The line shield corrects for an injection. On a round where the injection
+    -- is not going in, leaving it set would answer the payload's questions about
+    -- its own source as if it were.
+    ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
+    local rec = { level = PATCH_LEVEL, mode = "unpatched",
+                  ok = false, rtype = "nil", loaded = false, err = nil,
+                  rows0 = #ops, const0 = constSeen }
     local f = realLoad(SOURCE)
     rec.loaded = (f ~= nil)
     if not f then
@@ -661,9 +707,7 @@ local function runPayload(mode)
             rec.err = tostring(r)
         else
             -- BFS: exercise functions the chunk returned, to surface nested
-            -- behavior. Only on a run that finished: on a failed run `r` is the
-            -- error value, and calling into that measures the error, not the
-            -- program.
+            -- behavior.
             if type(r) == "function" then pcall(r) end
             if type(r) == "table" then
                 for k, v in pairs(r) do
@@ -676,101 +720,134 @@ local function runPayload(mode)
         end
     end
     rec.rows_added = #ops - rec.rows0
-    rec.res_added = #resolved - rec.res0
+    -- Constants are counted RAW here, not from the de-duplicated list: a second
+    -- round resolving the same constants adds nothing to that list, and
+    -- "constants=0" then reads as "this round got nowhere" when it got exactly
+    -- as far as the one before.
+    rec.const_added = constSeen - rec.const0
+    rec.applied_dispatch = dispatchDone
+    rec.applied_resolver = resolverDone
+    rec.patchable = patchable
+    -- The round's name comes from what was APPLIED, not from what was asked for.
+    -- A level-2 round whose dispatch hook never matched this build is a
+    -- resolver-only round, and calling it "traced" would put an edit in the
+    -- record that is not in the chunk.
+    rec.mode = (dispatchDone and LEVEL_NAME[2])
+               or (resolverDone and LEVEL_NAME[1])
+               or LEVEL_NAME[0]
     attempts[#attempts+1] = rec
     return rec
 end
 
--- The run's own headers need a section of their own. Without this marker they
--- land inside ---PROBE---, because that is the last section opened before the
--- payload runs and nothing closed it. A reader that looks for scalar headers at
--- the top of a capture then finds none of them, and "run_ok was not stated"
--- reads the same as "run_ok: false".
-say("---RUN---")
-local first = runPayload(TRACE_OPCODES and "traced" or "untraced")
-local patchedFirst = dispatchDone
-local patchableFirst = patchable
-
--- The retry condition is written in terms of what was OBSERVED and nothing
--- else: the dispatch patch went in, and the run raised. Not "the error looks
--- like a tamper check", and not a count of instructions - either of those
--- would be guessing at the build. If the patch was never placed there is
--- nothing to take back out, so a second run could not teach anything.
-local second
-if patchedFirst and not first.ok then
-    say("retry_reason: the traced run raised while the dispatch patch was in "
-        .. "place, so the same payload is run again with the patch left out")
-    TRACE_OPCODES = false     -- the loadstring hook reads this on every load
-    dispatchDone = false
-    patchable = 0
-    -- The line shield corrects for an injection that is no longer there. Left
-    -- set, it would keep answering the second run's questions about its own
-    -- source as if the first run's patch were still in the file.
-    ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
-    behavior[#behavior+1] = "  [retry: same payload, dispatch loop NOT patched]"
-    second = runPayload("untraced")
+local last = runPayload()
+local first = last
+while not last.ok do
+    -- Which edit is there to remove? Only one that actually went in: dropping a
+    -- level that changed nothing would repeat the same run and read as evidence.
+    -- Go to the level that actually removes the named edit, not one level
+    -- down. Stepping 2 -> 1 to remove the RESOLVER leaves the resolver in, so
+    -- the next round repeats this one and reads as evidence that it is not the
+    -- patches.
+    local step
+    if last.applied_dispatch then
+        step = "the dispatch logger"
+        PATCH_LEVEL = 1
+    elseif last.applied_resolver then
+        step = "the resolver rewrite"
+        PATCH_LEVEL = 0
+    else
+        break
+    end
+    say("retry_reason: the run raised with " .. step .. " in the chunk, so the "
+        .. "same payload is run again with it taken out (patch level "
+        .. PATCH_LEVEL .. ", " .. tostring(LEVEL_NAME[PATCH_LEVEL]) .. ")")
+    behavior[#behavior+1] = "  [retry: same payload, " .. step .. " removed]"
+    last = runPayload()
 end
 
 -- Which harness produced this capture, said by the harness instead of guessed
--- from its side effects. Two modes ship in one file and a capture from one used
--- to be distinguishable from the other only by reading the behaviour log
--- sideways, which is exactly the inference that went wrong.
-local best = (second and second.ok) and second or first
--- Four states, and they are not interchangeable. "The trace was asked for and
--- the hook never matched this build" is a different capture from "no trace was
--- asked for", and both used to print the same word.
+-- from its side effects. A capture from one mode used to be distinguishable from
+-- another only by reading the behaviour log sideways, which is exactly the
+-- inference that went wrong.
+local best = first
+for i = 1, #attempts do
+    if attempts[i].ok then best = attempts[i] break end
+end
+local chain = {}
+for i = 1, #attempts do chain[i] = attempts[i].mode end
 local hid
 if not first.loaded then
     -- Nothing was traced because nothing compiled. Saying "the hook did not
     -- match" here would send the reader after the wrong thing.
     hid = "untested (the payload did not compile)"
-elseif patchedFirst then
-    hid = second and "traced+retry" or "traced"
-elseif first.mode == "traced" then
+elseif #attempts > 1 then
+    hid = table.concat(chain, "->")
+elseif first.level >= 2 and not first.applied_dispatch then
     hid = "trace_requested_but_unpatched"
 else
-    hid = "untraced"
+    hid = first.mode
 end
 say("harness: universal")
 say("harness_id: " .. hid)
-say("dispatch_patched: " .. tostring(patchedFirst))
+say("dispatch_patched: " .. tostring(first.applied_dispatch))
+say("resolver_patched: " .. tostring(first.applied_resolver))
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
-    say(("attempt%d: mode=%s loaded=%s run_ok=%s return_type=%s "
-         .. "instructions=%d constants=%d"):format(
-        i, tostring(a.mode), tostring(a.loaded), tostring(a.ok),
-        tostring(a.rtype), a.rows_added, a.res_added))
+    say(("attempt%d: mode=%s level=%d loaded=%s run_ok=%s return_type=%s "
+         .. "instructions=%d constants=%d resolver=%s dispatch=%s"):format(
+        i, tostring(a.mode), a.level, tostring(a.loaded), tostring(a.ok),
+        tostring(a.rtype), a.rows_added, a.const_added,
+        tostring(a.applied_resolver), tostring(a.applied_dispatch)))
     if a.err then say("attempt" .. i .. "_error: " .. tostring(a.err)) end
 end
--- The headline outcome is the best attempt, so a capture whose retry finished
--- is not read as a failed run. The per-attempt lines above keep both.
+-- The headline outcome is the best attempt, so a capture whose later round
+-- finished is not read as a failed run. The per-attempt lines above keep both.
 say("loaded: " .. tostring(best.loaded))
 say("run_ok: " .. tostring(best.ok) .. "  return_type: " .. tostring(best.rtype))
 if not best.ok then
     say("error: " .. tostring(best.err or "the run did not finish"))
 end
--- The comparison the two attempts exist to make, stated only when both ran and
--- only as what was seen.
-if second then
-    if second.ok and not first.ok then
-        say("trace_verdict: patch_caught -- the payload raised WITH the "
-            .. "dispatch patch and finished WITHOUT it, same session, same "
-            .. "payload. Editing the interpreter's source is what it reacted "
-            .. "to.")
-    elseif not second.ok then
-        say("trace_verdict: not_the_trace -- the payload raised with AND "
-            .. "without the dispatch patch, so the failure is the program's "
-            .. "own, not the trace.")
-        if tostring(second.err) ~= tostring(first.err) then
-            say("trace_verdict_note: the two errors are not the same text, so "
-                .. "the patch is not irrelevant either")
+-- The comparison the rounds exist to make, stated only as what was seen.
+if #attempts > 1 then
+    if best.ok then
+        -- The edit removed on the way into the round that finished is the one
+        -- the payload objected to.
+        local prev = attempts[1]
+        for i = 2, #attempts do
+            if attempts[i] == best then prev = attempts[i - 1] break end
         end
+        local edit = (prev.level >= 2 and prev.applied_dispatch)
+                     and "the dispatch logger" or "the resolver rewrite"
+        say("trace_verdict: patch_caught -- the payload raised at patch level "
+            .. prev.level .. " (" .. tostring(prev.mode) .. ") and finished at "
+            .. best.level .. " (" .. tostring(best.mode) .. "), same session, "
+            .. "same payload. " .. edit .. " is what it reacted to.")
+    else
+        local deepest = attempts[#attempts]
+        say("trace_verdict: not_the_patches -- the payload raised at every "
+            .. "patch level the harness could take back: "
+            .. table.concat(chain, ", ") .. ". At level " .. deepest.level
+            .. " the chunk was not edited"
+            .. ((deepest.level == 0) and " at all" or " beyond that level")
+            .. ", so the failure is not the instrumentation. It is the program, "
+            .. "or something this environment does not give it.")
+        local same = true
+        for i = 2, #attempts do
+            if tostring(attempts[i].err) ~= tostring(attempts[1].err) then
+                same = false
+            end
+        end
+        say("trace_verdict_note: the error was "
+            .. (same and "identical at every level, which is what an "
+                         .. "environment fault looks like"
+                     or "not the same at every level, so the edits are not "
+                        .. "irrelevant either"))
     end
 end
 
 say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
-say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..patchableFirst)
+say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..first.patchable)
 say("mode: universal")
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
 say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
@@ -783,7 +860,24 @@ say("opcodes="..#ops.."  (logged, cap 40000; total executed may be higher)")
 if codeRows then
     say("code_rows="..#codeRows)
     say("---CODE---")
-    for i=1,math.min(#codeRows,2000) do say(codeRows[i]) end
+    -- The cap used to cut the dump at the first 2000 rows, and a run that jumps
+    -- past that point leaves a capture that cannot say where it went: the rows
+    -- the trace actually visited were the ones missing. So every pc the trace
+    -- reached is dumped whatever its number, on top of the first 2000.
+    local want = {}
+    for i = 1, #ops do
+        local pc = tostring(ops[i]):match("^(%-?%d+);")
+        if pc then want[tonumber(pc)] = true end
+    end
+    local said = 0
+    for i = 1, #codeRows do
+        local pc = tonumber(tostring(codeRows[i]):match("^(%d+):"))
+        if i <= 2000 or (pc and want[pc]) then
+            say(codeRows[i])
+            said = said + 1
+        end
+    end
+    say("code_rows_written=" .. said)
 end
 say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
 pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)

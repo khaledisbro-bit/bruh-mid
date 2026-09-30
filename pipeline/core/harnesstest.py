@@ -32,70 +32,88 @@ _END = 'say("mode: universal")'
 _PRELUDE = """
 local SCEN = SCEN
 local R = {}
-local function say(...) local p={} for i=1,select("#",...) do p[i]=tostring((select(i,...))) end R[#R+1]=table.concat(p,"\\t") end
+local function say(...) local p={} for i=1,select("#", ...) do p[i]=tostring((select(i,...))) end R[#R+1]=table.concat(p,"\\t") end
 local ops, resolved, prints, loads, behavior = {}, {}, {}, {}, {}
+local constSeen = 0
 local SOURCE = "payload"
 local env = {}
 local function typeof(v) return type(v) end
 local function setfenv() end
 local TRACE_OPCODES = SCEN.trace
 local TRACE_CHUNK = 1
-local dispatchDone = false
-local patchable = 0
+local PATCH_LEVEL = TRACE_OPCODES and 2 or 1
+local LEVEL_NAME = { [2] = "traced", [1] = "resolver-only", [0] = "unpatched" }
+local dispatchDone, resolverDone, patchable = false, false, 0
+local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
 local function realLoad(src)
   if SCEN.noload then return nil end
   return function()
     -- what the loadstring hook would have done while the payload was running
-    if TRACE_OPCODES and SCEN.patchable then
-      patchable = patchable + 1
-      if SCEN.patched then
-        dispatchDone = true
-        for i = 1, 3 do ops[#ops+1] = "row" end
-      end
+    if PATCH_LEVEL >= 1 and SCEN.resolver_matches then resolverDone = true end
+    if PATCH_LEVEL >= 2 and SCEN.dispatch_matches then
+      patchable = 1
+      dispatchDone = true
+      for i = 1, 3 do ops[#ops+1] = "row" end
     end
-    resolved[#resolved+1] = "S:x"
-    local ok
-    if TRACE_OPCODES then ok = SCEN.traced_ok else ok = SCEN.untraced_ok end
-    if not ok then
-      error(TRACE_OPCODES and "traced failure" or "untraced failure", 0)
-    end
-    return nil
+    constSeen = constSeen + 1
+    -- The payload finishes only once the edit it objects to is gone. `lives_at`
+    -- is the highest patch level it tolerates; nil means it never finishes.
+    if SCEN.lives_at ~= nil and PATCH_LEVEL <= SCEN.lives_at then return nil end
+    error("raised at level " .. PATCH_LEVEL, 0)
   end
 end
 """
 
 # name -> (scenario, expected header prefixes)
 CASES = {
-    "traced run finishes": (
-        dict(trace=True, patchable=True, patched=True,
-             traced_ok=True, untraced_ok=True),
-        # nothing raised, so there is nothing to re-run and no verdict to give
+    # nothing raised, so there is nothing to take back out and no verdict to give
+    "finishes at full patch level": (
+        dict(trace=True, resolver_matches=True, dispatch_matches=True,
+             lives_at=2),
         {"harness_id": "traced", "attempts": "1", "run_ok": "true",
          "trace_verdict": None}),
-    "dies traced, lives untraced": (
-        dict(trace=True, patchable=True, patched=True,
-             traced_ok=False, untraced_ok=True),
-        {"harness_id": "traced+retry", "attempts": "2", "run_ok": "true",
-         "trace_verdict": "patch_caught"}),
-    "dies both ways": (
-        dict(trace=True, patchable=True, patched=True,
-             traced_ok=False, untraced_ok=False),
-        {"harness_id": "traced+retry", "attempts": "2", "run_ok": "false",
-         "trace_verdict": "not_the_trace"}),
-    "untraced harness, dies": (
-        dict(trace=False, patchable=True, patched=False,
-             traced_ok=False, untraced_ok=False),
-        # no patch was placed, so there is nothing to take out and no second run
-        {"harness_id": "untraced", "attempts": "1", "run_ok": "false",
-         "trace_verdict": None}),
-    "trace asked, hook never matched": (
-        dict(trace=True, patchable=True, patched=False,
-             traced_ok=False, untraced_ok=False),
+    # objects to the dispatch logger only: one step down is enough
+    "dispatch logger caught": (
+        dict(trace=True, resolver_matches=True, dispatch_matches=True,
+             lives_at=1),
+        {"harness_id": "traced->resolver-only", "attempts": "2",
+         "run_ok": "true", "trace_verdict": "patch_caught"}),
+    # tolerates neither edit: the harness has to go all the way to untouched.
+    # This is the case that was being reported as "without the patch" while the
+    # resolver rewrite was still in the chunk.
+    "resolver rewrite caught": (
+        dict(trace=True, resolver_matches=True, dispatch_matches=True,
+             lives_at=0),
+        {"harness_id": "traced->resolver-only->unpatched", "attempts": "3",
+         "run_ok": "true", "trace_verdict": "patch_caught"}),
+    # raises however little is done to it: not the instrumentation
+    "raises at every level": (
+        dict(trace=True, resolver_matches=True, dispatch_matches=True,
+             lives_at=None),
+        {"harness_id": "traced->resolver-only->unpatched", "attempts": "3",
+         "run_ok": "false", "trace_verdict": "not_the_patches"}),
+    # the dispatch hook never matched this build, so level 2 changed nothing and
+    # stepping down from it would repeat the same run and read as evidence
+    "dispatch hook never matched": (
+        dict(trace=True, resolver_matches=True, dispatch_matches=False,
+             lives_at=None),
+        {"harness_id": "resolver-only->unpatched", "attempts": "2",
+         "trace_verdict": "not_the_patches"}),
+    # neither hook matched: one run, nothing to remove, no verdict claimed
+    "no hook matched at all": (
+        dict(trace=True, resolver_matches=False, dispatch_matches=False,
+             lives_at=None),
         {"harness_id": "trace_requested_but_unpatched", "attempts": "1",
-         "trace_verdict": None}),
+         "run_ok": "false", "trace_verdict": None}),
+    # the untraced harness starts a level down and still has the resolver to give
+    "untraced harness, raises": (
+        dict(trace=False, resolver_matches=True, dispatch_matches=True,
+             lives_at=None),
+        {"harness_id": "resolver-only->unpatched", "attempts": "2",
+         "run_ok": "false", "trace_verdict": "not_the_patches"}),
     "payload will not compile": (
-        dict(trace=True, patchable=True, patched=True,
-             traced_ok=True, untraced_ok=True, noload=True),
+        dict(trace=True, resolver_matches=True, dispatch_matches=True,
+             lives_at=2, noload=True),
         {"harness_id": "untested", "attempts": "1", "loaded": "false",
          "trace_verdict": None}),
 }
@@ -124,7 +142,8 @@ def _headers(text):
 # already hides its hook names behind the environment's metatable for exactly
 # that reason, and these would walk straight past that work.
 _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
-                  "TRACE_CHUNK", "dispatchDone", "patchable", "HIDE_HOOKS")
+                  "TRACE_CHUNK", "dispatchDone", "resolverDone", "patchable",
+                  "HIDE_HOOKS", "PATCH_LEVEL", "LEVEL_NAME", "constSeen")
 
 
 def _declared_locals(path=UNIVERSAL):

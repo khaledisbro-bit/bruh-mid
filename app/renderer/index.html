@@ -99,13 +99,15 @@
                 one, and overwrites the capture that worked.
               </div>
               <div class="sub" style="margin-bottom:10px">
-                You do not have to choose a file. If the script dies with the
-                trace hook in it, <b>harness.lua</b> runs the same payload again
-                without the hook by itself, in the same session, and writes both
-                outcomes into the capture. The report then says which one it was:
-                a build that objects to being traced, or a failure that is the
-                program's own. <b>harness_safe.lua</b> is still here, but only
-                to reproduce a clean run on its own.
+                You do not have to choose a file. The harness makes two edits
+                to the script to observe it, and on any round that raises it
+                takes one back out and runs the same payload again - the dispatch
+                logger first, then the constant-resolver rewrite - until the
+                script finishes or nothing is edited at all. Every round goes
+                into the capture, so the report says which edit the script
+                objected to, or that it objected to none of them and the failure
+                is its own. <b>harness_safe.lua</b> is still here, but only to
+                reproduce a run with the logger left out from the start.
               </div>
               <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap">
                 <button class="btn" id="collectBtn"><svg><use href="#i-play"/></svg> Start collecting</button>

@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 41
+VERSION = 42
 
 STAGES = (
     "captures read by shape",
@@ -95,10 +95,20 @@ STAGES = (
     "reconstruction that calls a string or cannot terminate is caught here",
     "a script that dies just after the trace hook goes in named as what it "
     "looks like, with the untraced harness written beside it to settle it",
-    "the harness settling that by itself: when the traced run raises while the "
-    "dispatch patch is in, the same payload is run again unpatched in the same "
-    "session and both outcomes are written down, so the answer is a finding "
-    "rather than a suspicion and no capture has to be identified by hand",
+    "the harness settling that by itself, and all the way down: it makes two "
+    "edits to the chunk, and on each round that raises it takes ONE back out - "
+    "dispatch logger, then resolver rewrite - until the payload finishes or the "
+    "chunk is untouched, so the answer is a finding rather than a suspicion and "
+    "no capture has to be identified by hand",
+    "the verdict as strong as the rounds and no stronger: a round with the "
+    "chunk untouched rules the harness out, and a capture that never reached "
+    "one rules out only the edit it removed and says so",
+    "every pc the trace visited dumped from the instruction array whatever its "
+    "number, because the cap used to cut it off exactly where a run that jumped "
+    "past 2000 went, leaving a capture that could not say where it went",
+    "each round's constants counted raw rather than from the de-duplicated "
+    "list, so a later round is not reported as having got nowhere when it got "
+    "exactly as far as the first",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

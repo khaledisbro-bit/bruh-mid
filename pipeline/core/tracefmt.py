@@ -169,36 +169,57 @@ def _rows(body):
     return out
 
 
-_ATTEMPT = re.compile(
-    r"^attempt(\d+):\s*mode=(\S+)\s+loaded=(\S+)\s+run_ok=(\S+)\s+"
-    r"return_type=(\S+)\s+instructions=(\d+)\s+constants=(\d+)")
+_ATTEMPT = re.compile(r"^attempt(\d+):\s*(.*)$")
 _ATTEMPT_ERR = re.compile(r"^attempt(\d+)_error:\s*(.*)$")
+_KV = re.compile(r"(\w+)=(\S*)")
 
 
 def _attempts(body):
     """The harness's own account of how many times it ran the payload.
 
-    One capture can now hold two runs of the same payload: traced, and - when
-    the traced run raised while the dispatch patch was in - untraced. Reading
-    the headline alone would describe one of them and lose the other, and which
-    one it lost would depend on which finished.
+    One capture can hold several runs of the same payload: the harness takes one
+    of its own edits back out on each round that raised, until the payload
+    finishes or there is nothing left to remove. Reading the headline alone would
+    describe one round and lose the rest, and which one it lost would depend on
+    which finished.
+
+    Fields are read as key=value pairs, in any order, because the set of fields
+    grew once already and a capture written by an older harness still has to
+    parse.
     """
     out, byi = [], {}
     for ln in body.splitlines():
         t = ln.strip()
-        m = _ATTEMPT.match(t)
-        if m:
-            rec = {"n": int(m.group(1)), "mode": m.group(2),
-                   "loaded": m.group(3) == "true", "ok": m.group(4) == "true",
-                   "return_type": m.group(5), "instructions": int(m.group(6)),
-                   "constants": int(m.group(7)), "error": None}
-            out.append(rec)
-            byi[rec["n"]] = rec
-            continue
         m = _ATTEMPT_ERR.match(t)
-        if m and int(m.group(1)) in byi:
-            byi[int(m.group(1))]["error"] = m.group(2).strip()
+        if m:
+            if int(m.group(1)) in byi:
+                byi[int(m.group(1))]["error"] = m.group(2).strip()
+            continue
+        m = _ATTEMPT.match(t)
+        if not m or "=" not in m.group(2):
+            continue
+        kv = dict(_KV.findall(m.group(2)))
+        rec = {"n": int(m.group(1)),
+               "mode": kv.get("mode", "?"),
+               "level": _int(kv.get("level")),
+               "loaded": kv.get("loaded") == "true",
+               "ok": kv.get("run_ok") == "true",
+               "return_type": kv.get("return_type", "nil"),
+               "instructions": _int(kv.get("instructions")) or 0,
+               "constants": _int(kv.get("constants")) or 0,
+               "resolver": kv.get("resolver") == "true",
+               "dispatch": kv.get("dispatch") == "true",
+               "error": None}
+        out.append(rec)
+        byi[rec["n"]] = rec
     return out
+
+
+def _int(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
 
 
 def _rows_from_failed_run(attempts, nrows):
@@ -254,25 +275,59 @@ def stopped_under_the_trace(capture):
     v = getattr(capture, "trace_verdict", None) or ""
     a = getattr(capture, "attempts", None) or []
     if v.startswith("patch_caught"):
-        first = a[0] if a else {}
-        return ("FINDING - this build objects to being traced. The harness ran "
-                "the same payload twice in one session: WITH the dispatch loop "
-                "patched it raised (%s), and WITHOUT the patch it finished. "
-                "Editing the interpreter's source is what it reacted to, so "
-                "this is a self-checking build.\n"
-                "  What that costs: the %d instruction row(s) here come from "
-                "the traced attempt, the one that died. They are real, and they "
-                "are not the whole program. The untraced attempt recovered "
-                "constants and behaviour but logs no instructions, because "
-                "logging them is the thing this build catches."
-                % (first.get("error") or "no error recorded",
-                   len(capture.rows)))
-    if v.startswith("not_the_trace"):
-        return ("FINDING - the trace is not what ended this run. The harness "
-                "ran the same payload with the dispatch patch and without it, "
-                "in one session, and it raised both times. The failure is the "
-                "program's own: a missing service, a guard the environment "
-                "does not satisfy, or a path this executor cannot take.")
+        # The verdict line names which edit it was; repeating the harness's own
+        # words beats guessing it was the dispatch patch, which it need not be.
+        detail = v.split("--", 1)[1].strip() if "--" in v else v
+        raised = [x for x in a if not x["ok"]]
+        return ("FINDING - this build objects to being edited. %s\n"
+                "  So it is a self-checking build.\n"
+                "  What that costs: the %d instruction row(s) here come from a "
+                "round that died - only the traced round logs instructions, and "
+                "the round that finished is a later one. They are real, and "
+                "they are not the whole program. %s"
+                % (detail, len(capture.rows),
+                   ("The round that finished recovered constants and behaviour "
+                    "but no instructions, because logging them is the thing "
+                    "this build catches." if raised else "")))
+    if v.startswith(("not_the_patches", "not_the_trace")):
+        rounds = ", ".join("%s (%s)" % (x["mode"],
+                                       x["error"] or "no error recorded")
+                           for x in a) or "one round"
+        deepest = a[-1] if a else {}
+        # What the LAST round still carried has to come from the capture, not
+        # from the absence of a field. A capture written before the rounds
+        # recorded their patch level says nothing about it, and reading silence
+        # as "nothing was edited" is a claim made from missing data.
+        # The conclusion has to be as strong as the rounds, and no stronger.
+        # An unedited round that raised rules the harness out. A capture that
+        # never reached one rules out only the edits it did remove, and saying
+        # otherwise would be the same mistake this whole mechanism exists to
+        # stop: a verdict reached past the evidence.
+        lvl = deepest.get("level")
+        clean = (lvl == 0) or (lvl is not None
+                               and not deepest.get("resolver")
+                               and not deepest.get("dispatch"))
+        if clean:
+            return ("FINDING - the harness's own edits are not what ended this "
+                    "run. It ran the same payload and took one edit back out on "
+                    "each round that raised: %s. The last round did not edit "
+                    "the chunk at all and it raised too.\n"
+                    "  What is left: the program itself, or something this "
+                    "environment does not give it. The probe section says what "
+                    "a traced run could notice here, and the behaviour log says "
+                    "what the program asked for before it stopped - that is "
+                    "where to look next, not at the trace." % rounds)
+        removed = "the dispatch logger" if any(x.get("dispatch") for x in a) \
+            else "the edit it could remove"
+        return ("PARTLY SETTLED - the harness ran the same payload again with "
+                "%s taken out, and it raised both times: %s. So that edit is "
+                "not what ended the run.\n"
+                "  Not settled: this capture never reached a round with the "
+                "chunk untouched - the constant resolver was still rewritten, "
+                "or the capture does not record what the round carried. The "
+                "current harness keeps removing edits until nothing is left, so "
+                "a fresh capture answers this; this one does not."
+                % (removed, rounds))
     if capture.run_error is None:
         return None
     notes = "\n".join(capture.sections.get("BEHAVIOR", []))
@@ -596,10 +651,67 @@ def _selftest():
                 "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
     check("both-failed run still reports the error", c.run_error, "a")
     note = stopped_under_the_trace(c) or ""
-    if "not what ended this run" not in note:
-        bad.append("an exonerated trace should say so, got %r" % note[:60])
+    # Two rounds that both raised rule out the edit that was removed and NOTHING
+    # more: this capture never reached a round with the chunk untouched, so the
+    # verdict must stop short of exonerating the harness.
+    if not note.startswith("PARTLY SETTLED"):
+        bad.append("two rounds without an untouched one should be partly "
+                   "settled, got %r" % note[:60])
+    if "not what ended the run" not in note:
+        bad.append("it should still rule out the edit it removed, got %r"
+                   % note[:80])
 
-    # 6) no attempt block at all (an older harness): the old suspicion stands
+    # 6) three rounds, all raised: the harness removed every edit it could
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\n"
+                "harness_id: traced->resolver-only->unpatched\nattempts: 3\n"
+                "attempt1: mode=traced level=2 loaded=true run_ok=false "
+                "return_type=nil instructions=9 constants=1 resolver=true "
+                "dispatch=true\nattempt1_error: a\n"
+                "attempt2: mode=resolver-only level=1 loaded=true run_ok=false "
+                "return_type=nil instructions=0 constants=1 resolver=true "
+                "dispatch=false\nattempt2_error: a\n"
+                "attempt3: mode=unpatched level=0 loaded=true run_ok=false "
+                "return_type=nil instructions=0 constants=1 resolver=false "
+                "dispatch=false\nattempt3_error: a\n"
+                "run_ok: false  return_type: nil\nerror: a\n"
+                "trace_verdict: not_the_patches -- x\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("three rounds parsed", len(c.attempts), 3)
+    check("level read", c.attempts[2]["level"], 0)
+    check("the deepest round edited nothing", c.attempts[2]["resolver"], False)
+    check("run still failed", c.run_error, "a")
+    note = stopped_under_the_trace(c) or ""
+    if "not what ended this run" not in note:
+        bad.append("an exonerated set of edits should say so, got %r"
+                   % note[:60])
+    if "did not edit the chunk at all" not in note:
+        bad.append("the report should say the last round was unedited, got %r"
+                   % note[:120])
+
+    # 7) the resolver rewrite was the culprit, not the dispatch logger
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nattempts: 3\n"
+                "attempt1: mode=traced level=2 loaded=true run_ok=false "
+                "return_type=nil instructions=9 constants=1 resolver=true "
+                "dispatch=true\nattempt1_error: a\n"
+                "attempt2: mode=resolver-only level=1 loaded=true run_ok=false "
+                "return_type=nil instructions=0 constants=1 resolver=true "
+                "dispatch=false\nattempt2_error: a\n"
+                "attempt3: mode=unpatched level=0 loaded=true run_ok=true "
+                "return_type=table instructions=0 constants=9 resolver=false "
+                "dispatch=false\n"
+                "run_ok: true  return_type: table\n"
+                "trace_verdict: patch_caught -- the resolver rewrite is what "
+                "it reacted to.\n"
+                "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")
+    check("a finished later round is not an error", c.run_error, None)
+    check("rows still came from a round that died",
+          c.rows_from_failed_run, True)
+    note = stopped_under_the_trace(c) or ""
+    if "resolver rewrite" not in note:
+        bad.append("the report should name the edit the harness named, got %r"
+                   % note[:120])
+
+    # 8) no attempt block at all (an older harness): the old suspicion stands
     c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nrun_ok: false\nerror: e\n"
                 "---BEHAVIOR---\n  [patched dispatch a/b/c sp=d]\n"
                 "---OPCODES---\n1;2;3;0;x\nEND_UNOBF_RESULT")

@@ -247,12 +247,16 @@ def main():
     harness = make_harness(src, a.out,
                            visible_hooks=a.visible_hooks)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
-    print("              Run THIS one. If the script dies with the trace hook "
-          "in it, this")
-    print("              harness re-runs the same payload without the hook by "
-          "itself, in")
-    print("              the same session, and writes both outcomes into the "
-          "capture.")
+    print("              Run THIS one. The harness makes two edits to the "
+          "chunk to observe it,")
+    print("              and on any round that raises it takes ONE back out "
+          "and runs the same")
+    print("              payload again - dispatch logger, then resolver "
+          "rewrite - until the")
+    print("              script finishes or the chunk is untouched. Every "
+          "round goes into the")
+    print("              capture, so the report says which edit it was, or "
+          "that it was none.")
     print("              also: %s  (never patches the dispatch loop; only "
           "needed to" % os.path.join(a.out, "harness_safe.lua"))
     print("              reproduce a clean run on its own)")

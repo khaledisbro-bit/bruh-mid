@@ -261,12 +261,22 @@ class Analysis:
         later = getattr(self.capture, "calls_after_retry", None) or []
         if not later:
             return []
-        L = ["THE SECOND RUN RECORDED MORE",
-             "  The untraced attempt made %d call(s) of its own. They are not "
-             "counted" % len(later),
-             "  against the reconstruction below, which describes the traced "
-             "attempt's",
-             "  instructions - but they are what the run that finished did:"]
+        # "what the run that finished did" was printed for a capture where no
+        # round finished. The later rounds are worth reporting either way, but
+        # only the ones that happened may be described.
+        rounds = getattr(self.capture, "attempts", None) or []
+        finished = [r for r in rounds if r["ok"]]
+        L = ["A LATER ROUND RECORDED MORE",
+             "  The harness ran the payload again with one of its own edits "
+             "removed.",
+             "  That round made %d call(s) of its own. They are not counted "
+             "against the" % len(later),
+             "  reconstruction below, which describes the instructions from the "
+             "round that",
+             "  logged them%s:"
+             % (" - but they are what the round that finished did"
+                if finished else
+                ", and no round of this capture finished")]
         for c in later[:40]:
             L.append("    %s" % c["raw"])
         if len(later) > 40:
