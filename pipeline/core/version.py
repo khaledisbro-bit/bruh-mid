@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 39
+VERSION = 40
 
 STAGES = (
     "captures read by shape",
@@ -93,6 +93,8 @@ STAGES = (
     "a finding, so no verdict is reached on no evidence",
     "the Lua this package writes actually executed, not merely parsed, so a "
     "reconstruction that calls a string or cannot terminate is caught here",
+    "a script that dies just after the trace hook goes in named as what it "
+    "looks like, with the untraced harness written beside it to settle it",
 )
 
 

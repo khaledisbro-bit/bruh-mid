@@ -224,14 +224,20 @@ def main():
               "analysis")
     json.dump(log, open(os.path.join(a.out, "analysis_log.json"), "w"), indent=2)
 
-    if a.safe:
-        os.replace(make_harness(src, a.out, safe=True,
-                                visible_hooks=a.visible_hooks),
-                   os.path.join(a.out, "harness_safe.lua"))
-        print("              safe harness -> %s/harness_safe.lua" % a.out)
+    # Always. A build that checks its own source reacts to the dispatch patch
+    # and to nothing else the harness does, and the difference between the two
+    # harnesses is the cleanest evidence of that there is: same run, same
+    # everything, one of them patches the interpreter's loop and one does not.
+    # It cost nothing to write and it was behind a flag nobody knew to pass.
+    os.replace(make_harness(src, a.out, safe=True,
+                            visible_hooks=a.visible_hooks),
+               os.path.join(a.out, "harness_safe.lua"))
     harness = make_harness(src, a.out,
                            visible_hooks=a.visible_hooks)
     print("[3/4] HARNESS : %s  (whole source embedded)" % harness)
+    print("              also: %s  (traces constants but does NOT patch the "
+          "dispatch loop - run this one if the script dies under the other)"
+          % os.path.join(a.out, "harness_safe.lua"))
     # One run traces one interpreter, because patching two trips the VM's
     # integrity check. The program's tail runs inside the later ones, so a
     # harness for each is written and their captures merge as separate runs.

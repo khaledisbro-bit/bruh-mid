@@ -311,6 +311,11 @@ $('#findWsBtn').addEventListener('click', async () => {
   if (r.folders && r.folders.length) $('#wsBox').value = r.folders[0];
 });
 
+$('#openSafeBtn').addEventListener('click', async () => {
+  if (!state.outDir) { alert('Start collecting first - the harnesses are written then.'); return; }
+  await window.vm.openPath(state.outDir + '/harness_safe.lua');
+});
+
 $('#openHarnessBtn').addEventListener('click', async () => {
   if (!state.outDir) { alert('Start collecting first - the harness is written then.'); return; }
   await window.vm.openPath(state.outDir + '/harness.lua');

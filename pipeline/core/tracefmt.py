@@ -153,6 +153,36 @@ def _run_error(headers, body):
     return err or "the run did not finish"
 
 
+def stopped_under_the_trace(capture):
+    """Whether the script died right after the trace hook went into it.
+
+    A build that checks its own source reacts to the dispatch patch and to
+    nothing else the harness does. The pattern is specific: the hook went in,
+    the run raised, and it raised after a handful of instructions - far too few
+    for a program that loaded a megabyte of interpreter. That is worth saying,
+    because the remedy is a harness that does not patch the dispatch loop, and
+    it is written beside this one.
+
+    It is a suspicion, not a finding, and is worded as one."""
+    if capture.run_error is None:
+        return None
+    notes = "\n".join(capture.sections.get("BEHAVIOR", []))
+    if "patched dispatch" not in notes:
+        return None
+    if len(capture.rows) > 200:
+        return None
+    return ("The trace hook went into this build's interpreter and the script "
+            "raised %d instruction(s) later - too few for a program that just "
+            "loaded an interpreter. A build that checks its own source would "
+            "behave exactly like this, because patching the dispatch loop "
+            "changes that source.\n"
+            "  This is a suspicion, not a finding. The way to settle it is "
+            "beside this report: harness_safe.lua traces constants but does "
+            "NOT patch the dispatch loop. If the script runs under that one "
+            "and dies under this one, the check is real and the dispatch patch "
+            "is what it caught." % len(capture.rows))
+
+
 def _probe(sections):
     """What the harness could still tell about itself.
 

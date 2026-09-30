@@ -230,6 +230,9 @@ class Analysis:
              "before" % len(self.capture.rows),
              "  that, which is not the program.",
              "",
+             ] + ([("  " + tracefmt.stopped_under_the_trace(self.capture)
+                    ).replace("\n  ", "\n  "), ""]
+                  if tracefmt.stopped_under_the_trace(self.capture) else []) + [
              ] if getattr(self.capture, "run_error", None) else []) + [
              "captured instructions      %d" % len(self.capture.rows),
              "interpreter machinery      %d record(s) folded away"
