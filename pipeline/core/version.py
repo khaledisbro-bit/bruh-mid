@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 44
+VERSION = 45
 
 STAGES = (
     "captures read by shape",
@@ -130,6 +130,14 @@ STAGES = (
     "proxy, because a proxy answers every field with a function and a program "
     "that asked for a service this engine lacks gets nothing like what it "
     "expected",
+    "the prototype makers hooked where each closure is BUILT, not only where "
+    "instructions run, so the arrays of functions this run never called are seen "
+    "too and coverage counts them as never entered rather than as absent",
+    "the prototype parameter found by a name-free signature - it is the one "
+    "indexed through itself, P[P[k]] - a discriminator taken from the Luraph v15 "
+    "devirtualizer (MIT) and not the literal variable names it also carries",
+    "four patch levels bisected rather than two, so the outermost edit is taken "
+    "back out first and an edit that never went in is never stepped over",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "

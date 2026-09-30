@@ -387,11 +387,14 @@ local TRACE_CHUNK = 1
 --   2 = resolver rewritten AND dispatch loop traced
 --   1 = resolver rewritten only
 --   0 = nothing touched
-local PATCH_LEVEL = TRACE_OPCODES and 2 or 1
-local LEVEL_NAME = { [2] = "traced", [1] = "resolver-only", [0] = "unpatched" }
+--   3 = prototype makers hooked, resolver rewritten AND dispatch loop traced
+local PATCH_LEVEL = TRACE_OPCODES and 3 or 1
+local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
+                     [1] = "resolver-only", [0] = "unpatched" }
 local patchable = 0          -- how many interpreters we have been able to patch
 local dispatchDone = false   -- harness-local gate (executors may sandbox _G)
 local resolverDone = false   -- whether the resolver rewrite went in this round
+local protosDone = false     -- whether the prototype-maker hook went in
 local function patchDispatch(s)
     -- first (NL-NU)%0x7fffffff expression = the dispatch opcode
     local nl, nu = s:match("%(%((%w+)%-(%w+)%)%%0[xX]%x+")
@@ -454,6 +457,88 @@ local function patchDispatch(s)
     return s:sub(1, j - 1) .. inject .. s:sub(j), (nl .. "/" .. nu .. "/" .. pc .. " sp=" .. sp)
 end
 
+-- Every prototype, not only the ones the run entered.
+--
+-- The dispatch trace can only ever show instructions that EXECUTED, and the
+-- array it hands over is the one the current call holds. A build of this class
+-- keeps a prototype per function, so a program's untaken branches and unused
+-- functions have arrays that no trace and no single dump can reach. Coverage
+-- measured against one array is coverage of one function.
+--
+-- The way in is the place where each closure is BUILT rather than run: a maker
+-- function that takes the prototype and returns the interpreter closure for it.
+-- Hooking there sees every prototype the program defines, including the ones it
+-- never calls.
+--
+-- Finding that function without knowing any of its names is the part worth
+-- having, and the discriminator comes from the Luraph v15 devirtualizer
+-- (caomod2077/Deobfuscator-Luraph-V15, MIT), whose vmmap._maker_params picks the
+-- prototype parameter as "the parameter indexed through itself (P[P[k]]: its
+-- fields are keyed by its own entries)". That is a behavioural signature, so it
+-- survives renaming, and it is the same kind of test the rest of this package
+-- uses. Their implementation reads a real Luau AST; this one is a text pattern,
+-- because this harness runs inside the executor with no parser. Nothing
+-- build-specific is carried over: their loop_names() returns literal variable
+-- names for known builds, and that is exactly the lookup this project refuses.
+local protoSeen, protoN = {}, 0
+HID.__PROTO = function(p)
+    if type(p) ~= "table" then return end
+    local k = tostring(p)
+    if protoSeen[k] then return end
+    protoSeen[k] = true
+    protoN = protoN + 1
+    if protoN > 400 then return end
+    -- A prototype holds its instruction array as one of its fields. Which field
+    -- is not known and is not guessed: every field that LOOKS like an
+    -- instruction array is handed to the array dump, which records what it
+    -- actually found. A field that is not one produces a short dump and says so.
+    for _, v in pairs(p) do
+        if type(v) == "table" and type(rawget(v, 1)) ~= "nil" then
+            pcall(function() HID.__CODE(v) end)
+        end
+    end
+    pcall(function() HID.__CODE(p) end)
+end
+
+local function patchProtos(s)
+    -- The self-indexed variable: X[X[...]]. Lua patterns carry back-references,
+    -- so this is one match and no name appears in it.
+    local names, order = {}, {}
+    for nm in s:gmatch("([%a_][%w_]*)%[%1%[") do
+        if not names[nm] then names[nm] = true; order[#order+1] = nm end
+    end
+    if #order == 0 then return nil end
+    local hits = 0
+    local out = s
+    for i = 1, #order do
+        local nm = order[i]
+        -- the nearest function header whose parameter list carries that name
+        local best
+        local from = 1
+        while true do
+            -- `function(...)` and `function name(...)` and `function a.b:c(...)`
+            -- all declare parameters. Matching only the anonymous form found no
+            -- maker at all in a source that names its functions.
+            local a, b, params = out:find("function[%s]*[%w_.:]*[%s]*%(([^)]*)%)",
+                                          from)
+            if not a then break end
+            local found = false
+            for tok in params:gmatch("[%a_][%w_]*") do
+                if tok == nm then found = true break end
+            end
+            if found then best = b end
+            from = b + 1
+        end
+        if best then
+            local inject = ";if __PROTO then __PROTO(" .. nm .. ")end"
+            out = out:sub(1, best) .. inject .. out:sub(best + 1)
+            hits = hits + 1
+        end
+    end
+    if hits == 0 then return nil end
+    return out, hits .. " maker(s) on " .. #order .. " self-indexed name(s)"
+end
+
 local function patchResolver(s)
     local rn, ra, rg, rd, rt = s:match("local function (%w+)%((%w+)%)if %2<0 then %2=%-%2%-(%w+) end;return (%w+)%((%w+)%[%2%]%)end")
     if not rn then return nil end
@@ -471,6 +556,21 @@ env.loadstring = function(src, ...)
     behavior[#behavior+1] = "loadstring #" .. n .. "  (inner layer: " .. layer .. ")"
     if n > 200 and #loads <= 3 then
         pcall(function() writefile("inner_chunk_" .. #loads .. ".txt", tostring(src)) end)
+    end
+    -- The outermost edit: hook where prototypes are built, so the arrays of
+    -- functions this run never calls are seen too.
+    local src0 = src
+    if PATCH_LEVEL >= 3 then
+        local okP, patchedP, pn = pcall(patchProtos, src)
+        if okP and patchedP then
+            src = patchedP
+            protosDone = true
+            behavior[#behavior+1] = "  [hooked prototype makers -> " .. tostring(pn) .. "]"
+        else
+            behavior[#behavior+1] = "  [no prototype maker matched; nothing hooked]"
+        end
+    else
+        behavior[#behavior+1] = "  [prototype makers left alone at this patch level]"
     end
     -- try to patch the inner resolver so it dumps real constants (guarded)
     local use = src
@@ -517,7 +617,8 @@ env.loadstring = function(src, ...)
     -- -> original. A broken dispatch patch never costs us the constant dump.
     local f = realLoad(useD, ...)
     if not f and useD ~= use then f = realLoad(use, ...) end
-    if not f then f = realLoad(src, ...) end
+    if not f and use ~= src then f = realLoad(src, ...) end
+    if not f then f = realLoad(src0, ...) end
     if f then pcall(setfenv, f, env) end
     return f
 end
@@ -784,6 +885,7 @@ local attempts = {}
 local function runPayload()
     dispatchDone = false
     resolverDone = false
+    protosDone = false
     patchable = 0
     -- The line shield corrects for an injection. On a round where the injection
     -- is not going in, leaving it set would answer the payload's questions about
@@ -828,12 +930,14 @@ local function runPayload()
     rec.const_added = constSeen - rec.const0
     rec.applied_dispatch = dispatchDone
     rec.applied_resolver = resolverDone
+    rec.applied_protos = protosDone
     rec.patchable = patchable
     -- The round's name comes from what was APPLIED, not from what was asked for.
     -- A level-2 round whose dispatch hook never matched this build is a
     -- resolver-only round, and calling it "traced" would put an edit in the
     -- record that is not in the chunk.
-    rec.mode = (dispatchDone and LEVEL_NAME[2])
+    rec.mode = (protosDone and LEVEL_NAME[3])
+               or (dispatchDone and LEVEL_NAME[2])
                or (resolverDone and LEVEL_NAME[1])
                or LEVEL_NAME[0]
     attempts[#attempts+1] = rec
@@ -850,7 +954,10 @@ while not last.ok do
     -- the next round repeats this one and reads as evidence that it is not the
     -- patches.
     local step
-    if last.applied_dispatch then
+    if last.applied_protos then
+        step = "the prototype-maker hook"
+        PATCH_LEVEL = 2
+    elseif last.applied_dispatch then
         step = "the dispatch logger"
         PATCH_LEVEL = 1
     elseif last.applied_resolver then
@@ -883,7 +990,7 @@ if not first.loaded then
     hid = "untested (the payload did not compile)"
 elseif #attempts > 1 then
     hid = table.concat(chain, "->")
-elseif first.level >= 2 and not first.applied_dispatch then
+elseif first.level >= 2 and not first.applied_dispatch and not first.applied_protos then
     hid = "trace_requested_but_unpatched"
 else
     hid = first.mode
@@ -898,14 +1005,17 @@ say("hooks_hidden: " .. tostring(HIDE_HOOKS))
 say("harness_id: " .. hid)
 say("dispatch_patched: " .. tostring(first.applied_dispatch))
 say("resolver_patched: " .. tostring(first.applied_resolver))
+say("protos_hooked: " .. tostring(first.applied_protos))
+say("protos_seen: " .. protoN)
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
     say(("attempt%d: mode=%s level=%d loaded=%s run_ok=%s return_type=%s "
-         .. "instructions=%d constants=%d resolver=%s dispatch=%s"):format(
+         .. "instructions=%d constants=%d resolver=%s dispatch=%s protos=%s"):format(
         i, tostring(a.mode), a.level, tostring(a.loaded), tostring(a.ok),
         tostring(a.rtype), a.rows_added, a.const_added,
-        tostring(a.applied_resolver), tostring(a.applied_dispatch)))
+        tostring(a.applied_resolver), tostring(a.applied_dispatch),
+        tostring(a.applied_protos)))
     if a.err then say("attempt" .. i .. "_error: " .. tostring(a.err)) end
 end
 -- The headline outcome is the best attempt, so a capture whose later round
@@ -924,8 +1034,9 @@ if #attempts > 1 then
         for i = 2, #attempts do
             if attempts[i] == best then prev = attempts[i - 1] break end
         end
-        local edit = (prev.level >= 2 and prev.applied_dispatch)
-                     and "the dispatch logger" or "the resolver rewrite"
+        local edit = (prev.applied_protos and "the prototype-maker hook")
+                     or (prev.applied_dispatch and "the dispatch logger")
+                     or "the resolver rewrite"
         say("trace_verdict: patch_caught -- the payload raised at patch level "
             .. prev.level .. " (" .. tostring(prev.mode) .. ") and finished at "
             .. best.level .. " (" .. tostring(best.mode) .. "), same session, "

@@ -56,6 +56,7 @@ class Capture:
         self.harness_id = self.headers.get("harness_id")
         self.harness_engine = _int(self.headers.get("harness_engine"))
         self.code_arrays = _int(self.headers.get("code_arrays"))
+        self.protos_seen = _int(self.headers.get("protos_seen"))
         self.recheck = _recheck(self.body)
         self.env_missing = [l.strip() for l in
                             self.sections.get("ENVMISSING", []) if l.strip()]
@@ -421,6 +422,13 @@ def what_the_arrays_did(capture):
                  "of this class keeps one per function, so the array in the CODE "
                  "section is ONE function's instructions, not the program's. "
                  "Coverage below is measured against that one." % n)
+    pn = getattr(capture, "protos_seen", None)
+    if pn:
+        L.append("The prototype makers were hooked, and %d prototype(s) were "
+                 "handed over as they were BUILT. That reaches functions this "
+                 "run never called, whose instructions no trace can show - "
+                 "coverage below counts them as never entered rather than as "
+                 "absent." % pn)
     moved = [r for r in (getattr(capture, "recheck", None) or [])
              if r.get("arr") is not None
              and (r["changed"] or r["appeared"])]
@@ -664,6 +672,7 @@ def combine(caps):
         base.harness_id = base.headers.get("harness_id")
         base.harness_engine = _int(base.headers.get("harness_engine"))
         base.code_arrays = _int(base.headers.get("code_arrays"))
+        base.protos_seen = _int(base.headers.get("protos_seen"))
         base.recheck = _recheck(base.body)
         base.env_missing = _union(base.env_missing, other.env_missing,
                                   lambda x: x)

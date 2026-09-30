@@ -41,14 +41,17 @@ local function typeof(v) return type(v) end
 local function setfenv() end
 local TRACE_OPCODES = SCEN.trace
 local TRACE_CHUNK = 1
-local PATCH_LEVEL = TRACE_OPCODES and 2 or 1
-local LEVEL_NAME = { [2] = "traced", [1] = "resolver-only", [0] = "unpatched" }
-local dispatchDone, resolverDone, patchable = false, false, 0
+local PATCH_LEVEL = TRACE_OPCODES and 3 or 1
+local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
+                     [1] = "resolver-only", [0] = "unpatched" }
+local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
+local protoN = 0
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
 local function realLoad(src)
   if SCEN.noload then return nil end
   return function()
     -- what the loadstring hook would have done while the payload was running
+    if PATCH_LEVEL >= 3 and SCEN.proto_matches then protosDone = true end
     if PATCH_LEVEL >= 1 and SCEN.resolver_matches then resolverDone = true end
     if PATCH_LEVEL >= 2 and SCEN.dispatch_matches then
       patchable = 1
@@ -66,54 +69,60 @@ end
 
 # name -> (scenario, expected header prefixes)
 CASES = {
-    # nothing raised, so there is nothing to take back out and no verdict to give
+    # nothing raised: nothing to take back out, no verdict to give
     "finishes at full patch level": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=True,
-             lives_at=2),
-        {"harness_id": "traced", "attempts": "1", "run_ok": "true",
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=3),
+        {"harness_id": "protos+traced", "attempts": "1", "run_ok": "true",
          "trace_verdict": None}),
-    # objects to the dispatch logger only: one step down is enough
+    # objects to the outermost edit only
+    "proto hook caught": (
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=2),
+        {"harness_id": "protos+traced->traced", "attempts": "2",
+         "run_ok": "true", "trace_verdict": "patch_caught"}),
     "dispatch logger caught": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=True,
-             lives_at=1),
-        {"harness_id": "traced->resolver-only", "attempts": "2",
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=1),
+        {"harness_id": "protos+traced->traced->resolver-only", "attempts": "3",
          "run_ok": "true", "trace_verdict": "patch_caught"}),
-    # tolerates neither edit: the harness has to go all the way to untouched.
-    # This is the case that was being reported as "without the patch" while the
-    # resolver rewrite was still in the chunk.
+    # tolerates no edit at all: the harness has to reach untouched
     "resolver rewrite caught": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=True,
-             lives_at=0),
-        {"harness_id": "traced->resolver-only->unpatched", "attempts": "3",
-         "run_ok": "true", "trace_verdict": "patch_caught"}),
-    # raises however little is done to it: not the instrumentation
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=0),
+        {"harness_id": "protos+traced->traced->resolver-only->unpatched",
+         "attempts": "4", "run_ok": "true", "trace_verdict": "patch_caught"}),
     "raises at every level": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=True,
-             lives_at=None),
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=None),
+        {"harness_id": "protos+traced->traced->resolver-only->unpatched",
+         "attempts": "4", "run_ok": "false", "trace_verdict": "not_the_patches"}),
+    # an edit that never went in is not stepped over: doing so would repeat the
+    # round and read as evidence
+    "no proto maker matched": (
+        dict(trace=True, proto_matches=False, resolver_matches=True,
+             dispatch_matches=True, lives_at=None),
         {"harness_id": "traced->resolver-only->unpatched", "attempts": "3",
-         "run_ok": "false", "trace_verdict": "not_the_patches"}),
-    # the dispatch hook never matched this build, so level 2 changed nothing and
-    # stepping down from it would repeat the same run and read as evidence
+         "trace_verdict": "not_the_patches"}),
     "dispatch hook never matched": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=False,
-             lives_at=None),
+        dict(trace=True, proto_matches=False, resolver_matches=True,
+             dispatch_matches=False, lives_at=None),
         {"harness_id": "resolver-only->unpatched", "attempts": "2",
          "trace_verdict": "not_the_patches"}),
-    # neither hook matched: one run, nothing to remove, no verdict claimed
     "no hook matched at all": (
-        dict(trace=True, resolver_matches=False, dispatch_matches=False,
-             lives_at=None),
+        dict(trace=True, proto_matches=False, resolver_matches=False,
+             dispatch_matches=False, lives_at=None),
         {"harness_id": "trace_requested_but_unpatched", "attempts": "1",
          "run_ok": "false", "trace_verdict": None}),
-    # the untraced harness starts a level down and still has the resolver to give
+    # the untraced harness starts below the tracing edits
     "untraced harness, raises": (
-        dict(trace=False, resolver_matches=True, dispatch_matches=True,
-             lives_at=None),
+        dict(trace=False, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=None),
         {"harness_id": "resolver-only->unpatched", "attempts": "2",
          "run_ok": "false", "trace_verdict": "not_the_patches"}),
     "payload will not compile": (
-        dict(trace=True, resolver_matches=True, dispatch_matches=True,
-             lives_at=2, noload=True),
+        dict(trace=True, proto_matches=True, resolver_matches=True,
+             dispatch_matches=True, lives_at=3, noload=True),
         {"harness_id": "untested", "attempts": "1", "loaded": "false",
          "trace_verdict": None}),
 }
@@ -125,6 +134,86 @@ def run_block(path=UNIVERSAL):
     i = s.index(_START)
     j = s.index(_END) + len(_END)
     return s[i:j]
+
+
+_PROTO_CASES = {
+    # A maker shaped like the real thing: the prototype is the parameter indexed
+    # through ITSELF, and the interpreter closure is built inside it.
+    "named maker": (
+        "local function build(env, P, ups) local CODE = P[P[3]] "
+        "return function(...) local pc=1 while true do local NO=CODE[pc] "
+        "if NO==nil then return end pc=pc+1 end end end return build", True),
+    "anonymous maker": (
+        "local build = function(e, Q, u) local C = Q[Q[2]] "
+        "return function(...) return C end end return build", True),
+    # Nothing indexed through itself, so there is no prototype to name and the
+    # hook must refuse rather than pick something.
+    "nothing self-indexed": (
+        "local function f(a,b) return a+b end return f", False),
+}
+
+
+def proto_hook(path=UNIVERSAL):
+    """The prototype-maker hook, driven on sources whose shape is known.
+
+    The discriminator is the only part that matters and it is name-free: the
+    prototype is the parameter indexed through itself. These cases check that it
+    fires on a maker whether the function is named or anonymous, that the patched
+    source still COMPILES, that the hook is handed the real prototype table, and
+    that a source with nothing self-indexed is refused instead of guessed at.
+
+    The first version matched only `function(` and so found no maker at all in a
+    source that names its functions, which is why the named case is here.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("local function patchProtos(s)")
+        b = src.index("local function patchResolver(s)")
+    except ValueError:
+        return ["universal.lua has no patchProtos to test"]
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    mk = L.execute(src[a:b] + "\nreturn patchProtos\n")
+    chk = L.eval("function(s) local f,e=(load or loadstring)(s);"
+                 " return f and 'OK' or tostring(e) end")
+    bad = []
+    for name, (text, should) in _PROTO_CASES.items():
+        got = mk(text)
+        if should and got is None:
+            bad.append("%s: no maker found, so no prototype would be dumped"
+                       % name)
+            continue
+        if not should:
+            if got is not None:
+                bad.append("%s: a maker was claimed where nothing is indexed "
+                           "through itself" % name)
+            continue
+        out = got[0]
+        if "__PROTO(" not in out:
+            bad.append("%s: nothing was injected" % name)
+        verdict = chk(out)
+        if verdict != "OK":
+            bad.append("%s: the patched source does not compile: %s"
+                       % (name, verdict))
+    # the hook must receive the prototype itself, not something near it
+    got = mk(_PROTO_CASES["named maker"][0])
+    if got is not None:
+        seen = []
+        L2 = lupa.LuaRuntime(unpack_returned_tuples=True)
+        L2.globals().__PROTO = lambda p: seen.append(p)
+        try:
+            build = L2.execute(got[0])
+            build(None, L2.table_from({3: L2.table_from([7, 8, 9])}), None)
+        except Exception as exc:                      # noqa: BLE001
+            bad.append("the patched maker would not run: %s" % exc)
+        if not seen:
+            bad.append("the hook never fired while the maker ran")
+        elif seen[0] is None or seen[0][3] is None or seen[0][3][1] != 7:
+            bad.append("the hook was handed something that is not the prototype")
+    return bad
 
 
 def _headers(text):
@@ -146,7 +235,8 @@ _MUST_BE_LOCAL = ("ORIGINAL_LINES", "PATCH_AT", "PATCH_ADDED", "TRACE_OPCODES",
                   "HIDE_HOOKS", "PATCH_LEVEL", "LEVEL_NAME", "constSeen",
                   "codeArrays", "codeArrayN", "codeMap", "codeRefs",
                   "codeOrdered", "codeRows", "missing", "missingSeen",
-                  "missingN", "HARNESS_ENGINE")
+                  "missingN", "HARNESS_ENGINE", "protosDone", "protoSeen",
+                  "protoN")
 
 
 def _declared_locals(path=UNIVERSAL):
@@ -172,7 +262,7 @@ def _declared_locals(path=UNIVERSAL):
 
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
-    leaks = _declared_locals(path)
+    leaks = _declared_locals(path) + proto_hook(path)
     try:
         import lupa
     except ImportError:
@@ -213,8 +303,10 @@ def selftest(path=UNIVERSAL):
 
 if __name__ == "__main__":
     probs, ran = selftest()
-    print("harness decision self-test: %d case(s), %d problem(s)%s"
-          % (len(CASES), len(probs), "" if ran else "  [NOT RUN]"))
+    print("harness decision self-test: %d case(s) + %d proto case(s), "
+          "%d problem(s)%s"
+          % (len(CASES), len(_PROTO_CASES), len(probs),
+             "" if ran else "  [NOT RUN]"))
     for p in probs:
         print("  - %s" % p)
     raise SystemExit(1 if probs else 0)
