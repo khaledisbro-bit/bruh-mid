@@ -270,6 +270,12 @@ class Analysis:
         # say nothing about either, while the capture carried the answer.
         for ln in tracefmt.what_the_arrays_did(cap):
             L += ["  " + ln, ""]
+        # Whether the instructions grouped under one opcode really are one. This
+        # belongs BEFORE anything measured per opcode is read, because every
+        # number below inherits that grouping.
+        doubt = tracefmt.opcode_grouping_doubt(cap)
+        if doubt:
+            L += ["  " + x for x in doubt] + [""]
         env = tracefmt.env_did_not_have(cap)
         if env:
             L += ["  " + x for x in env] + [""]

@@ -431,6 +431,51 @@ def stopped_under_the_trace(capture):
             "that or from a run where the patch never went in." % len(capture.rows))
 
 
+def opcode_grouping_doubt(capture):
+    """Whether instructions grouped under one decoded opcode really are one.
+
+    The interpreter's decode turns a per-instruction encoded field into a small
+    opcode number, and that field differs per program counter BY DESIGN - so two
+    rows sharing a decoded opcode are expected to differ there, and a difference
+    proves nothing.
+
+    What does count is the operands. One opcode takes one shape of operand row.
+    When rows grouped under a single decoded opcode carry different NUMBERS of
+    operands, either the opcode is context-dependent or the decode did not
+    separate them - and everything measured per opcode afterwards is measured
+    across instructions that are not the same instruction.
+
+    This is an observation with its evidence, not a verdict. Saying which of the
+    two it is needs the interpreter's handlers, not this."""
+    byop = {}
+    for r in capture.rows:
+        byop.setdefault(r["opcode"], []).append(r)
+    out = []
+    for op, rows in sorted(byop.items()):
+        widths = {}
+        for r in rows:
+            widths.setdefault(len(r["operands"]), []).append(r["pc"])
+        if len(widths) < 2:
+            continue
+        shape = "; ".join(
+            "%d operand(s) at pc %s" % (w, ",".join(str(p) for p in sorted(set(pcs))[:6]))
+            for w, pcs in sorted(widths.items()))
+        out.append((op, len(rows), shape))
+    if not out:
+        return []
+    L = ["Opcode grouping is not established for %d of the decoded opcode(s). "
+         "One opcode takes one shape of operand row, and these do not:" % len(out)]
+    for op, n, shape in out:
+        L.append("  opcode %s covers %d instruction(s) with mixed shapes - %s"
+                 % (op, n, shape))
+    L.append("Either those opcodes are context-dependent, or the decode did not "
+             "separate them. Anything measured per opcode below is measured "
+             "across instructions that may not be the same instruction. Which of "
+             "the two it is needs the interpreter's own handlers to say, and "
+             "this capture does not settle it.")
+    return L
+
+
 def what_the_arrays_did(capture):
     """Whether the instructions in this capture describe the program.
 
@@ -1076,6 +1121,31 @@ def _selftest():
                    "limitation, got %r" % said[:200])
     if "not an instruction row" in said:
         bad.append("a row that WAS read must not be reported as absent")
+
+    # 13) one decoded opcode covering rows of different operand shapes. The
+    #     encoded field differing is expected and must NOT be reported; the
+    #     operand shapes differing must be.
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n---OPCODES---\n"
+                "10;0;1,2,3;0;nil;rawop=111\n"
+                "11;0;5;0;nil;rawop=222\n"
+                "12;7;9;0;nil;rawop=333\n"
+                "13;7;8;0;nil;rawop=444\nEND_UNOBF_RESULT")
+    said = " ".join(opcode_grouping_doubt(c))
+    if "opcode 0 covers 2" not in said:
+        bad.append("mixed operand shapes under one opcode should be reported, "
+                   "got %r" % said[:160])
+    if "opcode 7" in said:
+        bad.append("an opcode whose rows all have one operand shape must not be "
+                   "flagged just because the encoded field differs: %r"
+                   % said[:160])
+    if "not a verdict" in said.lower() and "settle" not in said:
+        bad.append("the observation should say what would settle it")
+
+    # all one shape -> nothing claimed at all
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n---OPCODES---\n"
+                "10;0;1;0;nil;rawop=111\n11;0;2;0;nil;rawop=222\n"
+                "END_UNOBF_RESULT")
+    check("consistent shapes claim nothing", opcode_grouping_doubt(c), [])
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

@@ -387,6 +387,14 @@ HID.__OP = function(pc, oc, NO, sp, top, arr)
             if ok then note = note .. "|arrlen=" .. tostring(len) end
         end
     end
+    -- The row's own first field, the encoded opcode. It is pc-dependent by
+    -- design, so two rows sharing a decoded opcode SHOULD differ here and a
+    -- difference proves nothing on its own. It is recorded because a decode can
+    -- only ever be established from it, and guessing at one from the decoded
+    -- value alone is how this tool has gone wrong before.
+    if type(row) == "table" and type(rawget(row, 1)) == "number" then
+        note = (note ~= "" and (note .. "|") or "") .. "rawop=" .. tostring(row[1])
+    end
     if fromArray then
         -- The row came from the array. Say so, and say whether the loop's own
         -- variable agreed: when it did not, the reading below is the array's and

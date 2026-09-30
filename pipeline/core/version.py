@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 49
+VERSION = 50
 
 STAGES = (
     "captures read by shape",
@@ -182,6 +182,13 @@ STAGES = (
     "the harness already on disk because getting a new one was work",
     "the no-script message naming obf.lua and where to put it, instead of an "
     "assert that said 'no source' and nothing a person could act on",
+    "the row's own encoded opcode field recorded, because a decode can only be "
+    "established from it - and NOT read as evidence on its own, since that field "
+    "differs per program counter by design",
+    "instructions grouped under one decoded opcode checked by their operand "
+    "shapes, so six instructions carrying one, two and three operands are not "
+    "measured as one instruction, said as an observation with its evidence and "
+    "not as a verdict about which of the two reasons it is",
     "each capture naming the harness that made it, because inferring that from "
     "its side effects is how the wrong file came to be read twice",
     "the run's own headers in a section of their own, so run_ok is read at all: "
