@@ -31,6 +31,16 @@ local R = {}
 local function say(...) local p = {}; for i = 1, select("#", ...) do p[i] = tostring((select(i, ...))) end; R[#R+1] = table.concat(p, "\t") end
 
 local behavior, prints, loads = {}, {}, {}
+-- How many instruction rows a capture carries. The run is not stopped at this
+-- number - only the log is - and whether it was reached changes how every count
+-- below it should be read, so the capture says which.
+local OP_LOG_CAP = 200000
+local OP_LOG_TRUNCATED = false
+-- Declared up here on purpose: the instruction logger is defined further down
+-- but ABOVE where this used to be, so the name resolved to a nil global, the
+-- comparison against it raised inside the hook, and the capture came back with
+-- zero instructions and a stand-in that had been asked for a datatype called
+-- OP_LOG_CAP. Four separate watches have now been written with this mistake.
 local realenv = getfenv()
 local realLoad = loadstring
 local RI = realenv.Instance
@@ -99,8 +109,17 @@ local function fixline(n)
 end
 
 local DBG = {}
-DBG.info = function(a, b, c)
+DBG.info = function(...)
     if not realdebug.info then return nil end
+    -- The ARITY is forwarded, not just the values. debug.info is a C function
+    -- with two shapes - (level, options) and (function, options) - and some
+    -- hosts also take (thread, level, options). A C function counts its
+    -- arguments with the stack top, and an explicit nil counts, so calling it
+    -- with a third nil picked the three-argument shape and it answered with one
+    -- value instead of three. The script asked about three things, checked the
+    -- type of each, found two of them nil, and marked itself as tampered with.
+    local argc = select("#", ...)
+    local a, b, c = ...
     -- A numeric first argument is a STACK LEVEL, counted from the caller of
     -- debug.info. This wrapper is a frame the script does not know it has, so
     -- the level has to be raised by one or the script is told about the wrapper
@@ -114,10 +133,13 @@ DBG.info = function(a, b, c)
     -- look like. If the arguments are wrong, the real debug.info raises, and
     -- raising is what the script would have got without the harness.
     if type(a) == "number" then a = a + 1 end
-    local r = table.pack and table.pack(realdebug.info(a, b, c))
-             or { realdebug.info(a, b, c), n = 3 }
-    local out = {}
-    for i = 1, (r.n or #r) do out[i] = r[i] end
+    local pack = table.pack or function(...) return { n = select("#", ...), ... } end
+    local r
+    if argc <= 1 then r = pack(realdebug.info(a))
+    elseif argc == 2 then r = pack(realdebug.info(a, b))
+    else r = pack(realdebug.info(a, b, c)) end
+    local out = { n = r.n or #r }
+    for i = 1, out.n do out[i] = r[i] end
     -- the line fields come back in the order the "what" string asked for; any
     -- number that looks like a line in the patched file is corrected
     local what = (type(b) == "string" and b) or (type(a) == "string" and a) or ""
@@ -130,7 +152,20 @@ DBG.info = function(a, b, c)
         end
         j = j + 1
     end
-    return table.unpack and table.unpack(out) or unpack(out)
+    -- WITH the count. `table.unpack(out)` stops at the array's border, and a
+    -- debug.info result is full of holes: ask for three things about a function
+    -- and the second can be nil, at which point the border is 1 and the other
+    -- two are dropped. This build asks for three and checks the types of all
+    -- three, so dropping two made it mark itself as tampered with at its second
+    -- instruction - and the refusal that ends the run, thousands of counters
+    -- later, is that mark. The harness was the tamper it was detecting.
+    local n = out.n or #out
+    -- A call inside an `and`/`or` is truncated to ONE value, so
+    -- `return table.unpack and table.unpack(out, 1, n) or ...` returned the
+    -- first result and dropped the rest, however correct the count was. The
+    -- function is chosen first, then called in a return of its own.
+    local unpackf = table.unpack or unpack
+    return unpackf(out, 1, n)
 end
 DBG.getinfo = function(...)
     if not realdebug.getinfo then return nil end
@@ -363,7 +398,10 @@ end
 
 HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
     opn = opn + 1
-    if opn > 40000 then return end
+    if opn > OP_LOG_CAP then
+        OP_LOG_TRUNCATED = true
+        return
+    end
     -- WHICH value is the instruction row.
     --
     -- This used to log the variable the dispatch loop assigns it to, found by
@@ -570,6 +608,15 @@ local patchBlocks
 local patchChecks
 local patchKeyTables
 local patchFields
+local patchSelfChecks
+local patchResidue
+local patchPoison
+-- conditionAt lives with the block watch, further down, and three separate
+-- watches have now been written to call one of these helpers before its
+-- definition. A missing forward declaration resolves to a nil global, the call
+-- raises inside the caller's pcall, and the capture then reports a patched
+-- dispatch loop with no watches on it and no reason given.
+local conditionAt
 
 -- The row fetch, in the four shapes a dispatch loop writes it.
 --
@@ -750,32 +797,35 @@ local function patchDispatch(s)
         -- dump in the wrong place and lost the block watch entirely, while the
         -- capture still reported both as applied.
         if PATCH_LEVEL == nil or PATCH_LEVEL >= 3 then
-            -- 1. at the loop top, inserting after it, so the offset still holds
-            local keyed, howManyKeys = patchKeyTables(out, top.at, top.pc)
-            if howManyKeys > 0 then
-                out = keyed
-                blockNote = blockNote .. " pc_tables=" .. howManyKeys
+            -- Each watch is applied under its own pcall, and a failure is
+            -- written into the behaviour log. One watch calling a helper that
+            -- was not declared yet used to take the whole patch down, and the
+            -- capture then showed a traced round with no watches and nothing to
+            -- say why. A broken watch now costs its own line and nothing else.
+            local function apply(name, fn, ...)
+                local ok, result, count, extra = pcall(fn, ...)
+                if not ok then
+                    behavior[#behavior+1] = "  [watch " .. name
+                        .. " could not be applied: " .. tostring(result) .. "]"
+                    return nil
+                end
+                if not result or not count or count == 0 then return nil end
+                blockNote = blockNote .. " " .. name .. "=" .. count
+                    .. (extra and extra > 0 and (" " .. name .. "_skipped="
+                                                 .. extra) or "")
+                return result
             end
-            -- 2. also at the loop top, and this one rewrites the text BEFORE it,
-            --    so it is the last that may use the offset
-            local patched, howMany, skipped = patchBlocks(out, top.at,
-                                                          top.arr, top.pc)
-            if howMany > 0 then
-                out = patched
-                blockNote = blockNote .. " blocks_watched=" .. howMany
-                    .. (skipped > 0 and (" blocks_skipped=" .. skipped) or "")
-            end
-            -- 3. whole-chunk rewrites, which may move anything
-            local checked, howManyChecks = patchChecks(out, top.pc)
-            if howManyChecks > 0 then
-                out = checked
-                blockNote = blockNote .. " checks_watched=" .. howManyChecks
-            end
-            local fielded, howManyFields = patchFields(out)
-            if howManyFields > 0 then
-                out = fielded
-                blockNote = blockNote .. " fields_watched=" .. howManyFields
-            end
+            -- offset-based first, while the loop top's offset still means what
+            -- it meant when it was measured
+            out = apply("pc_tables", patchKeyTables, out, top.at, top.pc) or out
+            out = apply("blocks_watched", patchBlocks, out, top.at, top.arr,
+                        top.pc) or out
+            -- then the whole-chunk rewrites, which may move anything
+            out = apply("checks_watched", patchChecks, out, top.pc) or out
+            out = apply("poison_sites", patchPoison, out, top.pc) or out
+            out = apply("key_folds", patchResidue, out, top.pc) or out
+            out = apply("self_checks", patchSelfChecks, out) or out
+            out = apply("fields_watched", patchFields, out) or out
         end
         return out,
                ("loop top (" .. top.shape .. "): " .. top.op .. "="
@@ -979,6 +1029,179 @@ HID.__JMP = function(fn, x, hit, target, from)
     jumps[#jumps+1] = tostring(fn) .. ":" .. tostring(from) .. ":" .. tostring(x)
                       .. ":" .. (hit and "table" or "COMPUTED") .. ":"
                       .. tostring(target)
+end
+
+-- Every write to the value that decides whether this build keeps running.
+--
+-- The counter-bump blocks are the loud ones and they were the only ones watched.
+-- There is a second, quieter family: the same stir statement on its own, with no
+-- counter and no threshold, guarded by a check of its own - the first instruction
+-- of this sample is one of those. Those writes are what make the build refuse
+-- later, and nothing recorded them. The trace showed instructions running
+-- normally and then, thousands of counters later, a refusal whose cause had
+-- already happened.
+--
+-- So the stir itself is logged, wherever it appears, numbered in file order,
+-- with the value it produced. The counter watch stays: it answers a different
+-- question, which is when the build decides to stop rather than when it decides
+-- it has been tampered with.
+local poisons, poisonN = {}, 0
+HID.__POISON = function(site, value, pc)
+    poisonN = poisonN + 1
+    if poisonN > 400 then return end
+    poisons[#poisons+1] = "site" .. tostring(site) .. ":value_now="
+                          .. tostring(value) .. ":pc=" .. tostring(pc)
+end
+
+function patchPoison(s, pc)
+    -- ACC = (ACC*k1 + PC*k2 + VAR*k3 + k4) % m, the stir this family uses to
+    -- mark itself as tampered with. Walked rather than gsub'd, because the
+    -- condition that led to each one is part of the finding and that needs the
+    -- position.
+    local pat = "([%a_][%w_]*)=%(%1%*%d+%+[%a_][%w_]*%*%d+%+[%a_][%w_]*%*%d+%+%d+%)%%%d+"
+    local pieces, i, n = {}, 1, 0
+    local pcArg = pc and ("," .. pc) or ",nil"
+    while true do
+        local a, b, acc = s:find(pat, i)
+        if not a then break end
+        n = n + 1
+        local extra = ""
+        -- the guard, over a wide window: these conditions carry long literals
+        local text, names = conditionAt(s, a, 1600)
+        if text then
+            local args = {}
+            for _, nm in ipairs(names) do
+                args[#args+1] = string.format("%q", nm) .. "," .. nm
+            end
+            -- the text can be enormous; what matters is which check it is
+            local shown = #text > 300 and (text:sub(1, 300) .. " ...") or text
+            extra = ";if __COND then __COND(" .. (pc or "nil") .. "," .. n .. ","
+                .. string.format("%q", shown)
+                .. (#args > 0 and ("," .. table.concat(args, ",")) or "")
+                .. ")end"
+        end
+        pieces[#pieces+1] = s:sub(i, b)
+        pieces[#pieces+1] = ";if __POISON then __POISON(" .. n .. "," .. acc
+            .. pcArg .. ")end" .. extra
+        i = b + 1
+    end
+    if n == 0 then return s, 0 end
+    pieces[#pieces+1] = s:sub(i)
+    return table.concat(pieces), n
+end
+
+-- The residue a chained key absorbs, and what it does to the key.
+--
+-- This family's branch decoder does not just look a target up. It computes a
+-- verification residue from the jump's own record - where the jump came from,
+-- what the instruction carried, what two running keys ought to be - and folds
+-- that residue into a key:
+--
+--     KEY = (KEY * mult + residue) % mod
+--
+-- and then returns the decoded target PLUS that key. So a residue of zero keeps
+-- the key at zero and the target is the decoded value; any non-zero residue
+-- shifts every target after it and, in both samples here, makes the interpreter
+-- refuse to produce instructions at all.
+--
+-- That makes the residue the most useful number in the run, and nothing else
+-- reveals it: the target is observable, the residue is not. It is logged where
+-- the key is folded, reading two locals that were just computed.
+local resids, residN = {}, 0
+HID.__RESID = function(name, residue, key, from)
+    residN = residN + 1
+    if residN > 400 then return end
+    resids[#resids+1] = tostring(name) .. ": residue=" .. tostring(residue)
+        .. " key_now=" .. tostring(key) .. " at=" .. tostring(from)
+        .. ((residue ~= 0)
+            and "  NON-ZERO, so this build's own verification did not match"
+            or "")
+end
+
+function patchResidue(s, pc)
+    local n = 0
+    local pcArg = pc and ("," .. pc) or ",nil"
+    -- KEY = (KEY * <digits> + NAME) % <digits>, where KEY is an index into a
+    -- table of running keys. The log goes AFTER the statement, so the key it
+    -- reports is the one the decoder goes on to use.
+    local out = s:gsub("(([%a_][%w_]*%b[])=%(%2%*%d+%+([%a_][%w_]*)%)%%%d+)",
+        function(whole, key, residue)
+            n = n + 1
+            return whole .. ";if __RESID then __RESID("
+                .. string.format("%q", key) .. "," .. residue .. "," .. key
+                .. pcArg .. ")end"
+        end)
+    if n == 0 then return s, 0 end
+    return out, n
+end
+
+-- The checks a build makes about the environment it is running in.
+--
+-- One shape turns up at the first instruction of both samples here:
+--
+--     local t = {}; if not F(t, t) then <poison the accumulator> end
+--
+-- A function applied to one value twice, whose answer is known in advance. That
+-- is not a computation, it is a question about F: a hooked or replaced F answers
+-- differently, and the build then poisons the value that decides whether it will
+-- go on running. Nothing in a trace shows it - the instruction looks like any
+-- other, and the damage surfaces thousands of counters later as a refusal.
+--
+-- So the result is recorded where the build reads it, and the function it asked
+-- about is identified by IDENTITY against the host's own functions. Identity,
+-- not name: the build holds these functions in a table with a decrypting
+-- __index, so the name it used is not in the chunk, and comparing the value to
+-- the host's real `rawequal` is the only honest way to say which one it is.
+local selfchecks, selfcheckN = {}, 0
+local hostNames = nil
+
+local function nameOfHostFunction(fn)
+    if type(fn) ~= "function" then return type(fn) end
+    if hostNames == nil then
+        hostNames = {}
+        local function note(tbl, prefix)
+            if type(tbl) ~= "table" then return end
+            for k, v in pairs(tbl) do
+                if type(v) == "function" and type(k) == "string"
+                   and hostNames[v] == nil then
+                    hostNames[v] = prefix .. k
+                end
+            end
+        end
+        note(realenv, "")
+        for _, lib in ipairs({ "string", "table", "math", "bit32", "buffer",
+                               "os", "debug", "coroutine", "utf8" }) do
+            note(realenv[lib], lib .. ".")
+        end
+    end
+    return hostNames[fn] or "a function the host does not have"
+end
+
+HID.__SELFCHK = function(name, result, fn)
+    selfcheckN = selfcheckN + 1
+    if selfcheckN > 200 then return result end
+    selfchecks[#selfchecks+1] = tostring(name) .. " -> " .. tostring(result)
+        .. "  (" .. nameOfHostFunction(fn) .. ")"
+        .. ((result == false or result == nil)
+            and "  THIS ONE FAILED, and the build poisons itself when it does"
+            or "")
+    return result
+end
+
+function patchSelfChecks(s)
+    local n = 0
+    -- `if not F(x,x) then` - the same value twice, which is a question about F
+    -- and not about x. The existing call is wrapped; F is never called again.
+    local out = s:gsub("if not ([%a_][%w_]*)%(([%a_][%w_]*),%2%)%s*then",
+        function(fn, arg)
+            n = n + 1
+            return "if not (function(__v)if __SELFCHK then __SELFCHK("
+                .. string.format("%q", fn) .. ",__v," .. fn
+                .. ")end;return __v end)(" .. fn .. "(" .. arg .. ","
+                .. arg .. ")) then"
+        end)
+    if n == 0 then return s, 0 end
+    return out, n
 end
 
 -- What the deserialiser actually handed the interpreter.
@@ -1199,7 +1422,11 @@ HID.__COND = function(pc, site, text, ...)
         if t == "number" or t == "boolean" or t == "nil" then
             shown = tostring(v)
         elseif t == "string" then
-            shown = "string[" .. #v .. "]"
+            -- the value, when it is short enough to be one. A build that checks
+            -- its own chunk name holds that name in a local, and "string[64]"
+            -- is the one thing about it that does not help.
+            shown = (#v <= 160) and ("\"" .. v .. "\"")
+                    or ("string[" .. #v .. "]")
         else
             shown = t
         end
@@ -1217,15 +1444,23 @@ local LUA_WORDS = {
     ["while"]=true, ["do"]=true, ["for"]=true, ["in"]=true, ["repeat"]=true,
     ["until"]=true, ["break"]=true, ["continue"]=true,
 }
-local function conditionAt(region, pos)
+function conditionAt(region, pos, window)
     local best
-    local from = math.max(1, pos - 400)
-    local i = from
-    while true do
-        local a, b = region:find("%f[%w_]els?e?if%f[^%w_]", i)
-        if not a or a >= pos then break end
-        best = b
-        i = b + 1
+    local from = math.max(1, pos - (window or 400))
+    -- BOTH keywords, scanned separately and the later one kept. The single
+    -- pattern this used to have was `els?e?if`, which matches elseif and never
+    -- matches a plain `if` - so a poison guarded by an inner `if` was reported
+    -- with the `elseif` that merely selected the opcode, and the values printed
+    -- were that selector's, not the guard's. `%f[%w_]if` cannot match inside
+    -- "elseif" either, since the character before is a word character.
+    for _, kw in ipairs({ "if", "elseif" }) do
+        local i = from
+        while true do
+            local a, b = region:find("%f[%w_]" .. kw .. "%f[^%w_]", i)
+            if not a or a >= pos then break end
+            if not best or b > best then best = b end
+            i = b + 1
+        end
     end
     if not best then return nil, nil end
     local t = region:find("%f[%w_]then%f[^%w_]", best)
@@ -1242,8 +1477,11 @@ local function conditionAt(region, pos)
         if not a then break end
         local before = a > 1 and text:sub(a - 1, a - 1) or ""
         local after = text:sub(b + 1, b + 1)
+        -- a name cannot start after a digit: `0X7FFFFFFF` was being read as an
+        -- identifier called X7FFFFFFF, and the watch then reported that nil as
+        -- though the build had asked about it.
         if not LUA_WORDS[name] and not seen[name]
-           and before ~= "." and before ~= ":"
+           and not before:match("%d") and before ~= "." and before ~= ":"
            and after ~= "[" and after ~= "(" and after ~= "."
            and after ~= ":" then
             seen[name] = true
@@ -2019,6 +2257,9 @@ say("jump_decodes: " .. jumpN)
 say("block_builds: " .. blockN)
 say("block_conditions: " .. condN)
 say("integrity_checks_fired: " .. violN)
+say("environment_checks: " .. selfcheckN)
+say("key_folds: " .. residN)
+say("tamper_marks: " .. poisonN)
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
@@ -2084,6 +2325,49 @@ say("mode: universal")
 -- What the chunk looked like when no dispatch loop was found in it. Without
 -- this the capture said only "dispatch_patched: false", which names the outcome
 -- and none of the evidence.
+if #poisons > 0 then
+    say("---POISON---")
+    for i = 1, math.min(#poisons, 200) do say(poisons[i]) end
+end
+if #resids > 0 then
+    say("---KEYFOLDS---")
+    for i = 1, math.min(#resids, 200) do say(resids[i]) end
+end
+if #selfchecks > 0 then
+    say("---SELFCHECKS---")
+    for i = 1, math.min(#selfchecks, 100) do say(selfchecks[i]) end
+end
+-- What the stand-in answered for, when the run happened against one. These are
+-- the host's questions the stand-in made up an answer to, and a reader has to be
+-- able to see every one of them: a capture that looks complete because the
+-- environment never said no is worse than one that stopped.
+if VMSMART_STANDIN then
+    local asked = {}
+    local types = rawget(realenv, "VMSMART_HOST_TYPES_ASKED")
+    if type(types) == "table" then
+        for i = 1, #types do asked[#asked+1] = "datatype answered: " .. tostring(types[i]) end
+    end
+    for _, name in ipairs({ "VMSMART_HOST_FIELDS_ASKED",
+                            "VMSMART_INSTANCE_FIELDS_ASKED" }) do
+        local t = rawget(realenv, name)
+        if type(t) == "table" then
+            local keys = {}
+            for k in pairs(t) do keys[#keys+1] = k end
+            table.sort(keys)
+            for i = 1, math.min(#keys, 300) do
+                asked[#asked+1] = "field answered: " .. keys[i] .. " x"
+                                  .. tostring(t[keys[i]])
+            end
+        end
+    end
+    if rawget(realenv, "VMSMART_ENUM_VALUES_ARE_DERIVED") then
+        asked[#asked+1] = "enum values are derived here, not the host's"
+    end
+    if #asked > 0 then
+        say("---STANDIN---")
+        for i = 1, #asked do say(asked[i]) end
+    end
+end
 if fieldN > 0 then
     say("---FIELDS---")
     for _, line in pairs(fields) do say(line) end
@@ -2116,7 +2400,9 @@ say("resolved="..#resolved)
 say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end
 pcall(function() local t={}; for i=1,#resolved do t[i]=resolved[i] end; writefile("resolved_constants.txt", table.concat(t,"\n")) end)
 -- devirtualization: the executed instruction stream (pc;opcode;operands)
-say("opcodes="..#ops.."  (logged, cap 40000; total executed may be higher)")
+say("opcodes=" .. #ops .. "  (logged, cap " .. OP_LOG_CAP
+    .. (OP_LOG_TRUNCATED and "; THE CAP WAS REACHED, so the program ran past "
+        .. "the last row here" or "; the cap was not reached") .. ")")
 -- How many instruction arrays the run handed over, and what became of them.
 --
 -- A build of this class holds a prototype per function, each with its own

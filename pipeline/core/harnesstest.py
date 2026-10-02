@@ -19,6 +19,7 @@ No sample, no program string and no obfuscator name appears here. The stubs
 decide only whether a run raises, which is the one input the decision reads.
 """
 import io
+import re
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +56,9 @@ local conds, condN = {}, 0
 local viols, violN = {}, 0
 local keyTabs, keyTabN = {}, 0
 local fields, fieldN = {}, 0
+local selfchecks, selfcheckN = {}, 0
+local resids, residN = {}, 0
+local poisons, poisonN = {}, 0
 local jumps, jumpN = {}, 0
 local slicesDone = false
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
@@ -770,7 +774,9 @@ def op_rows(path=UNIVERSAL):
         b = src.index("-- SAFE MODE:")
     except ValueError:
         return ["universal.lua has no __OP to test"]
+    # the cap the hook checks, which lives at the top of the harness
     pre = ("\nlocal ops, opn = {}, 0\nlocal HID = {}\n"
+           "local OP_LOG_CAP, OP_LOG_TRUNCATED = 200000, false\n"
            "local function vprev(v)\n"
            "  local t = type(v)\n"
            "  if t == 'string' then return '\"'..v..'\"'\n"
@@ -930,12 +936,102 @@ def debug_shield(path=UNIVERSAL):
     return bad
 
 
+def used_before_declared(path=UNIVERSAL):
+    """A file-scope local used above the line that declares it.
+
+    Lua resolves that name to a GLOBAL, so it reads nil, and under this harness a
+    nil global is answered by the stand-in or recorded as missing - neither of
+    which looks like the mistake it is. Four separate bugs in this file were
+    exactly this: patchBlocks, patchChecks and conditionAt each called from above
+    their definitions, and the instruction logger's row cap read as a nil global
+    so every comparison against it raised and the capture came back empty.
+
+    Only file-scope declarations are checked (column zero), and only uses that
+    look like a call or a comparison, because a name can legitimately appear
+    earlier inside a string or a comment. Forward declarations count as the
+    declaration, which is the fix this test asks for.
+    """
+    src = io.open(path, encoding="utf-8").read()
+    lines = src.split("\n")
+    declared = {}
+    for i, ln in enumerate(lines):
+        m = re.match(r"local\s+([A-Za-z_][\w_]*)\s*(?:,\s*([A-Za-z_][\w_]*)\s*)?"
+                     r"(?:,\s*([A-Za-z_][\w_]*)\s*)?(?:=|$)", ln)
+        if m:
+            for name in m.groups():
+                if name and name not in declared:
+                    declared[name] = i
+            continue
+        m2 = re.match(r"local\s+function\s+([A-Za-z_][\w_]*)", ln)
+        if m2 and m2.group(1) not in declared:
+            declared[m2.group(1)] = i
+            continue
+        # `function NAME(...)` at column zero assigns a GLOBAL unless a forward
+        # declaration exists above it. That is how the watches in this file are
+        # written, and dropping the forward declaration is the bug this test is
+        # for, so the definition line counts as the declaration point.
+        m3 = re.match(r"function\s+([A-Za-z_][\w_]*)\s*\(", ln)
+        if m3 and m3.group(1) not in declared:
+            declared[m3.group(1)] = i
+    bad = []
+    # This file's own knobs are SCREAMING_CASE, and the host's globals are not,
+    # so a knob that is read and never declared anywhere is this file's bug. The
+    # row cap was exactly that for one engine: read by the instruction logger,
+    # declared below it, and when the declaration moved the comparison against a
+    # nil global raised on every instruction.
+    for m in re.finditer(r"\b([A-Z][A-Z0-9_]{3,})\b", src):
+        name = m.group(1)
+        if name in declared or name.startswith("VMSMART") or name == "BEGIN":
+            continue
+        line = src[:m.start()].count("\n")
+        code = lines[line].split("--", 1)[0]
+        if name not in code:
+            continue
+        if re.search(r"[<>=~]=?\s*%s\b|\b%s\s*[<>]" % (name, name), code):
+            bad.append("%s is compared against on line %d and never declared, "
+                       "so it reads as a nil global" % (name, line + 1))
+            break
+    for name, decl in sorted(declared.items(), key=lambda kv: kv[1]):
+        if len(name) < 3:
+            continue
+        for i in range(decl):
+            ln = lines[i]
+            code = ln.split("--", 1)[0]
+            if name not in code:
+                continue
+            # a call, or a comparison against it: the two shapes that broke
+            # a call, a comparison against it, or the name handed to something
+            # as a VALUE - which is how the watches are applied here, and the
+            # shape a call-only test misses
+            esc = re.escape(name)
+            if re.search(r"\b%s\s*\(" % esc, code) \
+               or re.search(r"[<>=~]=?\s*%s\b|\b%s\s*[<>]" % (esc, esc), code) \
+               or re.search(r"[(,]\s*%s\s*[,)]" % esc, code):
+                # an INDENTED local of the same name just above means this use is
+                # a different variable inside some function, and the file-scope
+                # one further down is unrelated
+                shadowed = False
+                for j in range(max(0, i - 80), i + 1):
+                    if re.match(r"\s+local\s+[^=]*\b%s\b" % re.escape(name),
+                                lines[j]):
+                        shadowed = True
+                        break
+                if shadowed:
+                    continue
+                bad.append("%s is used on line %d and declared on line %d, so "
+                           "that use reads a nil global"
+                           % (name, i + 1, decl + 1))
+                break
+    return bad
+
+
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
              + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
              + no_source_message(path) + loop_top(path) + jump_hook(path)
     + debug_shield(path)
+    + used_before_declared(path)
              + probes_are_passive(path))
     try:
         import lupa
