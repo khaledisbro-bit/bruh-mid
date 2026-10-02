@@ -602,7 +602,9 @@ def loop_top(path=UNIVERSAL):
     if ",JY," not in seg:
         bad.append("the injection must log the interpreter's OWN opcode "
                    "variable: %s" % seg)
-    if ",true)" not in seg:
+    # the trust flag is followed by the pending count now, so it is no longer the
+    # last argument
+    if ",true," not in seg and ",true)" not in seg:
         bad.append("a loop-top injection must mark the row variable as "
                    "trustworthy: %s" % seg)
     # it must land BEFORE the dispatch chain, not inside its final else

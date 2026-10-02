@@ -240,9 +240,24 @@ def _rows(body):
                 ops.append(x)
         sp = int(m.group(4)) if m.group(4) is not None else None
         val = m.group(5) if m.group(5) not in (None, "") else None
-        out.append({"i": len(out), "pc": int(m.group(1)),
-                    "opcode": int(m.group(2)), "operands": ops,
-                    "sp": sp, "value": val})
+        note = m.group(6) if m.lastindex and m.lastindex >= 6 else ""
+        # The pending count, recorded and NOT folded into the pointer.
+        #
+        # The deferred writes of this family leave values for slots the producing
+        # handler has already counted: the pointer at the loop top is right, and
+        # only the array contents are a step behind. Adding the count to the
+        # pointer made the measured arities disagree MORE, which is how that was
+        # established - so the count is kept for the lifter, which needs to know
+        # the top slot's value is pending, and the pointer is left alone.
+        pend = None
+        if note:
+            pm = re.search(r"pend=(-?\d+)", note)
+            if pm:
+                pend = int(pm.group(1))
+        row = {"i": len(out), "pc": int(m.group(1)),
+               "opcode": int(m.group(2)), "operands": ops,
+               "sp": sp, "value": val, "pending": pend}
+        out.append(row)
     return out
 
 

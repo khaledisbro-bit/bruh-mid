@@ -54,6 +54,8 @@ class VM:
         self.resolver = None
         self.row = None
         self.pc = None
+        self.regs = None
+        self.sp = None
         self.notes = []
 
     def describe(self):
@@ -86,6 +88,14 @@ def discover(src):
                   r"return \w+\(\w+\[\2\]\)end", src)
     if m:
         vm.resolver = m.group(1)
+    # The register array and the stack pointer, from the flush this family writes
+    # at the top of a handler: `if n>=2 then ARR[SP-1]=X end;if n>=1 then
+    # ARR[SP]=Y end`. Those two names are what the handlers that do NOT use the
+    # stack helpers work on, and without them four handlers in five read as
+    # unclassifiable.
+    m = re.search(r"if\s+\w+>=2\s+then\s+(\w+)\[(\w+)-1\]\s*=", src)
+    if m:
+        vm.regs, vm.sp = m.group(1), m.group(2)
 
     bodies = " ".join(_raw_bodies(src, vm))
     zero = Counter(re.findall(r"=\s*(\w+)\(\)", bodies))
@@ -119,18 +129,61 @@ def _raw_bodies(src, vm, limit=4000):
     return out
 
 
-_END = re.compile(r"\belse(if)?\b")
+# Tokens that open and close a Lua block, plus string literals, which are skipped
+# so a keyword inside one cannot be mistaken for structure.
+_TOKENS = re.compile(
+    r"""(?P<str>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\[\[.*?\]\])"""
+    r"|(?P<open>\b(?:then|do|function)\b)"
+    r"|(?P<close>\bend\b)"
+    r"|(?P<repeat>\brepeat\b)"
+    r"|(?P<until>\buntil\b)"
+    r"|(?P<alt>\b(?:elseif|else)\b)",
+    re.S)
 
 
-def _cut(src, start):
-    """One handler's body: everything up to the branch that follows it. The
-    obfuscator writes these as one long if-chain with no line breaks, so the
-    next `elseif` is the end of this body wherever it appears."""
-    body = src[start:start + MAX_BODY]
-    m = _END.search(body)
-    if m and m.start() > 0:
-        body = body[:m.start()]
-    return body.strip()
+def _cut(src, start, window=6000):
+    """One handler's body.
+
+    The obfuscator writes the dispatch as one if-chain with no line breaks, so
+    the body ends at the `elseif`, `else` or `end` that belongs to THAT chain -
+    not at the first one that appears. Handlers in this family contain if-chains
+    of their own, several levels deep, and stopping at the first `else` cut four
+    bodies in five off before the work they do: the handler for one opcode came
+    back as `local Go=NO[4];local Gy;if Go>0 then Gy=YU[Go]` and read as
+    unclassifiable.
+
+    So blocks are counted. Depth zero is the branch body itself; an `elseif`,
+    `else` or `end` at depth zero ends it.
+    """
+    text = src[start:start + window]
+    depth = 0
+    # `if ... then ... elseif ... then ... end` has two `then` and ONE `end`: the
+    # second `then` continues the same block rather than opening another. Counting
+    # both made the depth climb and never come back, so a body ran on past its own
+    # handler and into the ones after it - the handler for one opcode came back
+    # 5,910 characters long with three other handlers inside it.
+    skip_next_then = False
+    for m in _TOKENS.finditer(text):
+        kind = m.lastgroup
+        if kind == "str":
+            continue
+        if kind == "open":
+            if m.group("open") == "then" and skip_next_then:
+                skip_next_then = False
+                continue
+            depth += 1
+        elif kind == "repeat":
+            depth += 1
+        elif kind in ("close", "until"):
+            if depth == 0:
+                return text[:m.start()].strip()
+            depth -= 1
+        elif kind == "alt":
+            if depth == 0:
+                return text[:m.start()].strip()
+            if m.group("alt") == "elseif":
+                skip_next_then = True
+    return text.strip()
 
 
 def handlers(src, vm):
@@ -169,15 +222,132 @@ def _result(body, vm):
     return None
 
 
+def _store(body, vm):
+    """A handler whose effect is a write rather than a value.
+
+    Three shapes, by what is written to:
+      BOX[row[i]][1] = v   a variable the program declared, kept in a one-element
+                           box so closures can share it
+      SLOT = v             one of the interpreter's own single-name slots, which
+                           the handlers select between by a negative operand
+      T[k] = v             a field of a table
+    The register array itself is not a store: writing it is how a value is
+    returned, and that is handled above.
+    """
+    if vm.row is None:
+        return None
+    if re.search(r"\w+\[%s\[\d+\]\]\[1\]\s*=[^=]" % re.escape(vm.row), body):
+        return "SETVAR"
+    # a negative-operand chain selecting a named slot, then a write to it
+    if re.search(r"(\w+)\s*=\s*\w+\s*;?\s*$", body) and \
+       re.search(r"\w+==-\d+\s+then", body):
+        return "SETSLOT"
+    regs = re.escape(vm.regs) if vm.regs else None
+    for m in re.finditer(r"(\w+)\[([^\]]+)\]\s*=\s*[^=]", body):
+        if regs and m.group(1) == vm.regs:
+            continue
+        if m.group(1) == vm.row:
+            continue
+        return "SETINDEX"
+    if vm.sp and re.search(r"%s\s*=\s*%s\s*-\s*1" % (re.escape(vm.sp),
+                                                      re.escape(vm.sp)), body):
+        return "POP"
+    return None
+
+
+def _chase(expr, body, rounds=3):
+    """Follow a bare name back to what it was assigned.
+
+    A minified handler computes into temporaries and pushes the temporary:
+    `local a = x * k; ...; SP = SP + 1; ARR[SP] = a`. The result is the name `a`,
+    which says nothing, and the operation is in its assignment. Followed back, a
+    few steps at most, and only for a plain identifier - an index or a call is
+    already the answer.
+    """
+    seen = set()
+    for _ in range(rounds):
+        e = expr.strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", e) or e in seen:
+            return expr
+        seen.add(e)
+        last = None
+        for m in re.finditer(r"(?:local\s+)?\b%s\s*=\s*([^;]+)" % re.escape(e),
+                             body):
+            last = m.group(1)
+        if last is None:
+            return expr
+        expr = last
+    return expr
+
+
+def _pushes(body, vm):
+    """How many values this handler leaves on the stack.
+
+    Both styles count: a call to the push helper, and a write to the register
+    array at the pointer that is not the nil of a pop.
+    """
+    body = strip_flush(body)
+    n = 0
+    if vm.push:
+        n += len(re.findall(r"\b%s\(" % re.escape(vm.push), body))
+    if vm.regs and vm.sp:
+        for m in re.finditer(r"%s\[%s\]\s*=\s*([^;]+)"
+                             % (re.escape(vm.regs), re.escape(vm.sp)), body):
+            if _trim(m.group(1)) != "nil":
+                n += 1
+    return n
+
+
 def classify(body, vm):
-    """What one handler body does, in terms the body itself states."""
+    """What one handler body does, in terms the body itself states.
+
+    Two styles, because this family writes both: handlers that take values with a
+    pop helper and hand the result to a push helper, and handlers that work on the
+    register array directly after flushing the previous instruction's result. The
+    second style was four fifths of the handlers in the sample this was written
+    against, and reading only the first left them all unexplained.
+    """
+    body = strip_flush(body)
     pops = len(re.findall(r"=\s*%s\(\)" % re.escape(vm.pop), body))
     expr = _result(body, vm)
     if expr is None:
+        expr = _result_regs(body, vm)
+        if expr is not None and pops == 0 and vm.sp:
+            # a register-style handler pops by stepping the pointer back
+            pops = len(re.findall(r"%s\s*=\s*%s\s*-\s*1"
+                                  % (re.escape(vm.sp), re.escape(vm.sp)), body))
+    if expr is None and re.search(r"\w+==-\d+\s+then", body) and vm.push \
+       and re.search(r"%s\(" % re.escape(vm.push), body):
+        # every push is inside a chain selecting one of the interpreter's named
+        # slots by a negative operand: the handler reads one of those slots
+        return "GETSLOT", pops
+    if expr is None:
+        # No result on the stack. A handler can still be an operation: this
+        # family's stores end with a write to a variable box, to one of the
+        # interpreter's named slots, or to a table - and reading only pushes left
+        # every one of them unexplained.
+        store = _store(body, vm)
+        if store is not None:
+            return store, pops
         return None, pops
-    e = _trim(expr)
+    e = _trim(_chase(_trim(expr), body))
+    # A variable box reached through an operand: `BOX[row[i]][1]`. This is the
+    # shape that reads one of the program's own variables, and the single-level
+    # pattern below cannot see it.
+    if vm.row and re.fullmatch(r"\w+\[%s\[\d+\]\]\[1\]" % re.escape(vm.row), e):
+        return "GETVAR", pops
+    # an index chain of any depth is still an index
+    if re.fullmatch(r"\w+(?:\[[^\[\]]+\])+", e) and e.count("[") > 1:
+        return "INDEX", pops
     m = re.fullmatch(r"(\w+)\[(\w+)\]", e)
     if m:
+        # Indexing a VARIABLE BOX is how this family reads one of the program's
+        # own variables, and calling that INDEX put a table lookup in the report
+        # where a variable read belongs.
+        if vm.row and re.search(r"\b%s\[%s\[\d+\]\]" % (re.escape(m.group(1)),
+                                                          re.escape(vm.row)),
+                                body):
+            return "GETVAR", pops
         return "INDEX", pops
     if re.fullmatch(r"\{\s*\}", e):
         return "NEWTABLE", pops
@@ -186,20 +356,119 @@ def classify(body, vm):
         if m.group(1) == vm.resolver:
             return "LOADK", pops
         return "CALL", pops
-    for sym in sorted(OPS, key=len, reverse=True):
-        m = re.fullmatch(r"([\w\[\]\.\(\)]+)\s*%s\s*([\w\[\]\.\(\)]+)"
-                         % re.escape(sym), e)
-        if m:
-            return OPS[sym], pops
+    sym = _top_level_op(e)
+    if sym:
+        return OPS[sym], pops
     return None, pops
+
+
+# Operators by precedence, lowest first: the operator that splits the expression
+# is the lowest-precedence one at bracket depth zero. A pattern with both sides
+# written as `[\w\[\]\.\(\)]+` cannot see it - `((a+b)%k)` has an operator in
+# its left half, so the whole expression matched nothing and the handler read as
+# unclassifiable.
+_PRECEDENCE = ("==", "~=", "<=", ">=", "<", ">", "..", "+", "-", "*", "/", "%")
+
+
+def _top_level_op(e):
+    """The operator this expression is built around, or None."""
+    depth = 0
+    at = {}
+    i = 0
+    while i < len(e):
+        ch = e[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0:
+            two = e[i:i + 2]
+            if two in OPS:
+                at.setdefault(two, i)
+                i += 2
+                continue
+            if ch in OPS and not (ch == "-" and (i == 0 or e[i - 1] in "([{,=<>~+-*/%")):
+                at.setdefault(ch, i)
+        i += 1
+    for sym in _PRECEDENCE:
+        if sym in at:
+            left, right = e[:at[sym]].strip(), e[at[sym] + len(sym):].strip()
+            if left and right:
+                return sym
+    return None
+
+
+# The deferred flush this family opens a handler with. It is bookkeeping for the
+# PREVIOUS instruction's result, so leaving it in makes every handler look like a
+# write to the register array.
+_FLUSH = re.compile(
+    r"^\s*do\s+local\s+(\w+)\s*=\s*\w+;\s*"
+    r"if\s+\1>=2\s+then\s+\w+\[\w+-1\]\s*=\s*\w+\s+end;\s*"
+    r"if\s+\1>=1\s+then\s+\w+\[\w+\]\s*=\s*\w+\s+end;\s*"
+    r"(?:\w+\s*=\s*nil;\s*)*(?:\w+\s*=\s*0;\s*)*")
+
+
+def strip_flush(body):
+    """A handler body without the flush that belongs to the instruction before it."""
+    return _FLUSH.sub("", body, count=1)
+
+
+def _result_regs(body, vm):
+    """The expression a register-style handler leaves on the stack.
+
+    These handlers do not call a push helper: they advance the stack pointer and
+    write the array. The LAST such write is the handler's result, because an
+    earlier one is an argument it is still building.
+    """
+    if not (vm.regs and vm.sp):
+        return None
+    pat = re.compile(r"%s\[%s\]\s*=\s*([^;]+)"
+                     % (re.escape(vm.regs), re.escape(vm.sp)))
+    # The FIRST write, not the last. A handler that returns more than one value
+    # writes them in order, and the one that says what the handler DID is the
+    # first: on one opcode the last was a boolean flag pushed beside the value,
+    # and reading it named the handler EQ when it performs an index.
+    # `ARR[SP] = nil` is a POP clearing the slot, not a result, and it comes
+    # first in every handler that consumes values - so the first write that is
+    # not nil is the one that says what the handler produced.
+    for m in pat.finditer(body):
+        value = _trim(m.group(1))
+        if value != "nil" and value != "":
+            return value
+    return None
 
 
 _TAIL = re.compile(r"\s*\b(end|do|then|return)\b.*$", re.S)
 
 
+def _unwrap(e):
+    """An expression without the parentheses wrapped around the whole of it.
+
+    The minifier writes `(a+b)`, and every arithmetic pattern here matches the
+    bare form, so a wrapped expression fell through all of them. Only a pair that
+    encloses the WHOLE expression is removed: `(a+b)*(c+d)` keeps its own.
+    """
+    e = e.strip()
+    while len(e) > 1 and e[0] == "(" and e[-1] == ")":
+        depth = 0
+        whole = True
+        for i, ch in enumerate(e):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and i != len(e) - 1:
+                    whole = False
+                    break
+        if not whole:
+            return e
+        e = e[1:-1].strip()
+    return e
+
+
 def _trim(expr):
     """The expression alone, without the Lua that closes the block around it."""
-    return _TAIL.sub("", expr.strip()).strip()
+    return _unwrap(_TAIL.sub("", expr.strip()).strip())
 
 
 def _balanced(text):
@@ -235,15 +504,32 @@ def apply(models, src, steps):
         if model.operation or op not in hs:
             continue
         want = carried.get(op, 0) + 1
-        cands = []
+        cands, rejected = [], Counter()
         for body in hs[op]:
             used = _operands(body, vm.row)
             if used and max(used) > want:
+                rejected["reads operand %d, the instruction carried %d"
+                         % (max(used), want)] += 1
                 continue                     # reads an operand it never had
             sem, pops = classify(body, vm)
             if sem is None:
+                rejected["body not classified"] += 1
                 continue
-            if model.pops is not None and pops and pops != model.pops:
+            # NET against NET. The handler's text gives how many values it takes
+            # AND how many it leaves; execution gives the difference between two
+            # stack pointers. Comparing the handler's pops against a pops that was
+            # itself derived from a net delta rejected every handler that both
+            # consumes and produces - which is most of them, and is why a hundred
+            # opcodes with perfectly readable handlers kept their numbers.
+            pushes = _pushes(body, vm)
+            if model.delta is not None and (pops or pushes):
+                if pushes - pops != model.delta:
+                    rejected["handler nets %+d, execution measured %+d"
+                             % (pushes - pops, model.delta)] += 1
+                    continue
+            elif model.pops is not None and pops and pops != model.pops:
+                rejected["handler takes %d off the stack, execution measured %d"
+                         % (pops, model.pops)] += 1
                 continue                     # not what execution measured
             cands.append((sem, pops, body))
         agreed = {c[0] for c in cands}
@@ -251,6 +537,14 @@ def apply(models, src, steps):
             if agreed:
                 why[op] = ("its %d handler(s) disagree (%s), so it keeps its "
                            "number" % (len(cands), ", ".join(sorted(agreed))))
+            elif rejected:
+                # Which gate rejected every candidate. Without this the report
+                # said only that the operation was not known, and the reason - an
+                # arity measured from four instances, or an operand list the
+                # capture truncated - was invisible.
+                why[op] = ("every handler was rejected: "
+                           + "; ".join("%s (x%d)" % (k, n)
+                                       for k, n in rejected.most_common(3)))
             continue
         sem = agreed.pop()
         model.operation = sem

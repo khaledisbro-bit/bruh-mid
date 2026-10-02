@@ -415,7 +415,7 @@ HID.__CODE = function(arr)
     end)
 end
 
-HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
+HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow, pending)
     LAST_PC = pc
     opn = opn + 1
     -- WHERE the stand-in's invented values entered the program's own
@@ -545,6 +545,11 @@ HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
     -- topvalue is the real value the VM just produced (the pending write slot),
     -- so the lifter sees actual strings/numbers flowing between opcodes. The
     -- note says where the row was read from and what it was when it was not one.
+    -- the pending count goes in the note, so a reader that does not know about
+    -- it still parses every field it did before
+    if type(pending) == "number" then
+        note = (note ~= "" and (note .. "|") or "") .. "pend=" .. tostring(pending)
+    end
     ops[#ops+1] = tostring(pc) .. ";" .. tostring(oc) .. ";" .. table.concat(a, ",")
                   .. ";" .. tostring(sp) .. ";" .. vprev(top)
                   .. ";" .. note
@@ -810,9 +815,32 @@ local function patchDispatch(s)
         local topexpr2 = ny2 or ((arr2 and sp2 ~= "0")
                                  and ("(" .. arr2 .. " and " .. arr2 .. "["
                                       .. sp2 .. "])")) or "nil"
+        -- HOW MANY RESULTS ARE STILL PENDING.
+        --
+        -- This family defers its register writes: a handler leaves its results in
+        -- one or two slots with a count, and the NEXT handler flushes them to the
+        -- array. The logger runs at the loop top, before that flush, so the stack
+        -- pointer it reports is one instruction behind - and every arity measured
+        -- from the difference between consecutive pointers is off by whatever the
+        -- previous instruction had pending. That is why a handler that visibly
+        -- takes two values off the stack was measured as taking one, and why a
+        -- hundred opcodes could not be named from their own handlers.
+        --
+        -- The count is the variable the flush tests, so it is read from the flush
+        -- itself and logged beside the pointer. Nothing is corrected here; the
+        -- reader adds it, and a capture that lacks it reads exactly as before.
+        -- the OUTER variable, not the handler's local copy of it. `do local n=NG;
+        -- if n>=2 then ...` names both: `n` lives inside the handler and is not in
+        -- scope at the loop top, so logging it read a nil global and the count
+        -- never reached the capture.
+        local _, pend2 = s:match("do local (%w+)=(%w+);if %1>=2 then %w+%[%w+%-1%]=")
+        if not pend2 then
+            _, pend2 = s:match("local (%w+)=(%w+);if %1>=2 then")
+        end
         local inject = ";if __OP then __OP(" .. top.pc .. "," .. top.op .. ","
             .. top.row .. "," .. sp2 .. "," .. topexpr2 .. "," .. top.arr
-            .. ",true)end;if __CODE then __CODE(" .. top.arr .. ")end"
+            .. ",true," .. (pend2 or "nil") .. ")end;if __CODE then __CODE("
+            .. top.arr .. ")end"
         local before = select(2, s:sub(1, top.at):gsub("\n", ""))
         PATCH_AT, PATCH_ADDED = before + 1, select(2, inject:gsub("\n", ""))
         ORIGINAL_LINES = select(2, s:gsub("\n", "")) + 1
@@ -2651,7 +2679,12 @@ if #slices > 0 then
     say("---SLICES---")
     for i = 1, math.min(#slices, 600) do say(slices[i]) end
 end
-say("---OPCODES---"); for i=1,math.min(#ops,3000) do say(ops[i]) end
+-- Every row that was logged, not the first three thousand of them. The logger's
+-- cap is what limits a capture; printing fewer than it collected meant a run of
+-- 200,000 instructions arrived for analysis as 3,000, and every coverage number
+-- downstream was a number about the first one and a half per cent of the run.
+say("---OPCODES---")
+for i = 1, #ops do say(ops[i]) end
 pcall(function() writefile("opcode_trace.txt", table.concat(ops,"\n")) end)
 
 local body = "BEGIN_UNOBF_RESULT\n"..table.concat(R, "\n").."\nEND_UNOBF_RESULT"

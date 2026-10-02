@@ -422,7 +422,12 @@ def main():
     vm_src = None
     vm_path = a.vm_source
     if not vm_path:
+        # The interpreter's own source names what its opcodes do. The static
+        # stage writes it as inner_source.lua in this very output directory, and
+        # that name was not in this list - so every offline report said
+        # "operation known for 0" while the file sat beside it.
         for cand in [os.path.join(a.out, "captures", "run1_vm.txt"),
+                     os.path.join(a.out, "inner_source.lua"),
                      os.path.join(a.out, "inner_chunk_1.txt"),
                      "inner_chunk_1.txt"]:
             if os.path.isfile(cand):
