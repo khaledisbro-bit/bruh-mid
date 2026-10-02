@@ -314,6 +314,13 @@ HID.__CAP = function() end
 -- the running VM into a disassembler of the paths that actually execute. All
 -- guarded: if the shape does not match, the trace is simply skipped.
 local ops, opn = {}, 0
+-- WHICH ROUND a record belongs to. The ladder runs the same payload again with
+-- one edit taken out each time it raises, so a capture holds several rounds of
+-- the same program. Without this they read as one long run: the instruction
+-- count is several copies of itself, and the calls the program made come out
+-- multiplied by the number of rounds - which is why the reconstruction, which
+-- runs once, could never account for more than a fraction of them.
+VMSMART_ROUND = 1
 -- compact, safe preview of a runtime value on the VM stack (for value-flow).
 local function vprev(v)
     local ok, t = pcall(type, v)
@@ -546,6 +553,10 @@ HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow, pending)
         local id = arrayId(arr)
         note = (note ~= "" and (note .. "|") or "") .. "arr=" .. id
     end
+    -- which round of the ladder this row belongs to, so several runs of the
+    -- same payload are not read as one long program
+    note = (note ~= "" and (note .. "|") or "") .. "round="
+           .. tostring(VMSMART_ROUND or 1)
     -- format: pc;opcode;operands;stackpointer;topvalue;note
     -- topvalue is the real value the VM just produced (the pending write slot),
     -- so the lifter sees actual strings/numbers flowing between opcodes. The
@@ -1933,7 +1944,17 @@ local function atRow()
   if type(VMSMART_ROW) == "number" then return "  @row=" .. tostring(VMSMART_ROW) end
   return ""
 end
-env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c)..atRow(); return RI.new(c,...) end end return RI[k] end })
+-- The object a constructor or a service lookup hands back is given the same
+-- number the stand-in gives every host object, and the record carries it. That
+-- is what lets the analysis say later whether the program ever used what it
+-- asked for, from the records rather than from the shape of a name.
+local function gave(line, v)
+    if VMSMART_ID == nil then return v end
+    local id = VMSMART_ID(v, true)
+    if id then behavior[line] = behavior[line] .. "  @gave=#" .. tostring(id) end
+    return v
+end
+env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c)..atRow(); return gave(#behavior, RI.new(c,...)) end end return RI[k] end })
 
 -- Server-only services throw on a client executor and stop the trace. Proxy
 -- `game` so GetService returns LOGGING PROXIES: every method call and its
@@ -2004,7 +2025,8 @@ do
                 .. ((ok and svc ~= nil) and "real service"
                     or "logging proxy (this engine has no such service)")
                 .. atRow()
-            return (ok and svc ~= nil) and svc or logProxy(name)
+            return gave(#behavior,
+                        (ok and svc ~= nil) and svc or logProxy(name))
           end
         end
         local v = realGame[k]
@@ -2379,6 +2401,11 @@ while not last.ok do
         .. "same payload is run again with it taken out (patch level "
         .. PATCH_LEVEL .. ", " .. tostring(LEVEL_NAME[PATCH_LEVEL]) .. ")")
     behavior[#behavior+1] = "  [retry: same payload, " .. step .. " removed]"
+    VMSMART_ROUND = (VMSMART_ROUND or 1) + 1
+    if VMSMART_CALLS then
+        VMSMART_CALLS[#VMSMART_CALLS + 1] =
+            "  [retry round " .. VMSMART_ROUND .. "]"
+    end
     last = runPayload()
 end
 

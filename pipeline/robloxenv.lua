@@ -120,13 +120,45 @@ local function previewArg(v)
     return t
 end
 
+-- IDENTITY. What the host handed back, and whether the program ever used it.
+--
+-- A build that is measuring the machine it runs on asks a great many questions
+-- and does nothing with the answers: whether this object is a Lighting, then a
+-- Model, then a Workspace. A build doing its own work uses what it gets. The
+-- difference is visible only if the answer can be recognised when it comes back
+-- as an argument or a receiver later, so every host object this environment
+-- hands out is given a number, and the records carry it.
+--
+-- The number says nothing about whether the object is real or a decoy. It is
+-- there so the analysis can say "the program never used this answer" from the
+-- records instead of guessing from a name.
+VMSMART_IDS = setmetatable({}, { __mode = "k" })
+VMSMART_ID_N = 0
+
+function VMSMART_ID(v, assign)
+    local t = type(v)
+    if t ~= "table" and t ~= "userdata" and t ~= "function" then return nil end
+    local id = VMSMART_IDS[v]
+    if id == nil and assign then
+        VMSMART_ID_N = VMSMART_ID_N + 1
+        id = VMSMART_ID_N
+        VMSMART_IDS[v] = id
+    end
+    return id
+end
+
 function VMSMART_RECORD_CALL(key, ...)
     if #VMSMART_CALLS >= 4000 then return end
     local parts = {}
     local n = select("#", ...)
     -- a method call passes the receiver as its first argument; it is already in
     -- the key, so it is not repeated among the arguments
-    for i = 2, n do parts[#parts + 1] = previewArg((select(i, ...))) end
+    for i = 2, n do
+        local a = (select(i, ...))
+        local id = VMSMART_ID(a, false)
+        parts[#parts + 1] = (id and ("#" .. tostring(id))
+                             or previewArg(a))
+    end
     local receiver, member = key:match("^(.-)[:%.]([%w_]+)$")
     if receiver == nil or receiver == "" then
         receiver, member = "host", key
@@ -134,9 +166,25 @@ function VMSMART_RECORD_CALL(key, ...)
     -- the row the trace was on when this call happened, so the analysis can tie
     -- the two together by position
     local at = VMSMART_ROW
+    local rid = VMSMART_ID((select(1, ...)), false)
     VMSMART_CALLS[#VMSMART_CALLS + 1] = receiver .. ":" .. member .. "("
         .. table.concat(parts, ", ") .. ")"
+        .. (rid and ("  @on=#" .. tostring(rid)) or "")
         .. (type(at) == "number" and ("  @row=" .. tostring(at)) or "")
+    return #VMSMART_CALLS
+end
+
+-- What the call answered with, written on the record the call left. Called
+-- after the real method has run, so the answer is in hand.
+function VMSMART_RECORD_ANSWER(slot, v)
+    if type(slot) ~= "number" then return v end
+    local line = VMSMART_CALLS[slot]
+    if line == nil then return v end
+    local id = VMSMART_ID(v, true)
+    if id then
+        VMSMART_CALLS[slot] = line .. "  @gave=#" .. tostring(id)
+    end
+    return v
 end
 
 function VMSMART_STUB(record, key, depth)
@@ -295,8 +343,13 @@ if Instance == nil then
     -- most, the ones on objects the program built, were the ones not being seen.
     local function recorded(name, fn)
         return function(...)
-            VMSMART_RECORD_CALL(name, ...)
-            return fn(...)
+            local slot = VMSMART_RECORD_CALL(name, ...)
+            -- every return, not the first three: a method that hands back more
+            -- than this reads for would be quietly truncated, and the program
+            -- would carry on with values the host never gave it
+            local r = table.pack(fn(...))
+            VMSMART_RECORD_ANSWER(slot, r[1])
+            return table.unpack(r, 1, r.n)
         end
     end
 

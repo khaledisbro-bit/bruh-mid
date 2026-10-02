@@ -73,7 +73,132 @@ def _constant_condition(cond):
 # separates them.
 _KEYWORD = re.compile(r"^(local|return|if|elseif|else|end|for|while|do|repeat|"
                       r"until|break|continue|function)\b")
-_ASSIGN = re.compile(r"""^[A-Za-z_][\w.:\[\]"'\s]*=[^=]""")
+
+
+# Luau gives a function 200 local registers. A rendering of a few thousand
+# instructions declares a name for every value it keeps, which is past that
+# before it is halfway through - and the file then does not load at all, so
+# nothing can be compared. The names beyond the limit go into one table
+# instead. It is the same program: a name that was a local becomes a field, and
+# every use of it follows.
+_LOCAL_LIMIT = 150
+_DECL = re.compile(r"^(\s*)local ([A-Za-z_]\w*) = (.*)$")
+
+
+def _within_register_limit(lines):
+    names, seen = [], 0
+    for ln in lines:
+        m = _DECL.match(ln)
+        if m:
+            seen += 1
+            if seen > _LOCAL_LIMIT:
+                names.append(m.group(2))
+    if not names:
+        return lines
+    moved = set(names)
+    out, placed = [], False
+    for ln in lines:
+        m = _DECL.match(ln)
+        if m and m.group(2) in moved:
+            ln = "%sT.%s = %s" % (m.group(1), m.group(2), m.group(3))
+        for n in moved:
+            ln = re.sub(r"(?<![\w.])%s\b" % re.escape(n), "T." + n, ln)
+        # the table itself has to exist before the first line that uses it
+        if not placed and "T." in ln:
+            out.append("-- names past Luau's limit of 200 locals per function, "
+                       "kept in one table")
+            out.append("local T = {}")
+            placed = True
+        out.append(ln)
+    return out
+
+
+# A name the rendering uses for a storage slot it never saw written. Undeclared,
+# it is a global, and under the comparison harness every global is a watched
+# proxy - so calling one records a call the program never made and the
+# reconstruction is charged with inventing it. Declared, it is the same
+# stand-in every other unproven value gets.
+_SLOTNAME = re.compile(r"(?<![\w.])((?:slot|var)_\w+)")
+
+
+def _declare_unbound(lines):
+    # WHERE each name is first used and where it is first declared. A slot
+    # written halfway down the file and read before that is nil at the read -
+    # or worse, an undeclared global, which under the comparison harness is a
+    # watched proxy and records a call the program never made. Both are fixed
+    # the same way: the name is declared once at the top, and the later
+    # declaration becomes an assignment to it.
+    first_use, first_decl = {}, {}
+    for i, ln in enumerate(lines):
+        m = _DECL.match(ln)
+        if m:
+            first_decl.setdefault(m.group(2), i)
+        for n in _SLOTNAME.findall(ln):
+            first_use.setdefault(n, i)
+    want = [n for n in first_use
+            if n not in first_decl or first_decl[n] > first_use[n]]
+    want.sort(key=lambda n: first_use[n])
+    if not want:
+        return lines
+    moved = set(want)
+    out = []
+    for ln in lines:
+        m = _DECL.match(ln)
+        if m and m.group(2) in moved:
+            ln = "%s%s = %s" % (m.group(1), m.group(2), m.group(3))
+        out.append(ln)
+    lines = out
+    head = ["-- storage slots this capture never saw written; the same stand-in "
+            "every",
+            "-- unproven value gets, so using one cannot look like an action "
+            "the",
+            "-- program took"]
+    head += ["local %s = OP()" % n for n in want]
+    # After the prelude, which is one element holding several lines and which
+    # defines OP. Putting the declarations before it leaves them calling a
+    # function that does not exist yet.
+    for i, ln in enumerate(lines):
+        if "OP = function()" in ln:
+            return lines[:i + 1] + head + lines[i + 1:]
+    return head + lines
+
+
+def _is_assignment(t):
+    """Whether a line is an assignment, by finding the `=` that makes it one.
+
+    `a = b`, `t.k = v` and `t[k] = v` are statements; `a == b` is not an
+    assignment at all. A pattern over the left side gets this wrong as soon as
+    the target is not a plain name - a negative slot number, an index with a
+    string in it - and the line is then wrapped as a value, which does not
+    parse. So the line is scanned instead: the first `=` outside quotes and
+    brackets, with no comparison operator around it, is the assignment.
+    """
+    depth, q, i = 0, None, 0
+    while i < len(t):
+        c = t[i]
+        if q:
+            if c == "\\":
+                i += 2
+                continue
+            if c == q:
+                q = None
+        elif c in "\"'":
+            q = c
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "=" and depth == 0:
+            before = t[i - 1] if i else ""
+            after = t[i + 1] if i + 1 < len(t) else ""
+            if before in "=~<>" or after == "=":
+                i += 2
+                continue
+            return True
+        i += 1
+    return False
+
+
 _CALL = re.compile(r"""^\(?[A-Za-z_"'{(][\w.:\[\]"'{}\s,()]*\)\s*$""")
 _MCALL = re.compile(r"^\(.*\)\s*[:.][A-Za-z_]\w*\s*\(")
 _COUNT = [0]
@@ -83,7 +208,7 @@ def _as_statement(text):
     t = text.strip()
     if not t or t.startswith("--"):
         return text
-    if _KEYWORD.match(t) or _ASSIGN.match(t):
+    if _KEYWORD.match(t) or _is_assignment(t):
         return text
     if _CALL.match(t) or _MCALL.match(t):
         # a call, which is a statement; only the leading paren needs separating
@@ -606,7 +731,10 @@ end
             out.append("    " * ln.indent + _as_statement(ln.text))
         if tail:
             out.append(tail)
-        return "\n".join(out) + "\n"
+        out = _declare_unbound(out)
+        if tail:
+            pass
+        return "\n".join(_within_register_limit(out)) + "\n"
 
     def text(self, header=True):
         out = []

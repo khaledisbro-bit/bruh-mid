@@ -27,6 +27,7 @@ if HERE not in sys.path:
 import cfgx            # noqa: E402
 import dataflow        # noqa: E402
 import decoy           # noqa: E402
+import antitamper      # noqa: E402
 import branches        # noqa: E402
 import disagree        # noqa: E402
 import emit            # noqa: E402
@@ -622,6 +623,7 @@ class Analysis:
                                         self.emitter.R, self.calls, self.models),
             "VERIFICATION.txt": self.verification,
             "BRANCHES.txt": branches.report(self.branch_why, self.cfg),
+            "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),
             "behaviour_check.lua": verify.behaviour_harness(self.runnable),
@@ -935,6 +937,15 @@ def selftest():
     _exposure._selftest()
     _metatab._selftest()
     _dispatch._selftest()
+    import antitamper as _at
+    if _at._selftest():
+        ok = False
+    import branches as _br
+    if _br._selftest():
+        ok = False
+    import disagree as _dis
+    if _dis._selftest():
+        ok = False
     _verify._selftest()
     import naming as _nm
     if _nm._selftest():

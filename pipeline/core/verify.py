@@ -23,6 +23,8 @@ and comparing the recorded call sequences is the real test - same calls, same
 arguments, same order - and it is the one check that has to happen in the
 executor, so the script is generated here ready to run.
 """
+import re
+
 from evidence import OBSERVED, UNKNOWN
 
 import opsem
@@ -273,6 +275,14 @@ def normalise(rec):
     args = []
     for a in rec.get("args") or ():
         a = a.strip()
+        # `#7` is the number this environment gave an object it handed out. It
+        # identifies the object inside ONE log and means nothing across two, so
+        # for a comparison it says what the other side's recorder says for the
+        # same thing: an object. Comparing the numbers would mark every call on
+        # an object as a disagreement about nothing.
+        if re.fullmatch(r'"?#\d+"?', a):
+            args.append("table")
+            continue
         if a.startswith('"') or _PLAIN.match(a):
             args.append(a)
         else:

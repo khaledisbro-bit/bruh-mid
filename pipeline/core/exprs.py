@@ -508,11 +508,14 @@ class Renderer:
             if len(args) == 1:
                 return "%s" % args[0]
             if v.operands:
-                return "var_%s" % v.operands[0]
+                return "var_%s" % str(v.operands[0]).replace("-", "m")
             return None
         if op == "GETSLOT":
             if v.operands:
-                return "slot_%s" % v.operands[0]
+                # a slot number can be negative, and `slot_-2` is not a name
+                # in any language. The minus becomes a letter so the name still
+                # says which slot it is and the file still parses.
+                return "slot_%s" % str(v.operands[0]).replace("-", "m")
             return None
         if op == "LEN" and len(args) == 1:
             return "#%s" % args[0]
@@ -552,14 +555,47 @@ class Renderer:
                 recv = bare
         else:
             recv = rec.get("recv") or "?"
+        # The receiver the environment recorded, where the value graph only has
+        # a storage slot or an unproven instruction. `slot_4:IsServer()` and
+        # `RunService:IsServer()` are the same call; only one of them says
+        # which object it was made on, and the environment is where that is
+        # known from.
+        if rec.get("recv") and (recv.strip().startswith("slot_")
+                                or recv.strip().startswith("var_")
+                                or recv.strip().startswith("OP(")
+                                or recv.strip().startswith("OP_")
+                                or recv.strip().startswith("<")
+                                or recv.strip() in ("nil", "?", "table", "{}")):
+            recv = rec["recv"]
         args = [self.value(a.id, depth + 1) for a in call.arg_values]
         if self.runnable:
             args = ["OP()" if a.strip().startswith("<") else a for a in args]
+        # An argument the value graph could not recover, where the environment
+        # recorded what it was. The record is evidence - the environment saw
+        # the call as it happened - so the name it carries is used rather than
+        # a stand-in that says nothing. Which is why it matters: a rendering of
+        # `Instance.new()` with no class makes a call the program never made,
+        # and the comparison counts it against the reconstruction twice over.
+        want_args = list(rec.get("args") or ())
+        if want_args:
+            for i, a in enumerate(args):
+                if i < len(want_args) and (a.strip().startswith("OP(")
+                                           or a.strip().startswith("<")
+                                           or a.strip() in ("nil", "")):
+                    args[i] = _as_written(want_args[i], self.runnable)
+            if len(args) < len(want_args):
+                args += [_as_written(a, self.runnable)
+                         for a in want_args[len(args):]]
         # The instruction may leave more on the stack than the call took. The
         # environment recorded how many arguments there were, so anything past
         # that is not an argument and is dropped rather than printed.
+        # A call the environment recorded with NO arguments took none. The
+        # trim used to be skipped in exactly that case - zero is falsy - so a
+        # `Destroy()` came out as `Destroy(nil)` or `Destroy(table)`, which is
+        # a call the program never made and counts against the reconstruction
+        # twice: once for the call it missed and once for the one it invented.
         want = len(rec.get("args") or ())
-        if want and len(args) > want:
+        if rec.get("args") is not None and len(args) > want:
             args = args[:want]
         if not args and rec.get("args"):
             args = [_as_written(a, self.runnable)

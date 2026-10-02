@@ -52,6 +52,31 @@ class Capture:
                 self.rows_dropped_as_fiction = len(self.rows) - keep
                 self.rows_after_fiction = self.rows[keep:]
                 self.rows = self.rows[:keep]
+        # ONE ROUND, not six. The ladder runs the same payload again with one
+        # of the harness's own edits taken out on each round that raised, and
+        # every round writes into the same capture. Read as one stream it is
+        # the same program several times over: the instruction count is
+        # multiplied by the number of rounds, the calls the program made are
+        # multiplied too, and the reconstruction - which runs once - could not
+        # account for more than a fraction of them however right it was.
+        #
+        # The round with the most rows is the one kept, because that is the run
+        # that got furthest through the program. The rest are set aside and
+        # counted, not deleted: they are the same payload and the report says
+        # how many rounds there were.
+        self.rounds = {}
+        for r in self.rows:
+            self.rounds[r.get("round", 1)] = self.rounds.get(
+                r.get("round", 1), 0) + 1
+        self.round_kept = None
+        self.rows_dropped_as_repeat = 0
+        if len(self.rounds) > 1:
+            self.round_kept = max(self.rounds, key=lambda k: self.rounds[k])
+            keep = [r for r in self.rows if r.get("round") == self.round_kept]
+            self.rows_dropped_as_repeat = len(self.rows) - len(keep)
+            # the row numbers are what every other record is anchored on, so
+            # they are left exactly as they were
+            self.rows = keep
         self.constants = _constants(self.sections)
         # One capture can hold two runs of the same payload, and their call
         # logs are written one after the other into the same section. Comparing
@@ -73,8 +98,13 @@ class Capture:
             self.behaviour_set_aside = len(beh) - fb
             self.behaviour_after_fiction = beh[fb:]
             beh = beh[:fb]
+        # Every round's behaviour, each record carrying the round it was made
+        # in. The run the instructions came from is the one a reconstruction
+        # can be compared against; the other rounds are the same payload again
+        # and are kept apart rather than counted with it.
+        all_beh, self.notes = _calls(beh)
         before, after = _split_on_retry(beh)
-        self.calls, self.notes = _calls(before)
+        self.calls, _n0 = _calls(before)
         # Calls the stand-in answered. The harness keeps them in their own
         # section because they belong to the run rather than to one of its
         # rounds, and they are the same kind of record as the rest: a call the
@@ -86,6 +116,19 @@ class Capture:
         if host:
             self.calls = self.calls + host
             self.notes = self.notes + host_notes
+        # One round of calls, matching the one round of instructions kept
+        # above. Without this the program appears to have made every call as
+        # many times as the ladder ran, and no reconstruction could account for
+        # more than its share - which is what the behaviour comparison was
+        # measuring before.
+        self.calls_dropped_as_repeat = 0
+        want = getattr(self, "round_kept", None)
+        if want is not None:
+            whole = all_beh + host
+            kept = [c for c in whole if c.get("round", 1) == want]
+            if kept:
+                self.calls_dropped_as_repeat = len(whole) - len(kept)
+                self.calls = kept
         self.calls_after_retry, notes2 = _calls(after)
         self.notes = self.notes + notes2
         self.code = _code(self.sections, self.body)
@@ -265,9 +308,20 @@ def _rows(body):
             pm = re.search(r"pend=(-?\d+)", note)
             if pm:
                 pend = int(pm.group(1))
+        # WHICH ROUND. The ladder runs the same payload again with one of the
+        # harness's edits taken out on each round that raised, so a capture can
+        # hold the same program several times over. Read as one stream it is
+        # several copies of itself: the instruction count is multiplied, and so
+        # is every call the program made - while the reconstruction runs once
+        # and so could never account for more than a fraction of them.
+        rnd = 1
+        if note:
+            rm = re.search(r"round=(\d+)", note)
+            if rm:
+                rnd = int(rm.group(1))
         row = {"i": len(out), "pc": int(m.group(1)),
                "opcode": int(m.group(2)), "operands": ops,
-               "sp": sp, "value": val, "pending": pend}
+               "sp": sp, "value": val, "pending": pend, "round": rnd}
         out.append(row)
     return out
 
@@ -1146,9 +1200,22 @@ def _calls(lines):
     # interpreted program can be behind it. That is a placement, not an excuse,
     # and it is the honest answer for a call no row can be found for.
     inner_exists = False
+    # The ladder's rounds, marked in the log by the harness. A record carries
+    # the round it was made in so a reconstruction, which runs once, is
+    # compared against one round of the program and not against all of them.
+    cur_round = 1
     for ln in lines:
         s = ln.strip()
         if not s:
+            continue
+        rr = re.match(r"^\[retry round (\d+)\]$", s)
+        if rr:
+            cur_round = int(rr.group(1))
+            notes.append(s)
+            continue
+        if _RETRY_MARK in s:
+            cur_round += 1
+            notes.append(s)
             continue
         if s.startswith("loadstring #"):
             inner_exists = True
@@ -1159,14 +1226,29 @@ def _calls(lines):
         # so every existing shape still parses, and kept so the call can be tied
         # to its instruction by position.
         at = None
+        # `@gave=#n` is the number the environment gave the object it answered
+        # with, and `@on=#n` is the object the call was made on. Together they
+        # say whether the program ever used what it asked for - the one thing
+        # that separates a build measuring its host from a build doing work.
+        gave = recv_id = None
+        gm = re.search(r"\s*@gave=#(\d+)\s*$", s)
+        if gm:
+            gave = int(gm.group(1))
+            s = s[:gm.start()].rstrip()
         rm = re.search(r"\s*@row=(\d+)\s*$", s)
         if rm:
             at = int(rm.group(1))
             s = s[:rm.start()].rstrip()
+        om = re.search(r"\s*@on=#(\d+)\s*$", s)
+        if om:
+            recv_id = int(om.group(1))
+            s = s[:om.start()].rstrip()
         m = _METHOD.match(s)
         if m:
             calls.append({"recv": m.group(1), "method": m.group(2),
                           "args": _args(m.group(3)), "raw": s, "row": at,
+                          "gave": gave, "on": recv_id,
+                          "round": cur_round,
                           "outer": not inner_exists})
             continue
         m = _NAMED.match(s)
@@ -1182,7 +1264,9 @@ def _calls(lines):
                 body, answer = body.split("  -> ", 1)
             calls.append({"recv": None, "method": m.group(1),
                           "args": _args(body), "raw": s, "row": at,
-                          "answer": answer, "outer": not inner_exists})
+                          "answer": answer, "gave": gave, "on": recv_id,
+                          "round": cur_round,
+                          "outer": not inner_exists})
             continue
         notes.append(s)
     return calls, notes
