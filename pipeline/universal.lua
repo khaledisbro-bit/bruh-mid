@@ -101,10 +101,23 @@ end
 local DBG = {}
 DBG.info = function(a, b, c)
     if not realdebug.info then return nil end
-    local r = { pcall(realdebug.info, a, b, c) }
-    if not r[1] then return nil end
+    -- A numeric first argument is a STACK LEVEL, counted from the caller of
+    -- debug.info. This wrapper is a frame the script does not know it has, so
+    -- the level has to be raised by one or the script is told about the wrapper
+    -- instead of about itself.
+    --
+    -- And no pcall in between. A pcall is another frame, and with both of them
+    -- level 1 landed on pcall - a C function, whose line is -1. So every script
+    -- that asked which line it was on got -1, at every patch level, in every
+    -- capture this project has taken. A build that checks its own line numbers
+    -- sees that as tampering, which is exactly what the harness is trying not to
+    -- look like. If the arguments are wrong, the real debug.info raises, and
+    -- raising is what the script would have got without the harness.
+    if type(a) == "number" then a = a + 1 end
+    local r = table.pack and table.pack(realdebug.info(a, b, c))
+             or { realdebug.info(a, b, c), n = 3 }
     local out = {}
-    for i = 2, #r do out[i - 1] = r[i] end
+    for i = 1, (r.n or #r) do out[i] = r[i] end
     -- the line fields come back in the order the "what" string asked for; any
     -- number that looks like a line in the patched file is corrected
     local what = (type(b) == "string" and b) or (type(a) == "string" and a) or ""
@@ -494,6 +507,12 @@ local TRACE_CHUNK = 1
 --   0 = nothing touched
 --   3 = prototype makers hooked, resolver rewritten AND dispatch loop traced
 local PATCH_LEVEL = TRACE_OPCODES and 3 or 1
+-- The ladder removes one edit per round, and between the dispatch logger and
+-- the resolver rewrite there used to be nothing: taking the logger out took
+-- the trace with it, so a build that objects to the RESOLVER could only be
+-- told apart from one that objects to the LOGGER by losing the trace. This
+-- flag is the missing rung - the trace stays in, the resolver comes out.
+local RESOLVER_OFF = false
 local LEVEL_NAME = { [3] = "watched+traced", [2] = "traced",
                      [1] = "resolver-only", [0] = "unpatched" }
 local patchable = 0          -- how many interpreters we have been able to patch
@@ -550,6 +569,7 @@ local patchDispatchFallback
 local patchBlocks
 local patchChecks
 local patchKeyTables
+local patchFields
 
 -- The row fetch, in the four shapes a dispatch loop writes it.
 --
@@ -721,23 +741,40 @@ local function patchDispatch(s)
         local blockNote = ""
         -- PATCH_LEVEL is nil only when these functions are extracted on their
         -- own by a test, and there the watch is what is being tested.
+        --
+        -- ORDER MATTERS, and getting it wrong is silent. Two of these watches go
+        -- in at a measured offset (the loop top) and two rewrite text wherever
+        -- they find it. A rewrite anywhere before that offset moves it, so the
+        -- offset-based ones go first, while the number still means what it meant
+        -- when it was measured. Running them the other way round put the pc-table
+        -- dump in the wrong place and lost the block watch entirely, while the
+        -- capture still reported both as applied.
         if PATCH_LEVEL == nil or PATCH_LEVEL >= 3 then
+            -- 1. at the loop top, inserting after it, so the offset still holds
             local keyed, howManyKeys = patchKeyTables(out, top.at, top.pc)
             if howManyKeys > 0 then
                 out = keyed
-                blockNote = " pc_tables=" .. howManyKeys
+                blockNote = blockNote .. " pc_tables=" .. howManyKeys
             end
+            -- 2. also at the loop top, and this one rewrites the text BEFORE it,
+            --    so it is the last that may use the offset
+            local patched, howMany, skipped = patchBlocks(out, top.at,
+                                                          top.arr, top.pc)
+            if howMany > 0 then
+                out = patched
+                blockNote = blockNote .. " blocks_watched=" .. howMany
+                    .. (skipped > 0 and (" blocks_skipped=" .. skipped) or "")
+            end
+            -- 3. whole-chunk rewrites, which may move anything
             local checked, howManyChecks = patchChecks(out, top.pc)
             if howManyChecks > 0 then
                 out = checked
                 blockNote = blockNote .. " checks_watched=" .. howManyChecks
             end
-            local patched, howMany, skipped = patchBlocks(out, top.at,
-                                                           top.arr, top.pc)
-            if howMany > 0 then
-                out = patched
-                blockNote = blockNote .. " blocks_watched=" .. howMany
-                    .. (skipped > 0 and (" blocks_skipped=" .. skipped) or "")
+            local fielded, howManyFields = patchFields(out)
+            if howManyFields > 0 then
+                out = fielded
+                blockNote = blockNote .. " fields_watched=" .. howManyFields
             end
         end
         return out,
@@ -942,6 +979,60 @@ HID.__JMP = function(fn, x, hit, target, from)
     jumps[#jumps+1] = tostring(fn) .. ":" .. tostring(from) .. ":" .. tostring(x)
                       .. ":" .. (hit and "table" or "COMPUTED") .. ":"
                       .. tostring(target)
+end
+
+-- What the deserialiser actually handed the interpreter.
+--
+-- An interpreter of this class reads its optional parts as `local X = SRC[k] or
+-- {}`: present, or an empty default. Both samples here run a few instructions
+-- and then refuse to continue because one of those parts is empty, and from
+-- inside the loop there is no way to tell an empty default from a part that was
+-- deserialised as empty. One is a build that does not carry that part; the other
+-- is a deserialiser that produced nothing for it, which is a different problem
+-- with a different fix.
+--
+-- So the read is wrapped where it happens - the interpreter's own read, not an
+-- extra one - and what came back is recorded before the default is applied.
+local fields, fieldN = {}, 0
+HID.__FIELD = function(name, expr, v)
+    if fields[name] ~= nil then return end
+    local kind = type(v)
+    local count = ""
+    if kind == "table" then
+        local n = 0
+        local ok, err = pcall(function()
+            for _ in next, v do
+                n = n + 1
+                if n > 4000 then break end
+            end
+        end)
+        -- the reason, not just the fact. "could not be counted" on a table that
+        -- another watch counted a moment later is a fact with no use.
+        count = ok and (", " .. n .. " entr" .. (n == 1 and "y" or "ies"))
+                    or (", could not be counted - " .. tostring(err))
+    end
+    fieldN = fieldN + 1
+    fields[name] = name .. " = " .. expr .. ": " .. kind .. count
+    return v
+end
+
+function patchFields(s)
+    local n = 0
+    local function wrap(name, expr)
+        n = n + 1
+        return "local " .. name .. "=(function(__v)if __FIELD then __FIELD("
+            .. string.format("%q", name) .. "," .. string.format("%q", expr)
+            .. ",__v)end;return __v end)(" .. expr .. ") or {}"
+    end
+    -- %b[] matches a balanced bracket, so an index chain is taken whole. Two
+    -- links then one, because a pattern cannot make the second optional and
+    -- the longer match has to be tried first.
+    local out = s:gsub("local%s+([%a_][%w_]*)%s*=%s*([%a_][%w_]*%b[]%b[])%s*or%s*{%s*}",
+                       wrap)
+    out = out:gsub("local%s+([%a_][%w_]*)%s*=%s*([%a_][%w_]*%b[])%s*or%s*{%s*}",
+                   wrap)
+    if n == 0 then return s, 0 end
+    return out, n
 end
 
 -- Which counters this build has anything at all for.
@@ -1397,13 +1488,16 @@ env.loadstring = function(src, ...)
     end
     -- try to patch the inner resolver so it dumps real constants (guarded)
     local use = src
-    if PATCH_LEVEL >= 1 then
+    if PATCH_LEVEL >= 1 and not RESOLVER_OFF then
         local ok, patched, rn = pcall(patchResolver, src)
         if ok and patched then
             use = patched
             resolverDone = true
             behavior[#behavior+1] = "  [patched resolver " .. tostring(rn) .. " -> dumping constants]"
         end
+    elseif RESOLVER_OFF then
+        behavior[#behavior+1] = "  [resolver left alone on purpose, to see "
+            .. "whether its rewrite is what this build objects to]"
     else
         behavior[#behavior+1] = "  [resolver left alone at this patch level]"
     end
@@ -1791,7 +1885,11 @@ local function runPayload()
     -- A level-2 round whose dispatch hook never matched this build is a
     -- resolver-only round, and calling it "traced" would put an edit in the
     -- record that is not in the chunk.
+    -- A round that traced with the resolver deliberately left out is not the
+    -- same round as one that traced with it in, and calling both "traced" hid
+    -- the only comparison that tells the two causes apart.
     rec.mode = ((protosDone or slicesDone) and LEVEL_NAME[3])
+               or (dispatchDone and not resolverDone and "traced-no-resolver")
                or (dispatchDone and LEVEL_NAME[2])
                or (resolverDone and LEVEL_NAME[1])
                or LEVEL_NAME[0]
@@ -1843,9 +1941,24 @@ while not last.ok do
         if last.applied_protos then parts[#parts+1] = "the prototype-maker hook" end
         step = table.concat(parts, " and ")
         PATCH_LEVEL = 2
+    elseif last.applied_dispatch and last.applied_resolver
+           and not RESOLVER_OFF then
+        -- Before giving up the trace, keep it and drop the resolver instead.
+        -- The constants stop being dumped for this round, which is a real cost,
+        -- and what it buys is the one comparison that separates "this build
+        -- objects to being traced" from "this build objects to its constant
+        -- resolver being rewritten" - and the second is the one that leaves the
+        -- instructions readable.
+        step = "the resolver rewrite, with the dispatch logger left in"
+        RESOLVER_OFF = true
     elseif last.applied_dispatch then
         step = "the dispatch logger"
         PATCH_LEVEL = 1
+        -- and the resolver comes back, because this rung removes the logger and
+        -- nothing else. Leaving it off here made the next round an unpatched
+        -- round wearing the resolver-only label, and the ladder then skipped the
+        -- level it was supposed to test.
+        RESOLVER_OFF = false
     elseif last.applied_resolver then
         step = "the resolver rewrite"
         PATCH_LEVEL = 0
@@ -1971,6 +2084,10 @@ say("mode: universal")
 -- What the chunk looked like when no dispatch loop was found in it. Without
 -- this the capture said only "dispatch_patched: false", which names the outcome
 -- and none of the evidence.
+if fieldN > 0 then
+    say("---FIELDS---")
+    for _, line in pairs(fields) do say(line) end
+end
 if keyTabN > 0 then
     say("---PCTABLES---")
     for _, line in pairs(keyTabs) do say(line) end

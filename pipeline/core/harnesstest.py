@@ -45,12 +45,16 @@ local PATCH_LEVEL = TRACE_OPCODES and 3 or 1
 local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
                      [1] = "resolver-only", [0] = "unpatched" }
 local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
+-- the ladder's rung that keeps the trace and drops the resolver. The stub below
+-- has to respect it, or the round it produces looks identical to the one before.
+local RESOLVER_OFF = false
 local protoN = 0
 local slices, sliceN = {}, 0
 local blocks, blockN = {}, 0
 local conds, condN = {}, 0
 local viols, violN = {}, 0
 local keyTabs, keyTabN = {}, 0
+local fields, fieldN = {}, 0
 local jumps, jumpN = {}, 0
 local slicesDone = false
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
@@ -59,7 +63,9 @@ local function realLoad(src)
   return function()
     -- what the loadstring hook would have done while the payload was running
     if PATCH_LEVEL >= 3 and SCEN.proto_matches then protosDone = true end
-    if PATCH_LEVEL >= 1 and SCEN.resolver_matches then resolverDone = true end
+    if PATCH_LEVEL >= 1 and SCEN.resolver_matches and not RESOLVER_OFF then
+      resolverDone = true
+    end
     if PATCH_LEVEL >= 2 and SCEN.dispatch_matches then
       patchable = 1
       dispatchDone = true
@@ -88,29 +94,39 @@ CASES = {
              dispatch_matches=True, lives_at=2),
         {"harness_id": "protos+traced->traced", "attempts": "2",
          "run_ok": "true", "trace_verdict": "patch_caught"}),
+    # The resolver-off round is tried before the logger is given up, so a
+    # payload that only tolerates level 1 passes through it on the way.
     "dispatch logger caught": (
         dict(trace=True, proto_matches=True, resolver_matches=True,
              dispatch_matches=True, lives_at=1),
-        {"harness_id": "protos+traced->traced->resolver-only", "attempts": "3",
-         "run_ok": "true", "trace_verdict": "patch_caught"}),
+        {"harness_id": "protos+traced->traced->traced-no-resolver->"
+                       "resolver-only",
+         "attempts": "4", "run_ok": "true", "trace_verdict": "patch_caught"}),
     # tolerates no edit at all: the harness has to reach untouched
     "resolver rewrite caught": (
         dict(trace=True, proto_matches=True, resolver_matches=True,
              dispatch_matches=True, lives_at=0),
-        {"harness_id": "protos+traced->traced->resolver-only->unpatched",
-         "attempts": "4", "run_ok": "true", "trace_verdict": "patch_caught"}),
+        {"harness_id": "protos+traced->traced->traced-no-resolver->"
+                       "resolver-only->unpatched",
+         "attempts": "5", "run_ok": "true", "trace_verdict": "patch_caught"}),
+    # Five rounds, not four: between "traced" and "resolver-only" there is a
+    # round that keeps the trace and drops the resolver. Without it, a build
+    # that objects to the resolver rewrite and one that objects to the dispatch
+    # logger produce the same ladder, and only the second leaves instructions
+    # behind.
     "raises at every level": (
         dict(trace=True, proto_matches=True, resolver_matches=True,
              dispatch_matches=True, lives_at=None),
-        {"harness_id": "protos+traced->traced->resolver-only->unpatched",
-         "attempts": "4", "run_ok": "false", "trace_verdict": "not_the_patches"}),
+        {"harness_id": "protos+traced->traced->traced-no-resolver->"
+                       "resolver-only->unpatched",
+         "attempts": "5", "run_ok": "false", "trace_verdict": "not_the_patches"}),
     # an edit that never went in is not stepped over: doing so would repeat the
     # round and read as evidence
     "no proto maker matched": (
         dict(trace=True, proto_matches=False, resolver_matches=True,
              dispatch_matches=True, lives_at=None),
-        {"harness_id": "traced->resolver-only->unpatched", "attempts": "3",
-         "trace_verdict": "not_the_patches"}),
+        {"harness_id": "traced->traced-no-resolver->resolver-only->unpatched",
+         "attempts": "4", "trace_verdict": "not_the_patches"}),
     "dispatch hook never matched": (
         dict(trace=True, proto_matches=False, resolver_matches=True,
              dispatch_matches=False, lives_at=None),
@@ -849,11 +865,77 @@ def _declared_locals(path=UNIVERSAL):
     return problems
 
 
+def debug_shield(path=UNIVERSAL):
+    """The shield must answer about the SCRIPT, not about itself.
+
+    The harness replaces debug.info so a patched chunk still reports the lines it
+    shipped with. A numeric first argument is a stack level counted from the
+    caller, and the shield is a frame the script does not know it has - so the
+    level has to be raised by one. It was not, and the call went through a pcall
+    as well, which is a second frame: level 1 landed on pcall, a C function, and
+    every script that asked which line it was on got -1. A build that checks its
+    own line numbers reads that as tampering.
+
+    This runs under a real Luau binary, because the answer depends on how that
+    interpreter counts frames and no paraphrase of it is worth anything. With no
+    Luau available the check is skipped rather than guessed.
+    """
+    import os
+    import subprocess
+    import sys
+    import tempfile
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        import localvm
+    except ImportError:
+        return []
+    luau, _ = localvm.find()
+    if not luau:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    try:
+        a = src.index("local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED")
+        b = src.index("setmetatable(DBG, { __index = realdebug })")
+    except ValueError:
+        return ["universal.lua has no debug shield to test"]
+    block = src[a:b] + "setmetatable(DBG, { __index = realdebug })\n"
+    script = ("local realenv = getfenv and getfenv() or _G\n"
+              + block +
+              "local shielded, direct = DBG.info(1, \"l\"), debug.info(1, \"l\")\n"
+              "print(\"shielded=\" .. tostring(shielded) .. \" direct=\" "
+              ".. tostring(direct))\n")
+    d = tempfile.mkdtemp(prefix="vmsmart-shield-")
+    try:
+        f = os.path.join(d, "shield.luau")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write(script)
+        r = subprocess.run([luau, f], capture_output=True, timeout=30)
+        out = (r.stdout or b"").decode("utf-8", "replace").strip()
+        err = (r.stderr or b"").decode("utf-8", "replace").strip()
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+    if "shielded=" not in out:
+        return ["the shield could not be exercised under Luau: %s"
+                % (err.splitlines()[0] if err else out or "no output")]
+    parts = dict(p.split("=", 1) for p in out.split() if "=" in p)
+    shielded, direct = parts.get("shielded"), parts.get("direct")
+    bad = []
+    if shielded == "-1":
+        bad.append("the shield reports line -1, which is what a C frame reports "
+                   "- the script is being told about the harness, not itself")
+    elif shielded != direct:
+        bad.append("the shield reports line %s where the real debug.info on the "
+                   "same line reports %s" % (shielded, direct))
+    return bad
+
+
 def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
              + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
              + no_source_message(path) + loop_top(path) + jump_hook(path)
+    + debug_shield(path)
              + probes_are_passive(path))
     try:
         import lupa
