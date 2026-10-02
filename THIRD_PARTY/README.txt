@@ -62,3 +62,31 @@ PumbaaDev/luau-decompiler  (MIT)
   Nothing was copied. Their opmap_db was deliberately not used: an opcode table
   read from a file is exactly the lookup this project derives from the
   interpreter's own handlers instead.
+
+
+An archive the user supplied (VmSmart.rar), described as this project fixed by
+other models.
+
+  Read, not merged. It is built on engine 47; this package was on 53 by the time
+  it arrived, and 48-53 are the run that found the loop-top injection (the nine
+  traced instructions were never the first nine), the opcode's real index, the
+  row read from the array, and passive probes. Taking its universal.lua would
+  have undone all of that.
+
+  WHAT WAS GOOD IN IT, and is now here as this project's own code:
+    Taking a capture offline. The harness needs a Luau interpreter and a short
+    list of host roots, not Roblox, so a capture can be taken with no executor.
+    pipeline/localvm.py and pipeline/robloxenv.lua are written from that idea
+    against engine 54; no file from the archive is in this repository. Its
+    discipline is worth recording too: it said plainly that a stand-in run is
+    different evidence, and this keeps that - the capture carries
+    `environment: standin` and the report leads with it.
+
+  NOT TAKEN:
+    Its universal.lua, for the reason above.
+    Its obfuscators/ plugin layout and layertest.py - worth having, not yet
+    written here, and not copied.
+
+  The Vmsmart2.zip supplied alongside it contains no VmSmart code at all: 3282
+  files, every one of them a downloaded copy of luau, luau-decompiler,
+  luau-vmp-deobf, Deobfuscator-Luraph-V15 or MoonsecDeobfuscator.

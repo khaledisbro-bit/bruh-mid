@@ -1333,6 +1333,11 @@ else
     hid = first.mode
 end
 say("harness: universal")
+-- Where this run happened. robloxenv.lua sets VMSMART_STANDIN when the harness
+-- is run outside Roblox against a stand-in, and a capture taken there is weaker
+-- evidence than one taken in a game: the services resolve but every field on
+-- them is absent. Saying so here is what stops the two being read as the same.
+say("environment: " .. (VMSMART_STANDIN and ("standin/" .. tostring(VMSMART_STANDIN)) or "host"))
 say("harness_engine: " .. tostring(HARNESS_ENGINE))
 -- Whether the hooks were hidden behind the environment's metatable this run.
 -- With them visible on purpose, two of the exposure checks come back EXPOSED by

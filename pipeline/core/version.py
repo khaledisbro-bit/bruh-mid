@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 53
+VERSION = 54
 
 STAGES = (
     "captures read by shape",
@@ -196,6 +196,15 @@ STAGES = (
     "the row variable believed at the loop top and the array believed anywhere "
     "else, because this family re-fetches the row from a second array variable "
     "and preferring the named array there would reintroduce the mismatch",
+    "a capture takeable with no executor and no Roblox: the harness runs under "
+    "a luau binary against a stand-in whose services resolve so calls are "
+    "recorded and whose fields are all absent so nothing is invented",
+    "the interpreter never assumed: every path looked at is reported with why it "
+    "was rejected, and a candidate must run a Luau-only script and print what it "
+    "was asked before anything is handed to it",
+    "an offline capture named as one in its own header and in the report, "
+    "because a run against a stand-in is weaker evidence than a run in a game "
+    "and the two must not be read as the same",
     "every probe passive: it never indexes the program's own tables, because "
     "these VMs put a decrypting metatable on them and an extra read advances the "
     "key - the first jump watch did that and took a traced round from twelve "

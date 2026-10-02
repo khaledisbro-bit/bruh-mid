@@ -175,6 +175,10 @@ def main():
     ap.add_argument("--vm-source",
                     help="the interpreter's own source, if it is not where "
                          "the harness left it")
+    ap.add_argument("--offline", nargs="?", const=True, metavar="LUAU",
+                    help="take the capture here, with no executor and no "
+                         "Roblox: run the harness under a luau binary against "
+                         "the stand-in environment. Optionally name the binary.")
     ap.add_argument("--safe", action="store_true",
                     help="also write a harness that does not trace opcodes, for "
                          "builds whose integrity check reacts to the trace")
@@ -332,6 +336,30 @@ def main():
             return 1
         a.trace = runs
         print("")
+
+    if getattr(a, "offline", None):
+        import localvm
+        want = None if a.offline is True else a.offline
+        luau, report = localvm.find(want)
+        print("[3b/4] OFFLINE: looking for a Luau interpreter")
+        for ln in report.splitlines():
+            print("              " + ln)
+        if not luau:
+            print("              " + localvm.where_to_put_one())
+            return 1
+        rec = localvm.run(luau, harness)
+        print("              " + localvm.describe(rec))
+        if rec["capture"]:
+            path = os.path.join(a.out, "offline_capture.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(rec["capture"] + "\n")
+            print("              capture -> %s" % path)
+            a.trace = [path]
+        else:
+            if rec["stderr"].strip():
+                print("              luau said: "
+                      + rec["stderr"].strip().splitlines()[0])
+            return 1
 
     if not a.trace:
         print("\nnext:")

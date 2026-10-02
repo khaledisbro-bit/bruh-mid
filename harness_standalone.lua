@@ -473,7 +473,7 @@ end
 -- build made it removes that inference, and the report can then say what a
 -- fresh capture would add instead of drawing a conclusion the capture cannot
 -- support.
-local HARNESS_ENGINE = 53
+local HARNESS_ENGINE = 54
 local TRACE_OPCODES = true
 -- WHICH nested interpreter to trace. Patching two at once is what tripped the
 -- VM's self-integrity check and ended the run early, so exactly one is traced
@@ -1333,6 +1333,11 @@ else
     hid = first.mode
 end
 say("harness: universal")
+-- Where this run happened. robloxenv.lua sets VMSMART_STANDIN when the harness
+-- is run outside Roblox against a stand-in, and a capture taken there is weaker
+-- evidence than one taken in a game: the services resolve but every field on
+-- them is absent. Saying so here is what stops the two being read as the same.
+say("environment: " .. (VMSMART_STANDIN and ("standin/" .. tostring(VMSMART_STANDIN)) or "host"))
 say("harness_engine: " .. tostring(HARNESS_ENGINE))
 -- Whether the hooks were hidden behind the environment's metatable this run.
 -- With them visible on purpose, two of the exposure checks come back EXPOSED by

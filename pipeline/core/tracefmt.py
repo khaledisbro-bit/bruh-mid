@@ -55,6 +55,7 @@ class Capture:
         self.attempts = _attempts(self.body)
         self.harness_id = self.headers.get("harness_id")
         self.harness_engine = _int(self.headers.get("harness_engine"))
+        self.environment = self.headers.get("environment")
         self.code_arrays = _int(self.headers.get("code_arrays"))
         self.protos_seen = _int(self.headers.get("protos_seen"))
         self.slices = _slices(self.sections.get("SLICES", []))
@@ -680,6 +681,25 @@ def env_did_not_have(capture):
             "  " + ", ".join(m[:60]) + (", ..." if len(m) > 60 else "")]
 
 
+def taken_against_a_standin(capture):
+    """Whether this capture came from a game or from a stand-in.
+
+    Run offline there is no Roblox: the stand-in resolves a service so the call
+    is logged, and answers every field on it with nothing so none is invented. A
+    program that needs real services fails there, and that failure is the
+    stand-in's, not the program's. The two kinds of capture are not the same
+    evidence and must not be read as if they were."""
+    env = getattr(capture, "environment", None)
+    if not env or not str(env).startswith("standin"):
+        return []
+    return ["This capture was taken OFFLINE, against a stand-in environment "
+            "(%s) rather than a Roblox client. Services resolve there so calls "
+            "are recorded, and every field on them is absent so nothing is "
+            "invented - which means a program that needs a real service fails "
+            "here for that reason and not its own. What the program DID is "
+            "readable; what it would have done with real answers is not." % env]
+
+
 def which_harness(capture, current):
     """Whether this capture was written by the harness in this package.
 
@@ -1254,6 +1274,20 @@ def _selftest():
     said = " ".join(what_the_arrays_did(c))
     if "NOT found in its lookup table" in said and "0 of them" not in said:
         bad.append("a clean jump log must not raise an alarm: %r" % said[:120])
+
+    # 16) an offline capture must be named as one, and a host capture must not
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nenvironment: standin/robloxenv\n"
+                "run_ok: true\n---OPCODES---\n1;2;;0;x\nEND_UNOBF_RESULT")
+    said = " ".join(taken_against_a_standin(c))
+    if "taken OFFLINE" not in said or "not the same" in said.lower()[:0]:
+        bad.append("an offline capture must say so, got %r" % said[:120])
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nenvironment: host\n"
+                "run_ok: true\n---OPCODES---\n1;2;;0;x\nEND_UNOBF_RESULT")
+    check("a host capture claims nothing", taken_against_a_standin(c), [])
+    c = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nrun_ok: true\n"
+                "---OPCODES---\n1;2;;0;x\nEND_UNOBF_RESULT")
+    check("a capture that does not say is not guessed at",
+          taken_against_a_standin(c), [])
 
     print("tracefmt selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

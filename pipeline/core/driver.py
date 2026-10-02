@@ -265,6 +265,9 @@ class Analysis:
         note = tracefmt.stopped_under_the_trace(cap)
         if note:
             L += ["  " + note, ""]
+        # Where the run happened, before anything is read from it.
+        for ln in tracefmt.taken_against_a_standin(cap):
+            L += ["  " + ln, ""]
         # What the instruction arrays did, and what the environment did not have.
         # The report used to stop at "the program, or the environment" and then
         # say nothing about either, while the capture carried the answer.
@@ -803,6 +806,12 @@ def selftest():
     # are invisible in review and none of them needs the app to be launched.
     import apptest as _app
     if _app.selftest():
+        ok = False
+    # The offline runner: what it reads out of a run, and what it refuses to
+    # call a success. It needs no luau binary to check any of that.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import localvm as _lv
+    if _lv._selftest():
         ok = False
     # The harness's own decision - one run or two - tested against the shipped
     # text of universal.lua rather than a description of it.
