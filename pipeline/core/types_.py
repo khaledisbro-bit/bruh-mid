@@ -152,6 +152,13 @@ def check(models, lift, rescued=None, observed_calls=()):
         # previews in it are not evidence about this operation either.
         if getattr(m, "delta", None) is None:
             continue
+        # Only values the capture OBSERVED may withdraw a reading. A popped
+        # value whose own evidence is a model - an arity that was guessed, a
+        # product the capture never reported - is not evidence about what this
+        # instruction consumed, and withdrawing on it threw away two of the
+        # most frequent opcodes' readings on previews that contradicted nothing.
+        if any(getattr(v.fact, "evidence", None) != "OBSERVED" for v in st.popped):
+            continue
         ins = [v.runtime for v in st.popped]
         out = st.pushed[0].runtime if st.pushed else None
         examined += 1

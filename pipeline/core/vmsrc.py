@@ -315,6 +315,65 @@ def _chase(expr, body, rounds=3):
     return expr
 
 
+def branch_nets(body, vm):
+    """The net stack effect of each top-level alternative in this handler.
+
+    A handler with alternatives performs ONE of them, and the measured delta
+    says which. Comparing the measured delta against a single number computed
+    over the whole body rejected a correct reading whenever the branch that ran
+    was not the one the count described.
+    """
+    body = strip_flush(body)
+    parts, depth, start = [], 0, 0
+    skip_then = False
+    for m in _TOKENS.finditer(body):
+        kind = m.lastgroup
+        if kind == "str":
+            continue
+        if kind == "open":
+            if m.group("open") == "then" and skip_then:
+                skip_then = False
+                continue
+            depth += 1
+        elif kind == "repeat":
+            depth += 1
+        elif kind in ("close", "until"):
+            depth = max(0, depth - 1)
+        elif kind == "alt" and depth == 1:
+            # an alternative of the handler's own outermost if-chain
+            parts.append(body[start:m.start()])
+            start = m.end()
+            if m.group("alt") == "elseif":
+                skip_then = True
+    parts.append(body[start:])
+    nets = set()
+    for part in parts:
+        pushes = _pushes_in(part, vm)
+        pops = _pops_in(part, vm)
+        nets.add(pushes - pops)
+    return nets
+
+
+def _pushes_in(text, vm):
+    needles = []
+    if vm.push:
+        needles.append(re.compile(r"\b%s\(" % re.escape(vm.push)))
+    if vm.regs and vm.sp:
+        needles.append(re.compile(r"%s\[%s\]\s*=\s*(?!nil)"
+                                  % (re.escape(vm.regs), re.escape(vm.sp))))
+    return _path_count(text, needles) if needles else 0
+
+
+def _pops_in(text, vm):
+    needles = []
+    if vm.pop:
+        needles.append(re.compile(r"=\s*%s\(\)" % re.escape(vm.pop)))
+    if vm.sp:
+        needles.append(re.compile(r"%s\s*=\s*%s\s*-\s*1"
+                                  % (re.escape(vm.sp), re.escape(vm.sp))))
+    return _path_count(text, needles) if needles else 0
+
+
 def _path_count(body, needles):
     """How many times something happens along ONE path through this body.
 
@@ -390,6 +449,22 @@ def classify(body, vm):
     """
     body = strip_flush(body)
     pops = _path_count(body, [re.compile(r"=\s*%s\(\)" % re.escape(vm.pop))])
+    # A handler that pushes something and THEN stores into a variable box is a
+    # store: the push was part of working the value out. Reading the push first
+    # named one opcode INDEX when what it does is write a variable, and that
+    # reading was then withdrawn by a type check, so the opcode ended up with no
+    # operation at all.
+    if vm.row:
+        store_at = None
+        for m in re.finditer(r"\w+\[%s\[\d+\]\]\[1\]\s*=[^=]" % re.escape(vm.row),
+                             body):
+            store_at = m.start()
+        push_at = None
+        if vm.push:
+            for m in re.finditer(r"\b%s\(" % re.escape(vm.push), body):
+                push_at = m.start()
+        if store_at is not None and (push_at is None or store_at > push_at):
+            return "SETVAR", pops
     expr = _result(body, vm)
     if expr is None:
         expr = _result_regs(body, vm)
@@ -447,6 +522,12 @@ def classify(body, vm):
         if m.group(1) == vm.resolver:
             return "LOADK", pops
         return "CALL", pops
+    # A bare name whose value was selected by a negative operand is one of the
+    # interpreter's own slots, and pushing it is a read of that slot. Two opcodes
+    # of the real sample do nothing else, and their handlers read as
+    # unclassifiable because the name alone matches no pattern.
+    if re.fullmatch(r"[A-Za-z_]\w*", e) and re.search(r"==-\d+\s+then", body):
+        return "GETSLOT", pops
     # `#x` is an operation too, and the only unary one this family writes.
     if re.fullmatch(r"#\s*[\w\[\]\.\(\)]+", e):
         return "LEN", pops
@@ -643,7 +724,9 @@ def apply(models, src, steps):
             # opcodes with perfectly readable handlers kept their numbers.
             pushes = _pushes(body, vm)
             if model.delta is not None and (pops or pushes):
-                if pushes - pops != model.delta:
+                # the whole body's net, or any one of its alternatives
+                nets = {pushes - pops} | branch_nets(body, vm)
+                if model.delta not in nets:
                     rejected["handler nets %+d, execution measured %+d"
                              % (pushes - pops, model.delta)] += 1
                     continue

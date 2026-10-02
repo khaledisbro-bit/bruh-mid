@@ -38,6 +38,12 @@ class Verdict:
         self.alternative = alternative
 
 
+# Operations whose handler performs something the program cannot take back: a
+# call, a store, or a jump. The trace shows which way a jump went, so its target
+# and its condition mattered on the path that ran.
+_EFFECT_OPS = {"CALL", "SETINDEX", "SETVAR", "SETSLOT", "JMP", "CJMP"}
+
+
 def sinks(L, calls, g, slots, env_ops=(), models=None):
     """The values the program's observable behaviour depends on."""
     out, why = set(), {}
@@ -91,10 +97,9 @@ def sinks(L, calls, g, slots, env_ops=(), models=None):
     models = models or {}
     # A jump belongs here too: the trace shows which way it went, so the value
     # it tested or the target it computed had an effect on the path that ran.
-    _EFFECTFUL = {"CALL", "SETINDEX", "SETVAR", "SETSLOT", "JMP", "CJMP"}
     for st in L.steps:
         m = models.get(st.op)
-        if m is None or m.operation not in _EFFECTFUL:
+        if m is None or m.operation not in _EFFECT_OPS:
             continue
         for v in st.popped:
             mark(v.id, "consumed by the %s the interpreter's own handler for "
@@ -182,6 +187,19 @@ def classify(L, g, calls, slots, amap, env_ops=(), models=None):
                 "it executed, moved nothing on the stack, produced no value and "
                 "made no recorded call, so nothing about the program can depend "
                 "on it")
+            continue
+        # An instruction whose own handler performs a call, a store or a jump had
+        # an effect, and it ran. "What it did with them was not observable" was
+        # the verdict on 737 steps of the real sample, 658 of them an opcode the
+        # interpreter's own handler shows calling what it was given - which is
+        # as observable as anything in this capture gets.
+        m = (models or {}).get(st.op)
+        if m is not None and m.operation in _EFFECT_OPS:
+            out[st.key()] = Verdict(
+                st.key(), OBSERVED,
+                "the interpreter's own handler for opcode %d performs a %s, so "
+                "this instruction had an effect when it ran"
+                % (st.op, m.operation))
             continue
         if not st.pushed:
             out[st.key()] = Verdict(
