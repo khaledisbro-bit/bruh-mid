@@ -418,6 +418,11 @@ end
 HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow, pending)
     LAST_PC = pc
     opn = opn + 1
+    -- Which row the run is on, published for the stand-in. A call the stand-in
+    -- answers can then be tied to the instruction that made it by POSITION,
+    -- which is a stronger anchor than looking for the method's name in the value
+    -- graph - and most recorded calls could not be matched that way.
+    if VMSMART_STANDIN then VMSMART_ROW = opn end
     -- WHERE the stand-in's invented values entered the program's own
     -- arithmetic, measured in rows rather than described in prose. The report
     -- says the rows after that point describe the stand-in; without the row
@@ -2581,8 +2586,29 @@ if not first.applied_dispatch then
     local miss = patchMissReport(SOURCE)
     for i = 1, #miss do say(miss[i]) end
 end
+-- Calls the stand-in answered, folded into the behaviour log in the same shape
+-- as the harness's own records, because they are the same kind of fact: a call
+-- the program made, seen by whatever answered it.
+-- Calls the stand-in answered, in a section of their own.
+--
+-- They were appended to the behaviour log first, and landed after the last retry
+-- marker - which is where the reader looks for the SECOND run's records, so they
+-- were counted as a retry's and left out of the analysis. They belong to the run
+-- as a whole, so they get their own section and the reader merges them.
+if VMSMART_STANDIN then
+    local sc = rawget(realenv, "VMSMART_CALLS")
+    if type(sc) == "table" and #sc > 0 then
+        say("---HOSTCALLS---")
+        for i = 1, math.min(#sc, 4000) do say(tostring(sc[i])) end
+    end
+end
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
-say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
+-- The whole behaviour log. A cap of 120 lines was fine while the log held the
+-- harness's own notes; it is not fine now that every call the environment
+-- answered is in there, and dropping them means the analysis cannot see where a
+-- value ended up.
+say("---BEHAVIOR---")
+for i = 1, math.min(#behavior, 4000) do say(behavior[i]) end
 -- real constants dumped from the inner VM resolver (the deep recovery)
 say("resolved="..#resolved)
 say("---RESOLVED---"); for i=1,math.min(#resolved,400) do say(resolved[i]) end

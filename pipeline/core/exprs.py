@@ -108,8 +108,33 @@ def match_calls(L, records):
     matched, unmatched = [], []
     cursor = 0
     consumers = L.consumers()
+    # Steps by the capture row they came from, for records that carry one.
+    by_row = {}
+    for st in L.steps:
+        by_row.setdefault(getattr(st, "row", None), st)
     for rec in records:
         found = None
+        # Strongest anchor of all, when the environment supplied it: the row the
+        # trace was on when the call happened. Nothing has to be recognised in the
+        # value graph - the two records are the same moment, so the instruction is
+        # the one at that row. Only used when the row names a step that is really
+        # there, and the search below still runs when it does not.
+        at = rec.get("row")
+        if at is not None:
+            st = by_row.get(at)
+            if st is None:
+                # the row may name an instruction the lifter folded away; take the
+                # closest one at or before it
+                lower = [r for r in by_row if isinstance(r, int) and r <= at]
+                if lower:
+                    st = by_row[max(lower)]
+            if st is not None:
+                cursor = max(cursor, 0)
+                matched.append(_build(rec, st, None, "OBSERVED",
+                                     "the environment recorded this call at "
+                                     "capture row %d, which is this instruction"
+                                     % at, 0))
+                continue
         for tier, anchor, strength, note in _anchors(rec):
             found = _find(L, consumers, cursor, anchor)
             if found is not None:

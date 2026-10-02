@@ -75,6 +75,17 @@ class Capture:
             beh = beh[:fb]
         before, after = _split_on_retry(beh)
         self.calls, self.notes = _calls(before)
+        # Calls the stand-in answered. The harness keeps them in their own
+        # section because they belong to the run rather than to one of its
+        # rounds, and they are the same kind of record as the rest: a call the
+        # program made, seen by whatever answered it. Without them an offline
+        # capture has only the few calls the harness hooks by name, and every
+        # instruction feeding a host method reads as having no observable effect.
+        host, host_notes = _calls(self.sections.get("HOSTCALLS", []))
+        self.host_calls = host
+        if host:
+            self.calls = self.calls + host
+            self.notes = self.notes + host_notes
         self.calls_after_retry, notes2 = _calls(after)
         self.notes = self.notes + notes2
         self.code = _code(self.sections, self.body)
@@ -1133,15 +1144,24 @@ def _calls(lines):
         s = ln.strip()
         if not s:
             continue
+        # `  @row=N` says which instruction row the run was on when the
+        # environment answered this call. It is stripped before the syntax match
+        # so every existing shape still parses, and kept so the call can be tied
+        # to its instruction by position.
+        at = None
+        rm = re.search(r"\s*@row=(\d+)\s*$", s)
+        if rm:
+            at = int(rm.group(1))
+            s = s[:rm.start()].rstrip()
         m = _METHOD.match(s)
         if m:
             calls.append({"recv": m.group(1), "method": m.group(2),
-                          "args": _args(m.group(3)), "raw": s})
+                          "args": _args(m.group(3)), "raw": s, "row": at})
             continue
         m = _NAMED.match(s)
         if m and " " not in m.group(1):
             calls.append({"recv": None, "method": m.group(1),
-                          "args": _args(m.group(2)), "raw": s})
+                          "args": _args(m.group(2)), "raw": s, "row": at})
             continue
         notes.append(s)
     return calls, notes

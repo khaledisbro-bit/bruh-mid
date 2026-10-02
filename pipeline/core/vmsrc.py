@@ -280,6 +280,51 @@ def _chase(expr, body, rounds=3):
     return expr
 
 
+def _path_count(body, needles):
+    """How many times something happens along ONE path through this body.
+
+    Counting every occurrence is wrong where the occurrences are alternatives. A
+    handler that selects one of the interpreter's named slots writes
+    `if k==-1 then push(A) elseif k==-2 then push(B) ... end` with eight pushes,
+    of which exactly one runs - and counting eight made the handler's net effect
+    nine where execution measured one, which rejected the handler.
+
+    So branches are folded: inside an if-chain, the count is the LARGEST of its
+    branches, not their sum. Everything outside a branch is simply added.
+    """
+    counts = [0]           # one accumulator per open block
+    branch_max = [0]       # the best alternative seen at each level
+    pos = 0
+    for m in _TOKENS.finditer(body):
+        kind = m.lastgroup
+        if kind == "str":
+            continue
+        seg = body[pos:m.start()]
+        pos = m.end()
+        for pat in needles:
+            counts[-1] += len(pat.findall(seg))
+        if kind == "open" or kind == "repeat":
+            counts.append(0)
+            branch_max.append(0)
+        elif kind == "alt":
+            # a new alternative at this level: remember the best so far
+            if len(counts) > 1:
+                branch_max[-1] = max(branch_max[-1], counts[-1])
+                counts[-1] = 0
+        elif kind in ("close", "until"):
+            if len(counts) > 1:
+                best = max(branch_max.pop(), counts.pop())
+                counts[-1] += best
+            # an unbalanced `end` closes the handler itself
+    tail = body[pos:]
+    for pat in needles:
+        counts[-1] += len(pat.findall(tail))
+    total = counts[0]
+    for i in range(1, len(counts)):
+        total += max(counts[i], branch_max[i] if i < len(branch_max) else 0)
+    return total
+
+
 def _pushes(body, vm):
     """How many values this handler leaves on the stack.
 
@@ -287,15 +332,16 @@ def _pushes(body, vm):
     array at the pointer that is not the nil of a pop.
     """
     body = strip_flush(body)
-    n = 0
+    needles = []
     if vm.push:
-        n += len(re.findall(r"\b%s\(" % re.escape(vm.push), body))
+        needles.append(re.compile(r"\b%s\(" % re.escape(vm.push)))
     if vm.regs and vm.sp:
-        for m in re.finditer(r"%s\[%s\]\s*=\s*([^;]+)"
-                             % (re.escape(vm.regs), re.escape(vm.sp)), body):
-            if _trim(m.group(1)) != "nil":
-                n += 1
-    return n
+        # a write to the slot at the pointer, excluding the nil of a pop
+        needles.append(re.compile(r"%s\[%s\]\s*=\s*(?!nil)"
+                                  % (re.escape(vm.regs), re.escape(vm.sp))))
+    if not needles:
+        return 0
+    return _path_count(body, needles)
 
 
 def classify(body, vm):
@@ -308,14 +354,15 @@ def classify(body, vm):
     against, and reading only the first left them all unexplained.
     """
     body = strip_flush(body)
-    pops = len(re.findall(r"=\s*%s\(\)" % re.escape(vm.pop), body))
+    pops = _path_count(body, [re.compile(r"=\s*%s\(\)" % re.escape(vm.pop))])
     expr = _result(body, vm)
     if expr is None:
         expr = _result_regs(body, vm)
         if expr is not None and pops == 0 and vm.sp:
             # a register-style handler pops by stepping the pointer back
-            pops = len(re.findall(r"%s\s*=\s*%s\s*-\s*1"
-                                  % (re.escape(vm.sp), re.escape(vm.sp)), body))
+            pops = _path_count(body, [re.compile(r"%s\s*=\s*%s\s*-\s*1"
+                                                 % (re.escape(vm.sp),
+                                                    re.escape(vm.sp)))])
     if expr is None and re.search(r"\w+==-\d+\s+then", body) and vm.push \
        and re.search(r"%s\(" % re.escape(vm.push), body):
         # every push is inside a chain selecting one of the interpreter's named

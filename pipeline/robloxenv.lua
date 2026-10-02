@@ -96,6 +96,49 @@ VMSMART_ARITH_SINK = {}
 --
 -- This is the stand-in being a stand-in: it is not a claim that the host answers
 -- this way, and the capture says where it ran.
+-- Every call the stand-in answered, written the way the behaviour log writes a
+-- call: `Receiver:Member(args)`. These are calls the program really made - the
+-- stand-in is what answered them - and recording them is what lets the analysis
+-- see where a value ended up. Without them a host interaction leaves no trace at
+-- all, and every instruction feeding it reads as having no observable effect.
+VMSMART_CALLS = {}
+
+local function previewArg(v)
+    local t = type(v)
+    if t == "string" then
+        if #v > 40 then return string.format("%q", v:sub(1, 40) .. "...") end
+        return string.format("%q", v)
+    end
+    if t == "number" or t == "boolean" or t == "nil" then return tostring(v) end
+    if t == "table" then
+        local tag = VMSMART_TAGGED and VMSMART_TAGGED[v]
+        if tag then return tag end
+        local p = VMSMART_STUB_PATH and VMSMART_STUB_PATH[v]
+        if p then return p end
+        return "table"
+    end
+    return t
+end
+
+function VMSMART_RECORD_CALL(key, ...)
+    if #VMSMART_CALLS >= 4000 then return end
+    local parts = {}
+    local n = select("#", ...)
+    -- a method call passes the receiver as its first argument; it is already in
+    -- the key, so it is not repeated among the arguments
+    for i = 2, n do parts[#parts + 1] = previewArg((select(i, ...))) end
+    local receiver, member = key:match("^(.-)[:%.]([%w_]+)$")
+    if receiver == nil or receiver == "" then
+        receiver, member = "host", key
+    end
+    -- the row the trace was on when this call happened, so the analysis can tie
+    -- the two together by position
+    local at = VMSMART_ROW
+    VMSMART_CALLS[#VMSMART_CALLS + 1] = receiver .. ":" .. member .. "("
+        .. table.concat(parts, ", ") .. ")"
+        .. (type(at) == "number" and ("  @row=" .. tostring(at)) or "")
+end
+
 function VMSMART_STUB(record, key, depth)
     depth = depth or 0
     record[key] = (record[key] or 0) + 1
@@ -122,6 +165,7 @@ function VMSMART_STUB(record, key, depth)
     end
     local v = setmetatable({}, {
         __call = function(_, ...)
+            VMSMART_RECORD_CALL(key, ...)
             return VMSMART_STUB(record, key .. "()", depth + 1)
         end,
         __index = function(_, k)
@@ -245,6 +289,17 @@ if Instance == nil then
         return sig
     end
 
+    -- Wraps one of this file's methods so the call through it is recorded. The
+    -- stub path records the calls it answers, and once the real methods existed
+    -- almost nothing went through a stub any more - so the calls that matter
+    -- most, the ones on objects the program built, were the ones not being seen.
+    local function recorded(name, fn)
+        return function(...)
+            VMSMART_RECORD_CALL(name, ...)
+            return fn(...)
+        end
+    end
+
     local function newInstance(class)
         local children = {}
         local attributes = {}
@@ -256,8 +311,16 @@ if Instance == nil then
                 if add then add(self) end
             end
         end
+        -- The method lookup is wrapped once, rather than each of the methods
+        -- being wrapped one by one: whatever this instance answers with, if it is
+        -- a function, the call through it is recorded. One place to get right,
+        -- and it covers the methods added later too.
+        local function answer(k, v)
+            if type(v) ~= "function" then return v end
+            return recorded(class .. ":" .. tostring(k), v)
+        end
         self = setmetatable({ ClassName = class, Name = class, Parent = nil },
-            { __index = function(_, k)
+            { __index = function(_, k) return answer(k, (function()
                   if k == "GetChildren" or k == "GetDescendants" then
                       return function()
                           local list = {}
@@ -344,7 +407,7 @@ if Instance == nil then
                   if byName ~= nil then return byName end
                   return VMSMART_STUB(VMSMART_INSTANCE_FIELDS_ASKED,
                                       class .. ":" .. tostring(k))
-              end,
+              end)()) end,
               __newindex = function(t, k, v)
                   if k == "Parent" then
                       local old = rawget(t, "Parent")
