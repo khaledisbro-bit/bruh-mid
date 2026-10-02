@@ -36,6 +36,13 @@ local behavior, prints, loads = {}, {}, {}
 -- below it should be read, so the capture says which.
 local OP_LOG_CAP = 200000
 local OP_LOG_TRUNCATED = false
+-- The counter the instruction logger last saw. The other watches used to take
+-- the loop's counter variable by name, which only exists inside the interpreter
+-- function - a watch that fired anywhere else read it as a nil global, and the
+-- stand-in then reported being asked for a host datatype called `Ne`. The logger
+-- passes through every instruction, so it is the one place that knows the
+-- counter, and the rest read it from here.
+local LAST_PC = nil
 -- Declared up here on purpose: the instruction logger is defined further down
 -- but ABOVE where this used to be, so the name resolved to a nil global, the
 -- comparison against it raised inside the hook, and the capture came back with
@@ -397,6 +404,7 @@ HID.__CODE = function(arr)
 end
 
 HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
+    LAST_PC = pc
     opn = opn + 1
     if opn > OP_LOG_CAP then
         OP_LOG_TRUNCATED = true
@@ -1047,6 +1055,7 @@ end
 -- it has been tampered with.
 local poisons, poisonN = {}, 0
 HID.__POISON = function(site, value, pc)
+    pc = pc or LAST_PC
     poisonN = poisonN + 1
     if poisonN > 400 then return end
     poisons[#poisons+1] = "site" .. tostring(site) .. ":value_now="
@@ -1060,7 +1069,7 @@ function patchPoison(s, pc)
     -- position.
     local pat = "([%a_][%w_]*)=%(%1%*%d+%+[%a_][%w_]*%*%d+%+[%a_][%w_]*%*%d+%+%d+%)%%%d+"
     local pieces, i, n = {}, 1, 0
-    local pcArg = pc and ("," .. pc) or ",nil"
+    local pcArg = ",nil"
     while true do
         local a, b, acc = s:find(pat, i)
         if not a then break end
@@ -1109,6 +1118,7 @@ end
 -- the key is folded, reading two locals that were just computed.
 local resids, residN = {}, 0
 HID.__RESID = function(name, residue, key, from)
+    from = from or LAST_PC
     residN = residN + 1
     if residN > 400 then return end
     resids[#resids+1] = tostring(name) .. ": residue=" .. tostring(residue)
@@ -1120,7 +1130,7 @@ end
 
 function patchResidue(s, pc)
     local n = 0
-    local pcArg = pc and ("," .. pc) or ",nil"
+    local pcArg = ",nil"
     -- KEY = (KEY * <digits> + NAME) % <digits>, where KEY is an index into a
     -- table of running keys. The log goes AFTER the statement, so the key it
     -- reports is the one the decoder goes on to use.
@@ -1344,6 +1354,7 @@ end
 -- WHICH one fired first, which is the question a capture could not answer.
 local viols, violN = {}, 0
 HID.__VIOL = function(site, count, pc)
+    pc = pc or LAST_PC
     violN = violN + 1
     if violN > 400 then return end
     viols[#viols+1] = "site" .. tostring(site) .. ":count=" .. tostring(count)
@@ -1352,7 +1363,7 @@ end
 
 function patchChecks(s, pc)
     local n = 0
-    local pcArg = pc and ("," .. pc) or ",nil"
+    local pcArg = ",nil"
     local out = s:gsub("do ([%a_][%w_]*)=%1%+1;([%a_][%w_]*)=%(%2%*(%d+)",
         function(counter, stir, mult)
             n = n + 1
@@ -2362,6 +2373,20 @@ if VMSMART_STANDIN then
     end
     if rawget(realenv, "VMSMART_ENUM_VALUES_ARE_DERIVED") then
         asked[#asked+1] = "enum values are derived here, not the host's"
+    end
+    -- the line past which the program is computing with values this harness
+    -- invented. Everything after it is a reading of the stand-in, not of the
+    -- program.
+    local an = rawget(realenv, "VMSMART_ARITH_COUNT")
+    if type(an) == "number" and an > 0 then
+        asked[#asked+1] = "derived_arithmetic: " .. tostring(an)
+            .. " operation(s) on values this stand-in invented, first at "
+            .. tostring(rawget(realenv, "VMSMART_ARITH_FIRST"))
+    end
+    if rawget(realenv, "VMSMART_STUB_LIMIT_HIT") then
+        asked[#asked+1] = "the stand-in stopped answering at its own limit, so "
+                          .. "the run ended on this file rather than on the "
+                          .. "program"
     end
     if #asked > 0 then
         say("---STANDIN---")

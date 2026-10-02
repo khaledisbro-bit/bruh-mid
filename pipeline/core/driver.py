@@ -269,7 +269,8 @@ class Analysis:
         # holding when it did. Both come from the harness's own watches, so this
         # says a cause where the report used to say a symptom.
         for fn in (tracefmt.the_program_ended_itself,
-                   tracefmt.what_the_interpreter_had):
+                   tracefmt.what_the_interpreter_had,
+                   tracefmt.the_standin_answered):
             text = fn(cap)
             if text:
                 L += ["  " + x for x in text.split("\n")] + [""]

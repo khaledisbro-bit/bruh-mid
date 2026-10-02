@@ -456,7 +456,8 @@ def main():
             if note:
                 print("              %s" % note)
             for extra in (tracefmt.the_program_ended_itself(cap),
-                          tracefmt.what_the_interpreter_had(cap)):
+                          tracefmt.what_the_interpreter_had(cap),
+                          tracefmt.the_standin_answered(cap)):
                 if extra:
                     print("              " + extra.replace("\n", "\n              "))
             continue
@@ -472,7 +473,8 @@ def main():
             print("              of the script; it is a reconstruction of its "
                   "first few steps.")
             for extra in (tracefmt.the_program_ended_itself(cap),
-                          tracefmt.what_the_interpreter_had(cap)):
+                          tracefmt.what_the_interpreter_had(cap),
+                          tracefmt.the_standin_answered(cap)):
                 if extra:
                     print("              " + extra.replace("\n", "\n              "))
         an = driver.Analysis(cap, vm_src)

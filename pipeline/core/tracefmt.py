@@ -64,6 +64,16 @@ class Capture:
         self.conds = _conds(self.sections.get("CONDS", []))
         self.block_rows = _blockrows(self.sections.get("BLOCKS", []))
         self.pctables = _pctables(self.sections.get("PCTABLES", []))
+        self.standin_lines = [l.strip() for l in
+                              self.sections.get("STANDIN", []) if l.strip()]
+        self.derived_arithmetic = 0
+        self.standin_limit_hit = False
+        for l in self.standin_lines:
+            m = re.match(r"derived_arithmetic: (\d+)", l)
+            if m:
+                self.derived_arithmetic = int(m.group(1))
+            if "stopped answering at its own limit" in l:
+                self.standin_limit_hit = True
         self.recheck = _recheck(self.body)
         self.env_missing = [l.strip() for l in
                             self.sections.get("ENVMISSING", []) if l.strip()]
@@ -448,6 +458,57 @@ def _run_error(headers, body):
     if ok and not err:
         return None
     return err or "the run did not finish"
+
+
+def the_standin_answered(capture):
+    """What a stand-in run made up, and where the trace stops being evidence.
+
+    A stand-in exists so a program can be watched without the host it was written
+    for. It earns that by answering the host's questions, and every answer is a
+    fact about this package rather than about Roblox. Two of those answers matter
+    more than the others:
+
+    - a datatype or a field answered where the host would have answered
+      differently sends the program down a branch it might not have taken;
+    - ARITHMETIC on an answered value produces another answered value, and from
+      the first of those the program is computing with numbers nothing gave it.
+
+    So the second is reported as a boundary. Rows after it are a reading of this
+    package, not of the program, and a reconstruction built from them would be a
+    reconstruction of the stand-in.
+    """
+    lines = getattr(capture, "standin_lines", None) or []
+    if not lines:
+        return None
+    types = [l.split(": ", 1)[1] for l in lines
+             if l.startswith("datatype answered: ")]
+    fields = [l for l in lines if l.startswith("field answered: ")]
+    out = ["WHAT THE STAND-IN ANSWERED FOR"]
+    if types:
+        out.append("  %d host datatype(s) this environment does not have were "
+                   "answered for: %s%s"
+                   % (len(types), ", ".join(types[:12]),
+                      " and more" if len(types) > 12 else ""))
+    if fields:
+        out.append("  %d field path(s) on host objects were answered. The build "
+                   "reads them to decide whether it is running somewhere real."
+                   % len(fields))
+    n = getattr(capture, "derived_arithmetic", 0) or 0
+    if n:
+        out.append("  BOUNDARY - %d arithmetic operation(s) were performed on "
+                   "values this stand-in invented. From the first one the "
+                   "program is computing with numbers no host gave it, so the "
+                   "instructions after that point describe this package and not "
+                   "the program. Anything read from them - constants, calls, a "
+                   "reconstruction - is evidence about the stand-in." % n)
+        out.append("  What that leaves standing: everything BEFORE the first "
+                   "such operation, and the fact that the program got that far.")
+    if getattr(capture, "standin_limit_hit", False):
+        out.append("  The stand-in stopped answering at its own limit, so this "
+                   "run ended on this package rather than on the program.")
+    if getattr(capture, "enum_values_derived", False):
+        out.append("  Enum values here are derived, not the host's.")
+    return "\n".join(out)
 
 
 def the_program_ended_itself(capture):
@@ -867,20 +928,30 @@ def env_did_not_have(capture):
 def taken_against_a_standin(capture):
     """Whether this capture came from a game or from a stand-in.
 
-    Run offline there is no Roblox: the stand-in resolves a service so the call
-    is logged, and answers every field on it with nothing so none is invented. A
-    program that needs real services fails there, and that failure is the
-    stand-in's, not the program's. The two kinds of capture are not the same
-    evidence and must not be read as if they were."""
+    This used to say the stand-in answers every field with nothing, so nothing is
+    invented. That stopped being true: a build that fingerprints the host walks
+    its datatypes, and a stand-in that answers nothing never gets past that, so
+    the stand-in now answers structurally and writes down every answer. The
+    sentence here has to match what the file does, or the report is reassuring
+    about something that is no longer the case. What the stand-in answered, and
+    where its answers entered the program's own arithmetic, is in
+    the_standin_answered.
+    """
     env = getattr(capture, "environment", None)
     if not env or not str(env).startswith("standin"):
         return []
-    return ["This capture was taken OFFLINE, against a stand-in environment "
-            "(%s) rather than a Roblox client. Services resolve there so calls "
-            "are recorded, and every field on them is absent so nothing is "
-            "invented - which means a program that needs a real service fails "
-            "here for that reason and not its own. What the program DID is "
-            "readable; what it would have done with real answers is not." % env]
+    out = ["This capture was taken OFFLINE, against a stand-in environment "
+           "(%s) rather than a Roblox client. It is not the same evidence as a "
+           "capture from a game: services resolve so calls are recorded, and "
+           "where the program asks the host something this package cannot "
+           "answer truthfully, it answers structurally and writes the answer "
+           "down." % env]
+    n = getattr(capture, "derived_arithmetic", 0) or 0
+    if n:
+        out.append("Those answers reached the program's own arithmetic %d "
+                   "time(s) in this run, so read the boundary below before "
+                   "anything else here." % n)
+    return out
 
 
 def which_harness(capture, current):
@@ -1218,6 +1289,36 @@ def _selftest():
     w2 = what_the_interpreter_had(cap2)
     if not w2 or "could not be read" not in w2:
         bad.append("an unreadable table must not be reported as empty: %r" % w2)
+
+    # a stand-in capture reports what it made up, and names the boundary
+    cap3 = Capture(
+        "BEGIN_UNOBF_RESULT\n---RUN---\nenvironment: standin/robloxenv\n"
+        "loaded: true\nrun_ok: false  return_type: nil\n---STANDIN---\n"
+        "datatype answered: UDim2\ndatatype answered: Color3\n"
+        "field answered: Color3.R x10\n"
+        "derived_arithmetic: 75965 operation(s) on values this stand-in "
+        "invented, first at add(1,2)\n"
+        "---OPCODES---\n1;344;;0;nil\nEND_UNOBF_RESULT")
+    check("the stand-in's answers are parsed", len(cap3.standin_lines), 4)
+    check("the derived-arithmetic count is read", cap3.derived_arithmetic, 75965)
+    t3 = the_standin_answered(cap3)
+    if not t3 or "BOUNDARY" not in t3:
+        bad.append("derived arithmetic must be reported as a boundary: %r" % t3)
+    if t3 and "UDim2" not in t3:
+        bad.append("the datatypes answered for belong in the report: %r" % t3)
+    if t3 and "describe this package and not the program" not in t3:
+        bad.append("the report must say what the rows after the boundary are")
+    # with no derived arithmetic there is no boundary to claim
+    cap4 = Capture("BEGIN_UNOBF_RESULT\n---STANDIN---\n"
+                   "datatype answered: UDim2\n---OPCODES---\nEND_UNOBF_RESULT")
+    t4 = the_standin_answered(cap4)
+    if t4 and "BOUNDARY" in t4:
+        bad.append("a run that never computed on an invented value has no "
+                   "boundary: %r" % t4)
+    # a capture from a real host says nothing at all here
+    if the_standin_answered(Capture("BEGIN_UNOBF_RESULT\n---OPCODES---\n"
+                                    "END_UNOBF_RESULT")) is not None:
+        bad.append("a capture with no stand-in section must report nothing")
 
     def why(body):
         return Capture("BEGIN_UNOBF_RESULT\n" + body + "\nEND_UNOBF_RESULT"

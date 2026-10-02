@@ -26,6 +26,50 @@ VMSMART_STANDIN = "robloxenv"
 -- run in file order and one of them is above their old declarations.
 VMSMART_INSTANCE_FIELDS_ASKED = {}
 VMSMART_HOST_FIELDS_ASKED = {}
+VMSMART_STUB_COUNT = 0
+VMSMART_STUB_LIMIT_HIT = false
+
+-- A number derived from a path. Stable, and not the host's.
+function VMSMART_DERIVE(seed)
+    local v = 7
+    for i = 1, #seed do
+        v = (v * 131 + string.byte(seed, i)) % 2147483647
+    end
+    return v
+end
+
+-- The result of arithmetic on a stub is another stub, not a number.
+--
+-- A number was the obvious answer and it ended the run one step later: the build
+-- indexes what the arithmetic produced. A stub can be indexed, called, compared,
+-- concatenated, formatted (through the string wrapper) and used in further
+-- arithmetic, so it survives whatever comes next, and its path records the whole
+-- chain. tostring of it is still a stable number, so anything that wants a
+-- numeric string gets one.
+-- The boundary this crosses, and why it is counted rather than listed.
+--
+-- When the program does arithmetic on a value this file made up, the result is a
+-- value this file made up, and from then on the program is computing with
+-- fiction. That is a line worth crossing - it is what let the run get past the
+-- host fingerprint this build takes - and it is not a line that may be crossed
+-- quietly: every instruction after the first such operation describes a program
+-- working on numbers the host never gave it.
+--
+-- So the first one is remembered and the rest are counted. Listing them all
+-- flooded the capture with thousands of paths and said nothing the count does
+-- not.
+VMSMART_ARITH_COUNT = 0
+VMSMART_ARITH_FIRST = nil
+
+function VMSMART_ARITH(op, a, b)
+    local key = op .. "(" .. tostring(a) .. "," .. tostring(b) .. ")"
+    VMSMART_ARITH_COUNT = VMSMART_ARITH_COUNT + 1
+    if VMSMART_ARITH_FIRST == nil then VMSMART_ARITH_FIRST = key end
+    return VMSMART_STUB(VMSMART_ARITH_SINK, key, 0)
+end
+
+-- a sink, so these do not crowd out the paths that say what the build wanted
+VMSMART_ARITH_SINK = {}
 
 -- What a host object answers for a field this file does not implement.
 --
@@ -37,12 +81,54 @@ VMSMART_HOST_FIELDS_ASKED = {}
 --
 -- This is the stand-in being a stand-in: it is not a claim that the host answers
 -- this way, and the capture says where it ran.
-function VMSMART_STUB(record, key)
+function VMSMART_STUB(record, key, depth)
+    depth = depth or 0
     record[key] = (record[key] or 0) + 1
+    -- A stub that answers nil when it is CALLED, or when a field of it is read,
+    -- ends the run one step later: this build calls a method on a host object and
+    -- then uses what came back. So a stub answers with another stub, down to a
+    -- fixed depth, and every step is recorded under its own path.
+    --
+    -- The cost is honest and worth stating: a stub is truthy, so a build that
+    -- tests `if object.Something then` takes the branch it would take against a
+    -- real host that HAS that thing. Where the real host would answer nil, this
+    -- sends the program down the other branch. The ---STANDIN--- section lists
+    -- every path answered this way so a reader can see which branches were taken
+    -- on the stand-in's word rather than the host's.
+    -- The chain has to be long enough for whatever the build does with it. A
+    -- limit of 8 ended a run that had got 81,000 instructions in, with a nil
+    -- being indexed - the nil was this limit, not the program. The bound is on
+    -- the TOTAL number of stubs instead, so a runaway cannot eat the machine
+    -- while an honest chain is never cut short.
+    VMSMART_STUB_COUNT = (VMSMART_STUB_COUNT or 0) + 1
+    if depth > 64 or VMSMART_STUB_COUNT > 400000 then
+        VMSMART_STUB_LIMIT_HIT = true
+        return nil
+    end
     return setmetatable({}, {
-        __call = function() return nil end,
-        __index = function() return nil end,
-        __tostring = function() return key end,
+        __call = function(_, ...)
+            return VMSMART_STUB(record, key .. "()", depth + 1)
+        end,
+        __index = function(_, k)
+            return VMSMART_STUB(record, key .. "." .. tostring(k), depth + 1)
+        end,
+        -- and it behaves as a number where one is wanted, for the same reason:
+        -- this build adds what a host object gave it to something. The number is
+        -- derived from the path, so it is stable across reads and across runs,
+        -- and it is NOT the host's number.
+        __tostring = function() return tostring(VMSMART_DERIVE(key)) end,
+        __eq = function(a, b) return tostring(a) == tostring(b) end,
+        __len = function() return 0 end,
+        __concat = function(a, b) return tostring(a) .. tostring(b) end,
+        __add = function(a, b) return VMSMART_ARITH("add", a, b) end,
+        __sub = function(a, b) return VMSMART_ARITH("sub", a, b) end,
+        __mul = function(a, b) return VMSMART_ARITH("mul", a, b) end,
+        __div = function(a, b) return VMSMART_ARITH("div", a, b) end,
+        __mod = function(a, b) return VMSMART_ARITH("mod", a, b) end,
+        __pow = function(a, b) return VMSMART_ARITH("pow", a, b) end,
+        __unm = function(a) return VMSMART_ARITH("unm", a, a) end,
+        __lt = function(a, b) return tostring(a) < tostring(b) end,
+        __le = function(a, b) return tostring(a) <= tostring(b) end,
     })
 end
 
@@ -364,10 +450,15 @@ local function derivedNumber(seed)
     return v
 end
 
+-- Arithmetic on a constructed host value answers with another value of the same
+-- kind, for the same reason the stubs do: a plain number ends the run as soon as
+-- the build indexes what it got back.
 local function arith(op, a2, b2)
     local key = "arith." .. op
     VMSMART_HOST_FIELDS_ASKED[key] = (VMSMART_HOST_FIELDS_ASKED[key] or 0) + 1
-    return derivedNumber(op .. "|" .. _tostring(a2) .. "|" .. _tostring(b2))
+    return VMSMART_STUB(VMSMART_HOST_FIELDS_ASKED,
+                        op .. "(" .. _tostring(a2) .. "," .. _tostring(b2) .. ")",
+                        0)
 end
 
 local taggedValue
