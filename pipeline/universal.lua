@@ -43,6 +43,18 @@ local OP_LOG_TRUNCATED = false
 -- passes through every instruction, so it is the one place that knows the
 -- counter, and the rest read it from here.
 local LAST_PC = nil
+-- The row at which the stand-in's answers first entered the program's own
+-- arithmetic, or nil if they never did.
+local FICTION_AT_ROW = nil
+local FICTION_AT_BEHAVIOR = nil
+-- Whether to take this build's self-destruct out of the chunk.
+--
+-- Only against a stand-in, and only at the top patch level. In a real host the
+-- checks behind it pass and it never fires, so removing it there would be an
+-- edit with nothing to gain; offline they cannot pass, and without removing it
+-- no offline run reaches the program at all.
+local NEUTRALISE_TAMPER = false
+local TAMPER_TAKEN = 0
 -- Declared up here on purpose: the instruction logger is defined further down
 -- but ABOVE where this used to be, so the name resolved to a nil global, the
 -- comparison against it raised inside the hook, and the capture came back with
@@ -406,6 +418,22 @@ end
 HID.__OP = function(pc, oc, NO, sp, top, arr, trustRow)
     LAST_PC = pc
     opn = opn + 1
+    -- WHERE the stand-in's invented values entered the program's own
+    -- arithmetic, measured in rows rather than described in prose. The report
+    -- says the rows after that point describe the stand-in; without the row
+    -- number, nothing downstream can act on that, and the analysis would go on
+    -- reconstructing from rows the same report had just disowned. Read once per
+    -- instruction until it happens, then never again.
+    if FICTION_AT_ROW == nil and VMSMART_STANDIN then
+        local n = rawget(realenv, "VMSMART_ARITH_COUNT")
+        if type(n) == "number" and n > 0 then
+            FICTION_AT_ROW = opn
+            -- the behaviour log cannot be split by row number, so the count of
+            -- entries at this moment is kept: everything logged after it was
+            -- logged by a program already computing with invented values.
+            FICTION_AT_BEHAVIOR = #behavior
+        end
+    end
     if opn > OP_LOG_CAP then
         OP_LOG_TRUNCATED = true
         return
@@ -812,6 +840,11 @@ local function patchDispatch(s)
             -- say why. A broken watch now costs its own line and nothing else.
             local function apply(name, fn, ...)
                 local ok, result, count, extra = pcall(fn, ...)
+                -- the third return of the tamper patchers is how many blocks
+                -- they took out, which is the number the capture reports
+                if ok and type(extra) == "number" and NEUTRALISE_TAMPER then
+                    TAMPER_TAKEN = TAMPER_TAKEN + extra
+                end
                 if not ok then
                     behavior[#behavior+1] = "  [watch " .. name
                         .. " could not be applied: " .. tostring(result) .. "]"
@@ -819,8 +852,15 @@ local function patchDispatch(s)
                 end
                 if not result or not count or count == 0 then return nil end
                 blockNote = blockNote .. " " .. name .. "=" .. count
-                    .. (extra and extra > 0 and (" " .. name .. "_skipped="
-                                                 .. extra) or "")
+                -- the third return means different things: for the tamper
+                -- patchers it is how many blocks were taken OUT, which is
+                -- already reported as tamper_taken_out, and for the block watch
+                -- it is how many assignments were left alone. Calling both
+                -- "skipped" put "checks_watched_skipped=1538" in the capture for
+                -- 1538 blocks that were removed, not skipped.
+                if extra and extra > 0 and not NEUTRALISE_TAMPER then
+                    blockNote = blockNote .. " " .. name .. "_skipped=" .. extra
+                end
                 return result
             end
             -- offset-based first, while the loop top's offset still means what
@@ -829,8 +869,16 @@ local function patchDispatch(s)
             out = apply("blocks_watched", patchBlocks, out, top.at, top.arr,
                         top.pc) or out
             -- then the whole-chunk rewrites, which may move anything
-            out = apply("checks_watched", patchChecks, out, top.pc) or out
-            out = apply("poison_sites", patchPoison, out, top.pc) or out
+            -- The self-destruct: watched, or taken out. Taken out only against
+            -- a stand-in, where the checks behind it cannot pass.
+            local before = TAMPER_TAKEN
+            out = apply("checks_watched", patchChecks, out, top.pc,
+                        NEUTRALISE_TAMPER) or out
+            out = apply("poison_sites", patchPoison, out, top.pc,
+                        NEUTRALISE_TAMPER) or out
+            if NEUTRALISE_TAMPER and TAMPER_TAKEN > before then
+                blockNote = blockNote .. " tamper_taken_out=" .. (TAMPER_TAKEN - before)
+            end
             out = apply("key_folds", patchResidue, out, top.pc) or out
             out = apply("self_checks", patchSelfChecks, out) or out
             out = apply("fields_watched", patchFields, out) or out
@@ -1062,13 +1110,13 @@ HID.__POISON = function(site, value, pc)
                           .. tostring(value) .. ":pc=" .. tostring(pc)
 end
 
-function patchPoison(s, pc)
+function patchPoison(s, pc, neutralise)
     -- ACC = (ACC*k1 + PC*k2 + VAR*k3 + k4) % m, the stir this family uses to
     -- mark itself as tampered with. Walked rather than gsub'd, because the
     -- condition that led to each one is part of the finding and that needs the
     -- position.
     local pat = "([%a_][%w_]*)=%(%1%*%d+%+[%a_][%w_]*%*%d+%+[%a_][%w_]*%*%d+%+%d+%)%%%d+"
-    local pieces, i, n = {}, 1, 0
+    local pieces, i, n, taken = {}, 1, 0, 0
     local pcArg = ",nil"
     while true do
         local a, b, acc = s:find(pat, i)
@@ -1089,14 +1137,25 @@ function patchPoison(s, pc)
                 .. (#args > 0 and ("," .. table.concat(args, ",")) or "")
                 .. ")end"
         end
-        pieces[#pieces+1] = s:sub(i, b)
-        pieces[#pieces+1] = ";if __POISON then __POISON(" .. n .. "," .. acc
-            .. pcArg .. ")end" .. extra
+        if neutralise then
+            -- the statement is REPLACED by its own log. The value it would have
+            -- stirred is the one this build uses to decide it has been tampered
+            -- with, and in a real host it is never stirred, because the checks
+            -- behind these statements pass there.
+            pieces[#pieces+1] = s:sub(i, a - 1)
+            pieces[#pieces+1] = "if __POISON then __POISON(" .. n .. ",0"
+                .. pcArg .. ")end" .. extra
+            taken = taken + 1
+        else
+            pieces[#pieces+1] = s:sub(i, b)
+            pieces[#pieces+1] = ";if __POISON then __POISON(" .. n .. "," .. acc
+                .. pcArg .. ")end" .. extra
+        end
         i = b + 1
     end
-    if n == 0 then return s, 0 end
+    if n == 0 then return s, 0, 0 end
     pieces[#pieces+1] = s:sub(i)
-    return table.concat(pieces), n
+    return table.concat(pieces), n, taken
 end
 
 -- The residue a chained key absorbs, and what it does to the key.
@@ -1361,18 +1420,62 @@ HID.__VIOL = function(site, count, pc)
                       .. ":pc=" .. tostring(pc)
 end
 
-function patchChecks(s, pc)
-    local n = 0
+-- Watch the self-destruct, or take it out.
+--
+-- The block is `do COUNTER=COUNTER+1; STIR=(STIR*k+...)%m; if COUNTER>=LIMIT
+-- then <read a row that is not there> end end`. Watching it says when the build
+-- decided it had been tampered with. Taking it out says something different, and
+-- it is the thing that makes an offline run worth having:
+--
+-- In a real host this build's checks PASS. The counter stays at zero, the stirred
+-- value stays at zero, and the interpreter goes on producing instructions. Offline
+-- they cannot pass - the build fingerprints host datatypes whose real numbers are
+-- the host's - so the counter climbs and the interpreter refuses. Replacing the
+-- block with a no-op does not invent a state the program never has; it restores
+-- the state the program has everywhere it was meant to run. That is the opposite
+-- of faking a result, and the capture says it was done on every round where it
+-- was done.
+--
+-- It is still a patch, so it sits at the top patch level and the ladder takes it
+-- out first if the payload objects to it.
+function patchChecks(s, pc, neutralise)
+    local n, taken = 0, 0
     local pcArg = ",nil"
-    local out = s:gsub("do ([%a_][%w_]*)=%1%+1;([%a_][%w_]*)=%(%2%*(%d+)",
-        function(counter, stir, mult)
-            n = n + 1
-            return "do if __VIOL then __VIOL(" .. n .. "," .. counter
-                .. pcArg .. ")end;" .. counter .. "=" .. counter .. "+1;"
-                .. stir .. "=(" .. stir .. "*" .. mult
-        end)
-    if n == 0 then return s, 0 end
-    return out, n
+    local pieces, i = {}, 1
+    while true do
+        -- the multiplier is captured, not consumed blindly: rebuilding the
+        -- statement needs it, and reading it back from a position past the match
+        -- read the wrong characters.
+        local a, b, counter, stir, mult = s:find(
+            "do ([%a_][%w_]*)=%1%+1;([%a_][%w_]*)=%(%2%*(%d+)", i)
+        if not a then break end
+        n = n + 1
+        pieces[#pieces+1] = s:sub(i, a - 1)
+        if neutralise then
+            -- the whole block, up to the `end end` that closes the inner `if`
+            -- and the `do`. The body between them is one statement in this
+            -- family and carries no `end` of its own, so the first match is the
+            -- right one; when it is not found the block is left as it was.
+            local close = s:find("end end", b, true)
+            if close then
+                pieces[#pieces+1] = "do if __VIOL then __VIOL(" .. n .. ",0"
+                    .. pcArg .. ")end end"
+                i = close + 7
+                taken = taken + 1
+            else
+                pieces[#pieces+1] = s:sub(a, b)
+                i = b + 1
+            end
+        else
+            pieces[#pieces+1] = "do if __VIOL then __VIOL(" .. n .. ","
+                .. counter .. pcArg .. ")end;" .. counter .. "=" .. counter
+                .. "+1;" .. stir .. "=(" .. stir .. "*" .. mult
+            i = b + 1
+        end
+    end
+    if n == 0 then return s, 0, 0 end
+    pieces[#pieces+1] = s:sub(i)
+    return table.concat(pieces), n, taken
 end
 
 -- Where the array the loop reads comes from.
@@ -2051,6 +2154,8 @@ local attempts = {}
 -- Set only after a round proves the loadstring path found no interpreter. See
 -- the retry below for why it is not on from the start.
 local OUTER_TRY, outerDone = false, false
+-- set by the ladder when it puts the self-destruct back
+local TAMPER_OFF = false
 local function runPayload()
     dispatchDone = false
     resolverDone = false
@@ -2061,6 +2166,11 @@ local function runPayload()
     -- is not going in, leaving it set would answer the payload's questions about
     -- its own source as if it were.
     ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
+    -- Decided per round, from the environment rather than from a guess: there
+    -- is nothing to take out in a host where the checks pass.
+    NEUTRALISE_TAMPER = (VMSMART_STANDIN ~= nil) and PATCH_LEVEL >= 3
+                        and not TAMPER_OFF
+    TAMPER_TAKEN = 0
     local rec = { level = PATCH_LEVEL, mode = "unpatched",
                   ok = false, rtype = "nil", loaded = false, err = nil,
                   rows0 = #ops, const0 = constSeen }
@@ -2126,6 +2236,7 @@ local function runPayload()
     rec.const_added = constSeen - rec.const0
     rec.applied_dispatch = dispatchDone
     rec.outer = outerDone
+    rec.tamper_taken = TAMPER_TAKEN
     rec.applied_resolver = resolverDone
     rec.applied_protos = protosDone
     rec.applied_slices = slicesDone
@@ -2182,7 +2293,13 @@ while not last.ok do
     -- the next round repeats this one and reads as evidence that it is not the
     -- patches.
     local step
-    if last.applied_protos or last.applied_slices then
+    if (last.tamper_taken or 0) > 0 and not TAMPER_OFF then
+        -- The most invasive edit goes back first. If the payload objects to its
+        -- self-destruct being absent, that is worth knowing before anything else
+        -- is removed - and the round after this one is a plain watched round.
+        step = "the removal of this build's self-destruct"
+        TAMPER_OFF = true
+    elseif last.applied_protos or last.applied_slices then
         -- Name what was actually in the chunk, not the level's label. Both of
         -- these live at level 3 and either can be the only one that went in.
         local parts = {}
@@ -2259,6 +2376,7 @@ say("hooks_hidden: " .. tostring(HIDE_HOOKS))
 say("harness_id: " .. hid)
 say("dispatch_patched: " .. tostring(first.applied_dispatch))
 say("outer_chunk_patched: " .. tostring(first.outer or false))
+say("tamper_taken_out: " .. tostring(first.tamper_taken or 0))
 say("resolver_patched: " .. tostring(first.applied_resolver))
 say("protos_hooked: " .. tostring(first.applied_protos))
 say("slices_hooked: " .. tostring(first.applied_slices))
@@ -2266,6 +2384,10 @@ say("protos_seen: " .. protoN)
 say("slice_requests: " .. sliceN)
 say("jump_decodes: " .. jumpN)
 say("block_builds: " .. blockN)
+if FICTION_AT_ROW ~= nil then
+    say("derived_arithmetic_at_row: " .. FICTION_AT_ROW)
+    say("derived_arithmetic_at_behavior: " .. tostring(FICTION_AT_BEHAVIOR))
+end
 say("block_conditions: " .. condN)
 say("integrity_checks_fired: " .. violN)
 say("environment_checks: " .. selfcheckN)
@@ -2357,6 +2479,19 @@ if VMSMART_STANDIN then
     local types = rawget(realenv, "VMSMART_HOST_TYPES_ASKED")
     if type(types) == "table" then
         for i = 1, #types do asked[#asked+1] = "datatype answered: " .. tostring(types[i]) end
+    end
+    -- which types were answered by their real algebra, and which were not
+    for label, name in pairs({ ["modelled type"] = "VMSMART_TYPES_MODELLED",
+                               ["stubbed field"] = "VMSMART_TYPES_STUBBED" }) do
+        local t = rawget(realenv, name)
+        if type(t) == "table" then
+            local keys = {}
+            for k in pairs(t) do keys[#keys+1] = tostring(k) end
+            table.sort(keys)
+            for i = 1, math.min(#keys, 120) do
+                asked[#asked+1] = label .. ": " .. keys[i]
+            end
+        end
     end
     for _, name in ipairs({ "VMSMART_HOST_FIELDS_ASKED",
                             "VMSMART_INSTANCE_FIELDS_ASKED" }) do

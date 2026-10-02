@@ -37,6 +37,21 @@ class Capture:
         self.sections = _split(self.body)
         self.headers = _headers(_header_lines(self.sections))
         self.rows = _rows(self.body)
+        # Rows past the point where the stand-in's invented values entered the
+        # program's own arithmetic are not evidence about the program, and the
+        # report says so. Saying so and then reconstructing from them anyway
+        # would make the report decoration, so they are cut here, once, and what
+        # was cut is reported.
+        self.fiction_at_row = _int(self.headers.get("derived_arithmetic_at_row"))
+        self.fiction_at_behavior = _int(
+            self.headers.get("derived_arithmetic_at_behavior"))
+        self.rows_dropped_as_fiction = 0
+        if self.fiction_at_row and self.fiction_at_row > 0:
+            keep = self.fiction_at_row - 1
+            if keep < len(self.rows):
+                self.rows_dropped_as_fiction = len(self.rows) - keep
+                self.rows_after_fiction = self.rows[keep:]
+                self.rows = self.rows[:keep]
         self.constants = _constants(self.sections)
         # One capture can hold two runs of the same payload, and their call
         # logs are written one after the other into the same section. Comparing
@@ -44,7 +59,21 @@ class Capture:
         # twice, so the two are kept apart: `calls` are the ones from the run
         # the instructions came from, which is the run a reconstruction
         # describes, and `calls_after_retry` are what the second run added.
-        before, after = _split_on_retry(self.sections.get("BEHAVIOR", []))
+        # The behaviour log is cut at the boundary too, for the same reason the
+        # rows are: a service call or an instance created by a program that is
+        # already computing with values this package invented is not something
+        # the program would necessarily have done in a game. Counting those into
+        # "services it asked for" put the stand-in's consequences in the report
+        # as the program's behaviour.
+        beh = self.sections.get("BEHAVIOR", [])
+        fb = _int(self.headers.get("derived_arithmetic_at_behavior"))
+        self.behaviour_set_aside = 0
+        self.behaviour_after_fiction = []
+        if fb is not None and 0 <= fb < len(beh):
+            self.behaviour_set_aside = len(beh) - fb
+            self.behaviour_after_fiction = beh[fb:]
+            beh = beh[:fb]
+        before, after = _split_on_retry(beh)
         self.calls, self.notes = _calls(before)
         self.calls_after_retry, notes2 = _calls(after)
         self.notes = self.notes + notes2
@@ -493,6 +522,23 @@ def the_standin_answered(capture):
         out.append("  %d field path(s) on host objects were answered. The build "
                    "reads them to decide whether it is running somewhere real."
                    % len(fields))
+    fb = getattr(capture, "fiction_at_behavior", None)
+    aside = getattr(capture, "behaviour_set_aside", 0) or 0
+    if fb is not None and aside:
+        # the behaviour log is a list of entries, not of rows, so the count of
+        # entries at the boundary is what divides it
+        out.append("  Of what the program was recorded doing, the first %d "
+                   "entries came before the boundary and are counted below. The "
+                   "other %d are set aside: they were made by a program already "
+                   "computing with invented values, so a service call or an "
+                   "instance created there may be one it would never have made "
+                   "in a game." % (fb, aside))
+    dropped = getattr(capture, "rows_dropped_as_fiction", 0) or 0
+    if dropped:
+        out.append("  %d instruction row(s) after that point have been left out "
+                   "of everything below: the analysis reads only the rows from "
+                   "before the stand-in's answers reached the program's "
+                   "arithmetic." % dropped)
     n = getattr(capture, "derived_arithmetic", 0) or 0
     if n:
         out.append("  BOUNDARY - %d arithmetic operation(s) were performed on "
@@ -1289,6 +1335,44 @@ def _selftest():
     w2 = what_the_interpreter_had(cap2)
     if not w2 or "could not be read" not in w2:
         bad.append("an unreadable table must not be reported as empty: %r" % w2)
+
+    # the behaviour log is cut at the boundary as well
+    bcut = Capture(
+        "BEGIN_UNOBF_RESULT\n---RUN---\nenvironment: standin/robloxenv\n"
+        "derived_arithmetic_at_row: 3\nderived_arithmetic_at_behavior: 2\n"
+        "---BEHAVIOR---\nGetService: Players  -> real service\n"
+        "Instance.new: Folder\nGetService: HttpService  -> real service\n"
+        "Instance.new: Part\n"
+        "---STANDIN---\nderived_arithmetic: 5 operation(s), first at add(1,2)\n"
+        "---OPCODES---\n1;10;;0;nil\n2;11;;0;nil\n"
+        "3;12;;0;nil\nEND_UNOBF_RESULT")
+    check("calls before the boundary are kept", len(bcut.calls), 2)
+    check("the rest are set aside", bcut.behaviour_set_aside, 2)
+    tb = the_standin_answered(bcut)
+    if not tb or "set aside" not in tb:
+        bad.append("the behaviour cut has to be stated: %r" % tb)
+    joined = " ".join(str(c) for c in bcut.calls)
+    if "HttpService" in joined:
+        bad.append("a call from after the boundary must not be counted as the "
+                   "program's behaviour")
+
+    # the row cut: rows at and after the boundary are not read by the analysis
+    cut = Capture(
+        "BEGIN_UNOBF_RESULT\n---RUN---\nenvironment: standin/robloxenv\n"
+        "derived_arithmetic_at_row: 3\nloaded: true\n"
+        "---STANDIN---\nderived_arithmetic: 5 operation(s), first at add(1,2)\n"
+        "---OPCODES---\n1;10;;0;nil\n2;11;;0;nil\n3;12;;0;nil\n4;13;;0;nil\n"
+        "END_UNOBF_RESULT")
+    check("rows before the boundary are kept", len(cut.rows), 2)
+    check("the rest are counted as cut", cut.rows_dropped_as_fiction, 2)
+    tc = the_standin_answered(cut)
+    if not tc or "left out of everything below" not in tc:
+        bad.append("the cut has to be stated where the boundary is: %r" % tc)
+    # with no boundary header nothing is cut
+    nocut = Capture("BEGIN_UNOBF_RESULT\n---OPCODES---\n1;10;;0;nil\n"
+                    "2;11;;0;nil\nEND_UNOBF_RESULT")
+    check("no boundary, no cut", len(nocut.rows), 2)
+    check("and nothing reported as cut", nocut.rows_dropped_as_fiction, 0)
 
     # a stand-in capture reports what it made up, and names the boundary
     cap3 = Capture(

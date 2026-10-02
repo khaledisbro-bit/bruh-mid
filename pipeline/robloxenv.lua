@@ -27,6 +27,8 @@ VMSMART_STANDIN = "robloxenv"
 VMSMART_INSTANCE_FIELDS_ASKED = {}
 VMSMART_HOST_FIELDS_ASKED = {}
 VMSMART_STUB_COUNT = 0
+-- weak, so a stub nobody holds can still be collected
+VMSMART_STUB_PATH = setmetatable({}, { __mode = "k" })
 VMSMART_STUB_LIMIT_HIT = false
 
 -- A number derived from a path. Stable, and not the host's.
@@ -61,8 +63,21 @@ end
 VMSMART_ARITH_COUNT = 0
 VMSMART_ARITH_FIRST = nil
 
+-- The PATH of a stub, not the number it prints as. A stub's tostring is a derived
+-- number, so the first-arithmetic report named a number and left the gap it came
+-- from unidentified.
+function VMSMART_WHICH(v)
+    if type(v) == "table" then
+        local p = VMSMART_STUB_PATH and VMSMART_STUB_PATH[v]
+        if p then return p end
+        local t = VMSMART_TAGGED and VMSMART_TAGGED[v]
+        if t then return t end
+    end
+    return tostring(v)
+end
+
 function VMSMART_ARITH(op, a, b)
-    local key = op .. "(" .. tostring(a) .. "," .. tostring(b) .. ")"
+    local key = op .. "(" .. VMSMART_WHICH(a) .. "," .. VMSMART_WHICH(b) .. ")"
     VMSMART_ARITH_COUNT = VMSMART_ARITH_COUNT + 1
     if VMSMART_ARITH_FIRST == nil then VMSMART_ARITH_FIRST = key end
     return VMSMART_STUB(VMSMART_ARITH_SINK, key, 0)
@@ -105,7 +120,7 @@ function VMSMART_STUB(record, key, depth)
         VMSMART_STUB_LIMIT_HIT = true
         return nil
     end
-    return setmetatable({}, {
+    local v = setmetatable({}, {
         __call = function(_, ...)
             return VMSMART_STUB(record, key .. "()", depth + 1)
         end,
@@ -130,6 +145,8 @@ function VMSMART_STUB(record, key, depth)
         __lt = function(a, b) return tostring(a) < tostring(b) end,
         __le = function(a, b) return tostring(a) <= tostring(b) end,
     })
+    VMSMART_STUB_PATH[v] = key
+    return v
 end
 
 -- Luau's standalone binary has no loadstring. The harness captures it once as
@@ -199,8 +216,39 @@ if spawn == nil then spawn = function(fn, ...) return task.spawn(fn, ...) end en
 -- Destroy and IsA are the host's documented behaviour and are implemented as
 -- such. Anything else answers with a recording stub.
 if Instance == nil then
+    -- Attributes and signals are state the host keeps for an instance, so this
+    -- file keeps them: what the program writes it reads back, and what it never
+    -- wrote reads as nil, which is what the host answers too. A signal answers
+    -- Connect with a connection that can be disconnected, and fires nothing,
+    -- because nothing here produces events.
+    local function newSignal(name)
+        local sig
+        sig = setmetatable({}, {
+            __index = function(_, k)
+                if k == "Connect" or k == "ConnectParallel" or k == "Once" then
+                    return function(_, fn)
+                        return setmetatable({}, { __index = function(_, j)
+                            if j == "Disconnect" or j == "disconnect" then
+                                return function() end
+                            end
+                            if j == "Connected" then return true end
+                            return nil
+                        end })
+                    end
+                end
+                if k == "Wait" then return function() return nil end end
+                if k == "Fire" then return function() return nil end end
+                return nil
+            end,
+            __tostring = function() return name end,
+        })
+        return sig
+    end
+
     local function newInstance(class)
         local children = {}
+        local attributes = {}
+        local signals = {}
         local self
         local function link(parent)
             if parent ~= nil and type(parent) == "table" then
@@ -232,6 +280,55 @@ if Instance == nil then
                       return function() return newInstance(class) end
                   elseif k == "IsA" then
                       return function(_, n) return n == class end
+                  elseif k == "SetAttribute" then
+                      return function(_, n, v) attributes[tostring(n)] = v end
+                  elseif k == "GetAttribute" then
+                      return function(_, n) return attributes[tostring(n)] end
+                  elseif k == "GetAttributes" then
+                      return function()
+                          local copy = {}
+                          for n, v in pairs(attributes) do copy[n] = v end
+                          return copy
+                      end
+                  elseif k == "GetAttributeChangedSignal"
+                         or k == "GetPropertyChangedSignal" then
+                      return function(_, n)
+                          local key = tostring(n)
+                          if signals[key] == nil then
+                              signals[key] = newSignal(class .. "." .. key)
+                          end
+                          return signals[key]
+                      end
+                  elseif k == "Changed" or k == "AncestryChanged"
+                         or k == "ChildAdded" or k == "ChildRemoved"
+                         or k == "Destroying" then
+                      if signals[k] == nil then
+                          signals[k] = newSignal(class .. "." .. k)
+                      end
+                      return signals[k]
+                  elseif k == "GetFullName" then
+                      return function()
+                          local parts, node = {}, self
+                          while node ~= nil and type(node) == "table" do
+                              table.insert(parts, 1,
+                                           tostring(rawget(node, "Name")))
+                              node = rawget(node, "Parent")
+                          end
+                          return table.concat(parts, ".")
+                      end
+                  elseif k == "IsDescendantOf" then
+                      return function(_, other)
+                          local node = rawget(self, "Parent")
+                          while node ~= nil and type(node) == "table" do
+                              if node == other then return true end
+                              node = rawget(node, "Parent")
+                          end
+                          return false
+                      end
+                  elseif k == "ClearAllChildren" then
+                      return function()
+                          for n in pairs(children) do children[n] = nil end
+                      end
                   elseif k == "VMSMART_ADD_CHILD" then
                       return function(child)
                           children[tostring(rawget(child, "Name"))] = child
@@ -597,8 +694,14 @@ do
                 -- payload's run.
                 if k:sub(1, 7) == "VMSMART" then return nil end
                 if autos[k] == nil then
-                    autos[k] = datatypeRoot(k)
-                    VMSMART_HOST_TYPES_ASKED[#VMSMART_HOST_TYPES_ASKED + 1] = k
+                    -- A type whose algebra robloxtypes.lua implements answers
+                    -- with real numbers: the program reads back what it put in,
+                    -- which is what it would get in a game. Only a type that
+                    -- file does not model falls back to a structural root.
+                    local modelled = VMSMART_TYPE_ROOT and VMSMART_TYPE_ROOT(k)
+                    autos[k] = modelled or datatypeRoot(k)
+                    VMSMART_HOST_TYPES_ASKED[#VMSMART_HOST_TYPES_ASKED + 1] =
+                        k .. (modelled and " (modelled)" or " (structural)")
                 end
                 return autos[k]
             end,
@@ -661,11 +764,11 @@ if game == nil then
                 return plain
             end
         end
-        -- everything else a service is asked for: recorded, callable, and not
-        -- an answer about Roblox. A nil here ended runs that had got thousands
-        -- of instructions in.
-        return VMSMART_STUB(VMSMART_INSTANCE_FIELDS_ASKED,
-                            name .. ":" .. tostring(key))
+        -- and nothing else. The stub belongs to the service wrapper below, which
+        -- tries the instance's own fields FIRST: answering everything here meant
+        -- `HttpService.ClassName` came back as a stub instead of the string the
+        -- instance already had, and the program called :byte() on it.
+        return nil
     end
     local function service(name)
         if services[name] == nil then
@@ -679,8 +782,16 @@ if game == nil then
             end
             services[name] = setmetatable({}, {
                 __index = function(_, k)
+                    -- Real fields first - Name, ClassName, Parent, anything
+                    -- written to it - read with rawget, because the instance's
+                    -- own __index answers EVERYTHING with a stub and asking it
+                    -- first meant the decompression this file can really do was
+                    -- shadowed by a stub, and buffer.tostring got a table.
+                    local own = rawget(inst, k)
+                    if own ~= nil then return own end
                     local cap = capability(name, k)
                     if cap ~= nil then return cap end
+                    -- then the instance's methods, its children, and its stub
                     return inst[k]
                 end,
                 __newindex = function(_, k, v) inst[k] = v end,
@@ -701,6 +812,10 @@ if game == nil then
         __tostring = function() return "DataModel(standin)" end,
     })
     workspace = game:GetService("Workspace")
+    -- `Game` is the host's own alias for `game`, and answering it with a datatype
+    -- root made the program read a stub where it expected the data model.
+    Game = game
+    Workspace = workspace
 end
 
 return VMSMART_STANDIN

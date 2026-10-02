@@ -36,6 +36,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STANDIN = os.path.join(HERE, "robloxenv.lua")
+TYPES = os.path.join(HERE, "robloxtypes.lua")
 
 BEGIN = "BEGIN_UNOBF_RESULT"
 END = "END_UNOBF_RESULT"
@@ -226,6 +227,12 @@ def build(harness, out_dir, sidecar_text=None):
     """
     with open(STANDIN, encoding="utf-8") as f:
         pre = f.read()
+    # the datatype algebra, after the stand-in that it calls into and before the
+    # harness that runs the payload
+    types = ""
+    if os.path.isfile(TYPES):
+        with open(TYPES, encoding="utf-8") as f:
+            types = f.read().replace('\nreturn "robloxtypes"\n', "\n")
     with open(harness, encoding="utf-8", errors="replace") as f:
         body = f.read()
     # the stand-in ends in a `return`, which would end the chunk
@@ -235,7 +242,8 @@ def build(harness, out_dir, sidecar_text=None):
         if sidecar_text:
             f.write("-- ---- host decompression, computed before the run ----\n")
             f.write(sidecar_text)
-        f.write(pre + "\n-- ---- harness ----\n" + body)
+        f.write(pre + "\n-- ---- host datatypes ----\n" + types
+                + "\n-- ---- harness ----\n" + body)
     return path
 
 
