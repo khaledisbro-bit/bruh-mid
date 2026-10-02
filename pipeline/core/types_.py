@@ -123,7 +123,7 @@ def admits(operation, input_previews, result_preview=None):
     return True, ""
 
 
-def check(models, lift, rescued=None):
+def check(models, lift, rescued=None, observed_calls=()):
     """Withdraw every reading the values make impossible.
 
     `rescued` maps an opcode to why a metamethod explains what looked
@@ -140,10 +140,39 @@ def check(models, lift, rescued=None):
         m = models.get(st.op)
         if m is None or not m.operation:
             continue
+        # Only where the handler's inputs ARE the lifter's popped values. A
+        # register-style handler's operands are not, so the previews compared
+        # here belong to other values, and three of the four most frequent
+        # opcodes of the real sample had their readings withdrawn on that
+        # mistake - 1,590 steps between them.
+        if getattr(m, "handler_style", None) == "regs":
+            continue
+        # And not where the arity was never measured. There the popped list is
+        # the lifter's guess at how many values the instruction takes, so the
+        # previews in it are not evidence about this operation either.
+        if getattr(m, "delta", None) is None:
+            continue
         ins = [v.runtime for v in st.popped]
         out = st.pushed[0].runtime if st.pushed else None
         examined += 1
         ok, why = admits(m.operation, ins, out)
+        # The environment RECORDED a call at this instruction. That is an
+        # observation, and a type preview cannot overrule it: the first value a
+        # method-call opcode consumes is often the member's name, which reads as
+        # "a string cannot be called" while being exactly how a method call
+        # works. Withdrawing the reading there threw away the best-evidenced
+        # operation in the whole capture - on the real sample the opcode
+        # concerned ran 833 times.
+        if not ok and m.operation == "CALL" and st.op in observed_calls:
+            if st.op not in reasons:
+                m.fact.note("types.observed_call",
+                            "read as CALL, and at pc %d %s - but the "
+                            "environment recorded a call made by this opcode, "
+                            "which settles it" % (st.pc, why),
+                            opcodes=(st.op,))
+                reasons[st.op] = "read as CALL, kept: the environment recorded "\
+                                 "a call made by this opcode"
+            continue
         if not ok and st.op in rescued:
             if st.op not in reasons:
                 m.fact.note("types.metamethod",

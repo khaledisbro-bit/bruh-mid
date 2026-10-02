@@ -89,8 +89,26 @@ class Analysis:
             # An operation the values make impossible is usually a wrong
             # reading, and sometimes a metatable. Ask which before withdrawing.
             self.meta = metatab.find(self.models, self.lift)
+            # Which opcodes the environment was watching when it answered a
+            # call. Taken from the capture rather than from the matched calls,
+            # because matching happens later and this check runs now: each
+            # recorded call carries the capture row it happened at, and the row
+            # carries the opcode that was executing.
+            by_row = {r["i"]: r["opcode"] for r in capture.rows}
+            observed_call_ops = set()
+            for rec in (capture.calls or []):
+                at = rec.get("row")
+                if at is None:
+                    continue
+                op = by_row.get(at)
+                if op is None:
+                    lower = [i for i in by_row if i <= at]
+                    op = by_row[max(lower)] if lower else None
+                if op is not None:
+                    observed_call_ops.add(op)
             bad, examined, why = typecheck.check(
-                self.models, self.lift, metatab.rescued(self.meta))
+                self.models, self.lift, metatab.rescued(self.meta),
+                observed_call_ops)
             self.type_withdrawn, self.type_examined = bad, examined
             self.handler_why.update(why)
             self.from_handlers -= bad
@@ -180,7 +198,7 @@ class Analysis:
             self.lift, self.models, self.calls, self.slots)
         self.verdicts = decoy.classify(
             self.lift, self.cfg, self.calls, self.slots, self.alias,
-            self.env_ops)
+            self.env_ops, self.models)
         # A branch whose condition is one constant on every path that reaches
         # it can only ever go one way. That is recorded against the branch and
         # against the target that was never entered. It does not delete

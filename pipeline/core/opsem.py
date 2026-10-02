@@ -116,6 +116,10 @@ class OpModel:
         self.pushes = None
         self.role = UNSURE
         self.operation = None          # named only by value algebra
+        # "stack" when the handler took its inputs through the pop helper, so a
+        # type check against the lifter's popped values is meaningful; "regs"
+        # when it worked the register array directly, where they are a model.
+        self.handler_style = None
         self.operation_support = 0
         self.operand_arity = 0
         self.fact = Fact("opcode", UNKNOWN)

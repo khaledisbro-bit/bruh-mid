@@ -398,6 +398,15 @@ def classify(body, vm):
             pops = _path_count(body, [re.compile(r"%s\s*=\s*%s\s*-\s*1"
                                                  % (re.escape(vm.sp),
                                                     re.escape(vm.sp)))])
+    # A write to the PROGRAM COUNTER is a jump, and it is the one operation this
+    # reader had no name for. On the real sample the opcode that performs it ran
+    # 710 times and its handler read as unclassifiable, which left every value
+    # feeding a branch target unexplained.
+    if vm.pc and re.search(r"\b%s\s*=(?!=)" % re.escape(vm.pc), body):
+        # a conditional jump tests something first; an unconditional one does not
+        if re.search(r"\bif\b", body):
+            return "CJMP", pops
+        return "JMP", pops
     if expr is None and re.search(r"\w+==-\d+\s+then", body) and vm.push \
        and re.search(r"%s\(" % re.escape(vm.push), body):
         # every push is inside a chain selecting one of the interpreter's named
@@ -438,10 +447,39 @@ def classify(body, vm):
         if m.group(1) == vm.resolver:
             return "LOADK", pops
         return "CALL", pops
+    # `#x` is an operation too, and the only unary one this family writes.
+    if re.fullmatch(r"#\s*[\w\[\]\.\(\)]+", e):
+        return "LEN", pops
     sym = _top_level_op(e)
     if sym:
         return OPS[sym], pops
     return None, pops
+
+
+def style(body, vm):
+    """Whether this handler takes its inputs through the pop helper.
+
+    It matters for what may be CHECKED against it. The lifter's idea of what an
+    instruction popped is a model built from arities; for a handler that calls
+    the pop helper, that model is the handler's own inputs and a type check
+    against it is meaningful. For a handler that works the register array
+    directly, the popped list is a model and nothing more - and checking a
+    reading against it withdrew the best-evidenced operation in the capture,
+    because the preview it compared was never that handler's operand.
+    """
+    body = strip_flush(body)
+    # MIXED counts as register style. A handler that calls the pop helper AND
+    # reads the register array directly takes its operands from both, so the
+    # order of the lifter's popped list is not the order of its inputs - which
+    # is what a type check assumes. Three of the four most frequent opcodes of
+    # the real sample are mixed, and treating them as stack handlers withdrew
+    # their readings on previews that were never their operands.
+    if vm.regs and vm.sp and re.search(r"%s\[%s" % (re.escape(vm.regs),
+                                                   re.escape(vm.sp)), body):
+        return "regs"
+    if vm.pop and re.search(r"=\s*%s\(\)" % re.escape(vm.pop), body):
+        return "stack"
+    return "regs"
 
 
 # Operators by precedence, lowest first: the operator that splits the expression
@@ -630,6 +668,7 @@ def apply(models, src, steps):
             continue
         sem = agreed.pop()
         model.operation = sem
+        model.handler_style = style(cands[0][2], vm)
         model.fact.evidence = "INFERRED" if model.pops is None else "OBSERVED"
         model.fact.note(
             "vmsrc.handler",

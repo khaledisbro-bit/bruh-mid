@@ -38,7 +38,7 @@ class Verdict:
         self.alternative = alternative
 
 
-def sinks(L, calls, g, slots, env_ops=()):
+def sinks(L, calls, g, slots, env_ops=(), models=None):
     """The values the program's observable behaviour depends on."""
     out, why = set(), {}
 
@@ -79,6 +79,26 @@ def sinks(L, calls, g, slots, env_ops=()):
                 mark(v.id, "consumed by the instruction at fn%d:%d, whose "
                            "effect this capture cannot observe"
                      % (st.fn, st.pc))
+    # An instruction whose own handler PERFORMS a call or a store has an effect
+    # by definition, whether or not the environment recorded it.
+    #
+    # Reading the interpreter's handlers says which opcodes those are. Before
+    # this, a call the environment did not happen to log, and every store into a
+    # table the program built, counted for nothing - so the values feeding them
+    # were "produced and never used", and the instructions that computed them
+    # were unexplained. That is not a fact about the program; it is this analysis
+    # declining to use what it had already read.
+    models = models or {}
+    # A jump belongs here too: the trace shows which way it went, so the value
+    # it tested or the target it computed had an effect on the path that ran.
+    _EFFECTFUL = {"CALL", "SETINDEX", "SETVAR", "SETSLOT", "JMP", "CJMP"}
+    for st in L.steps:
+        m = models.get(st.op)
+        if m is None or m.operation not in _EFFECTFUL:
+            continue
+        for v in st.popped:
+            mark(v.id, "consumed by the %s the interpreter's own handler for "
+                       "opcode %d performs" % (m.operation, st.op))
     # A call whose callee was resolved from a name is a call even when the
     # environment did not record it, so its arguments are observable too.
     for st in L.steps:
@@ -108,9 +128,9 @@ def influence(L, seeds, amap):
     return live
 
 
-def classify(L, g, calls, slots, amap, env_ops=()):
+def classify(L, g, calls, slots, amap, env_ops=(), models=None):
     """Verdict per program counter, with the evidence behind it."""
-    seeds, why_seed = sinks(L, calls, g, slots, env_ops)
+    seeds, why_seed = sinks(L, calls, g, slots, env_ops, models)
     live = influence(L, seeds, amap)
     call_rows = {c.step.row for c in calls}
     jumps = {a.key() for a, b in zip(L.steps, L.steps[1:])
