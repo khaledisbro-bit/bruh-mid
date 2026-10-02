@@ -409,6 +409,12 @@ if Instance == nil then
                                       class .. ":" .. tostring(k))
               end)()) end,
               __newindex = function(t, k, v)
+                  -- A property write is behaviour: the program setting Parent,
+                  -- Name, a colour or a position is a thing it DID, and the
+                  -- values it wrote are values with an observable effect. None
+                  -- of them was recorded, so every instruction that computed one
+                  -- read as having no consequence.
+                  VMSMART_RECORD_CALL(class .. ":set_" .. tostring(k), t, v)
                   if k == "Parent" then
                       local old = rawget(t, "Parent")
                       if old ~= nil and type(old) == "table" then
@@ -857,7 +863,10 @@ if game == nil then
                     -- then the instance's methods, its children, and its stub
                     return inst[k]
                 end,
-                __newindex = function(_, k, v) inst[k] = v end,
+                __newindex = function(_, k, v)
+                    VMSMART_RECORD_CALL(name .. ":set_" .. tostring(k), nil, v)
+                    inst[k] = v
+                end,
                 __tostring = function() return name end,
             })
         end

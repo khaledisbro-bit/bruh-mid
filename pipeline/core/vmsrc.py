@@ -56,6 +56,8 @@ class VM:
         self.pc = None
         self.regs = None
         self.sp = None
+        self.opvar = None
+        self.branch_plain = None
         self.notes = []
 
     def describe(self):
@@ -97,6 +99,35 @@ def discover(src):
     if m:
         vm.regs, vm.sp = m.group(1), m.group(2)
 
+    # The SECOND dispatch form. This family puts its hottest opcodes in a plain
+    # `OP==N then` chain and the rest in the masked bit-tree above. Reading only
+    # the tree left the eight most frequent opcodes of the real sample unnamed -
+    # 2,681 of the steps in one run - because their handlers were never looked
+    # at. The opcode variable is the one compared against the most distinct
+    # numbers, which is what a dispatch chain is.
+    # The opcode variable is READ FROM THE ROW. Picking the name compared against
+    # the most distinct numbers instead chose a handler-local that selects one of
+    # the interpreter's slots by a negative operand - it is compared against
+    # eight numbers and is not the opcode - so the whole plain chain was read
+    # against the wrong name and produced no handlers at all.
+    row_reads = set()
+    for pat in (r"local\s+([A-Za-z_]\w*)\s*=\s*%s\s+and\s+%s\s*\[",
+                r"local\s+([A-Za-z_]\w*)\s*=\s*%s\s*\["):
+        if vm.row:
+            row_reads.update(re.findall(pat % (re.escape(vm.row),
+                                               re.escape(vm.row)), src)
+                             if pat.count("%s") == 2 else
+                             re.findall(pat % re.escape(vm.row), src))
+    counts = defaultdict(set)
+    for name, num in re.findall(r"\b([A-Za-z_]\w*)\s*==\s*(\d+)\s+then", src):
+        if not row_reads or name in row_reads:
+            counts[name].add(num)
+    if counts:
+        best = max(counts, key=lambda k: len(counts[k]))
+        if len(counts[best]) >= 4:
+            vm.opvar = best
+            vm.branch_plain = re.compile(r"\b%s\s*==\s*(\d+)\s+then"
+                                         % re.escape(best))
     bodies = " ".join(_raw_bodies(src, vm))
     zero = Counter(re.findall(r"=\s*(\w+)\(\)", bodies))
     one = Counter(re.findall(r"(?:^|;|\s)(\w+)\([^();]{1,80}\)\s*(?:;|$)", bodies))
@@ -107,7 +138,8 @@ def discover(src):
             if name != vm.pop and name != vm.resolver:
                 vm.push = name
                 break
-    vm.ok = bool(vm.pop and vm.push and vm.row and vm.branch)
+    vm.ok = bool(vm.pop and vm.push and vm.row
+                 and (vm.branch or vm.branch_plain))
     if not vm.ok:
         vm.notes.append("could not identify %s"
                         % ", ".join(n for n, v in
@@ -118,14 +150,18 @@ def discover(src):
     return vm
 
 
+def _branches(vm):
+    """Every pattern that marks the start of a handler body."""
+    return [p for p in (vm.branch, vm.branch_plain) if p is not None]
+
+
 def _raw_bodies(src, vm, limit=4000):
-    if vm.branch is None:
-        return []
     out = []
-    for m in vm.branch.finditer(src):
-        out.append(_cut(src, m.end()))
-        if len(out) >= limit:
-            break
+    for pat in _branches(vm):
+        for m in pat.finditer(src):
+            out.append(_cut(src, m.end()))
+            if len(out) >= limit:
+                return out
     return out
 
 
@@ -187,14 +223,13 @@ def _cut(src, start, window=6000):
 
 
 def handlers(src, vm):
-    """Every candidate handler body, by opcode."""
+    """Every candidate handler body, by opcode, from both dispatch forms."""
     out = defaultdict(list)
-    if vm.branch is None:
-        return out
-    for m in vm.branch.finditer(src):
-        body = _cut(src, m.end())
-        if body and body not in out[int(m.group(1))]:
-            out[int(m.group(1))].append(body)
+    for pat in _branches(vm):
+        for m in pat.finditer(src):
+            body = _cut(src, m.end())
+            if body and body not in out[int(m.group(1))]:
+                out[int(m.group(1))].append(body)
     return out
 
 

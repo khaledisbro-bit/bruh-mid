@@ -129,11 +129,30 @@ def match_calls(L, records):
                 if lower:
                     st = by_row[max(lower)]
             if st is not None:
-                cursor = max(cursor, 0)
-                matched.append(_build(rec, st, None, "OBSERVED",
-                                     "the environment recorded this call at "
-                                     "capture row %d, which is this instruction"
-                                     % at, 0))
+                # The row names the instruction that was executing when the
+                # environment answered. Its POPPED values are the call's
+                # receiver and arguments - and when it has none, the call was
+                # made from inside a handler whose stack work shows up a step or
+                # two earlier, so the nearest earlier step that consumed
+                # anything is used instead. Without this the match was exact and
+                # useless: 145 calls placed, 7 of them with any argument value,
+                # and an argument that is not named is not a sink, so nothing
+                # feeding it could be explained.
+                strength, note = ("OBSERVED",
+                                  "the environment recorded this call at capture "
+                                  "row %d, which is this instruction" % at)
+                if not st.popped:
+                    rows = sorted(r for r in by_row
+                                  if isinstance(r, int) and r <= at
+                                  and by_row[r].popped)
+                    if rows and at - rows[-1] <= 8:
+                        st = by_row[rows[-1]]
+                        strength = "INFERRED"
+                        note = ("the environment recorded this call at capture "
+                                "row %d; the nearest instruction at or before it "
+                                "that consumed values is this one, %d row(s) "
+                                "earlier" % (at, at - rows[-1]))
+                matched.append(_build(rec, st, None, strength, note, 0))
                 continue
         for tier, anchor, strength, note in _anchors(rec):
             found = _find(L, consumers, cursor, anchor)

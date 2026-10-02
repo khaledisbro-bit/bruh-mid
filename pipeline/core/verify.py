@@ -363,12 +363,14 @@ def fidelity(records, calls):
         else:
             run = 0
     missing = [r for r, ok in zip(records, accounted) if not ok]
+    accounted_n = len(records) - len(missing)
+    share = (accounted_n / len(records)) if records else 0.0
     L = ["BEHAVIOUR - the program's actions against the reconstruction's",
          "-" * 60,
          "The environment recorded %d call(s) the program made. The"
          % len(records),
-         "reconstruction accounts for %d of them, counted one for one."
-         % (len(records) - len(missing)), ""]
+         "reconstruction accounts for %d of them (%.0f%%), counted one for one."
+         % (accounted_n, 100 * share), ""]
     if best:
         L.append("  Its longest unbroken agreement is %d action(s), starting at"
                  % best)
@@ -392,7 +394,10 @@ def fidelity(records, calls):
         L.append("  instruction behind it is outside what this capture traced,")
         L.append("  or nothing in the capture carried a value to anchor it on.")
         L.append("  Tracing the chunk it happened in is what closes it.")
-    return "\n".join(L), best, len(missing)
+    # the accounted SHARE as well, because "11 of 20 matched" and "the longest
+    # unbroken run" both leave out the plainest question a reader has: how much
+    # of what the program did does this reconstruction account for.
+    return "\n".join(L), best, len(missing), accounted_n, share
 
 
 def compare_behaviour(records, block_text):
@@ -553,7 +558,7 @@ def report(L, models, verdicts, records=(), calls=(), types=None):
                   "  the like). A value the capture did not report never",
                   "  withdraws a reading; only an impossibility does."]
     if records:
-        fid, prefix, missing = fidelity(records, calls)
+        fid, prefix, missing = fidelity(records, calls)[:3]
         lines += ["", fid]
     # Nothing failing is not the same as something passing. With no check
     # performed there are no failures, and this used to end on "consistent with

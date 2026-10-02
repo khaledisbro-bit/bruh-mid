@@ -217,7 +217,8 @@ class Analysis:
             self.lift, self.models, self.verdicts, capture.calls, self.calls,
             (getattr(self, "type_withdrawn", 0),
              getattr(self, "type_examined", 0)))
-        _f, self.in_step, self.unaccounted = verify.fidelity(
+        (_f, self.in_step, self.unaccounted, self.accounted,
+         self.accounted_share) = verify.fidelity(
             capture.calls, self.calls)
 
     def _harness_age_lines(self):
@@ -397,7 +398,11 @@ class Analysis:
                     sum(1 for c in self.counters.values()
                         if c.header() is not None)))
                 if self.counters else "none"),
-             "behaviour                  longest unbroken agreement %d "
+             "behaviour accounted for    %d of %d action(s) (%.0f%%)"
+             % (getattr(self, "accounted", 0),
+                getattr(self, "accounted", 0) + self.unaccounted,
+                100 * getattr(self, "accounted_share", 0.0)),
+             "behaviour in order          longest unbroken agreement %d "
              "action(s); %d not accounted for"
              % (self.in_step, self.unaccounted),
              "variables after grouping   %s"
