@@ -321,6 +321,13 @@ local ops, opn = {}, 0
 -- multiplied by the number of rounds - which is why the reconstruction, which
 -- runs once, could never account for more than a fraction of them.
 VMSMART_ROUND = 1
+-- The name matters. The stand-in answers an unknown capitalised global with a
+-- stub, because that is how a host datatype it has never heard of is served -
+-- so a global of this kind reads as "not nil" before anything is put in it,
+-- the test below never fires, and what gets written out is the stub's own name
+-- instead of a megabyte of interpreter. A VMSMART name is one the stand-in
+-- never answers for, and `false` is a value rather than an absence.
+VMSMART_INNER_SRC = false
 -- compact, safe preview of a runtime value on the VM stack (for value-flow).
 local function vprev(v)
     local ok, t = pcall(type, v)
@@ -1851,6 +1858,16 @@ env.loadstring = function(src, ...)
     if n > 200 and #loads <= 3 then
         pcall(function() writefile("inner_chunk_" .. #loads .. ".txt", tostring(src)) end)
     end
+    -- THE INTERPRETER'S OWN SOURCE, kept for the report. What each opcode does
+    -- is read from its handler, and that is the single biggest thing this
+    -- analysis has: on the first sample it took the share of instructions
+    -- explained from about four in ten to nine. The source is recovered before
+    -- the run only for a packing this tool recognises; here it is simply the
+    -- string the program handed to loadstring, so it works whatever the build
+    -- did to hide it.
+    if VMSMART_INNER_SRC == false and n > 20000 then
+        VMSMART_INNER_SRC = tostring(src)
+    end
     -- The outermost edit: hook where prototypes are built, so the arrays of
     -- functions this run never calls are seen too.
     local src0 = src
@@ -2607,6 +2624,10 @@ end
 if VMSMART_DECOMPRESS_WANT and #VMSMART_DECOMPRESS_WANT > 0 then
     say("---WANTBYTES---")
     for i = 1, #VMSMART_DECOMPRESS_WANT do say(VMSMART_DECOMPRESS_WANT[i]) end
+end
+if type(VMSMART_INNER_SRC) == "string" then
+    say("---INNERSRC---")
+    say(VMSMART_INNER_SRC)
 end
 if fieldN > 0 then
     say("---FIELDS---")

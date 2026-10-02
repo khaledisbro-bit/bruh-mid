@@ -475,6 +475,39 @@ def main():
     # writes it out when it patches a chunk, so it is used when it is there.
     vm_src = None
     vm_path = a.vm_source
+    # The interpreter's source as the RUN saw it. The static stage can only
+    # recover it for a packing this tool recognises; the harness simply keeps
+    # the string the program handed to loadstring, so a build that packs itself
+    # some other way still gets its opcodes read from its own handlers. That is
+    # the difference between four in ten instructions explained and nine.
+    if not vm_path:
+        for cap_path in (a.trace or []):
+            for piece in str(cap_path).split("+"):
+                if not os.path.isfile(piece):
+                    continue
+                with open(piece, encoding="latin1") as f:
+                    text = f.read()
+                mark = "\n---INNERSRC---\n"
+                i = text.find(mark)
+                if i < 0:
+                    continue
+                body = text[i + len(mark):]
+                j = body.find("\n---")
+                if j >= 0:
+                    body = body[:j]
+                body = body.strip("\n")
+                if len(body) > 2000:
+                    out_p = os.path.join(a.out, "inner_source.lua")
+                    if not os.path.isfile(out_p):
+                        with open(out_p, "w", encoding="latin1") as f:
+                            f.write(body)
+                        print("              the run kept the interpreter's own "
+                              "source (%d bytes); opcode meanings will be read "
+                              "from its handlers" % len(body))
+                    vm_path = out_p
+                    break
+            if vm_path:
+                break
     if not vm_path:
         # The interpreter's own source names what its opcodes do. The static
         # stage writes it as inner_source.lua in this very output directory, and

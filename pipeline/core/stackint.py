@@ -303,6 +303,29 @@ def lift(rows, program_rows, models):
 _NIL_IMPOSSIBLE_ALL = {"ADD", "SUB", "MUL", "DIV", "MOD", "POW", "IDIV", "UNM",
                        "CONCAT", "LEN", "LT", "LE", "GT", "GE"}
 _NIL_IMPOSSIBLE_FIRST = {"CALL", "INDEX", "SETINDEX"}
+# A number and a boolean have no fields, so indexing one raises; calling one
+# raises too, and so does calling a string. A table, a userdata and a string all
+# answer an index.
+_NOT_INDEXABLE = {"number", "boolean"}
+_NOT_CALLABLE = {"number", "boolean", "string"}
+
+
+def _shape(runtime):
+    """What the capture's text says this value was."""
+    t = str(runtime)
+    if t in ("true", "false"):
+        return "boolean"
+    if t.startswith('"'):
+        return "string"
+    if t.startswith("table") or t == "{}":
+        return "table"
+    if t.startswith("function"):
+        return "function"
+    try:
+        float(t)
+        return "number"
+    except ValueError:
+        return "other"
 
 
 def clear_impossible_nils(L, models):
@@ -330,6 +353,36 @@ def clear_impossible_nils(L, models):
             where = [st.popped[0]]
         else:
             continue
+        # What this operand could not have been, given what the handler did and
+        # what the language allows. Indexing a number or a boolean raises, and
+        # so does calling one - or calling a string. The instruction ran and the
+        # script carried on, so the value reported for it is not the value it
+        # had: it is the pending slot holding something else.
+        impossible = None
+        if m.operation in ("INDEX", "SETINDEX"):
+            impossible = _NOT_INDEXABLE
+        elif m.operation == "CALL":
+            impossible = _NOT_CALLABLE
+        if impossible is not None:
+            for v in (where if m.operation == "CALL" else where[:1]):
+                if v.runtime is None or not _is_value(v.runtime):
+                    continue
+                kind = _shape(v.runtime)
+                if kind not in impossible:
+                    continue
+                v.runtime = None
+                v.fact.note(
+                    "stackint.not_this_type",
+                    "this value was %s by an instruction whose handler "
+                    "performs %s, and %s a %s in Lua raises. The instruction "
+                    "ran and the script carried on, so what the capture "
+                    "reported here is not what this value held"
+                    % ("called" if m.operation == "CALL" else "indexed",
+                       m.operation,
+                       "calling" if m.operation == "CALL" else "indexing",
+                       kind),
+                    pcs=(v.pc,), opcodes=(st.op,), steps=(st.row,))
+                n += 1
         for v in where:
             if v.runtime is not None and not _is_value(v.runtime):
                 v.runtime = None

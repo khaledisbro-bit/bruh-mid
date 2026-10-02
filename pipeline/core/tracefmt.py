@@ -34,6 +34,19 @@ class Capture:
         self.raw = text
         m = _BODY.search(text)
         self.body = m.group(1) if m else text
+        # The interpreter's own source, where the run kept it. It is a megabyte
+        # of someone else's Lua sitting in the middle of the capture, and every
+        # pass below reads the capture line by line - so it is taken out here
+        # and kept on its own, rather than searched through by a parser looking
+        # for instruction records.
+        self.inner_source = ""
+        mark = "\n---INNERSRC---\n"
+        i = self.body.find(mark)
+        if i >= 0:
+            rest = self.body[i + len(mark):]
+            j = rest.find("\n---")
+            self.inner_source = (rest if j < 0 else rest[:j]).strip("\n")
+            self.body = self.body[:i] + (rest[j:] if j >= 0 else "")
         self.sections = _split(self.body)
         self.headers = _headers(_header_lines(self.sections))
         self.rows = _rows(self.body)
