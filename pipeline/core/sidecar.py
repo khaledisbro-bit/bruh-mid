@@ -93,6 +93,60 @@ def decompressions(src):
     return out, "; ".join(notes)
 
 
+def from_request(text):
+    """Decompress the bytes a run asked for and could not be answered.
+
+    Finding the frames by reading the script only works while the packing is one
+    this tool knows. A build that keeps several frames in a table, or decodes
+    them with something of its own, hands the bytes over at run time and the
+    search beforehand finds nothing - which ends the run on its first step.
+
+    The run writes what it was asked for, with the bytes, and this decompresses
+    them for the run that follows. Nothing has to be known about the packing:
+    the program produced the bytes itself.
+
+    `text` is the capture; returns the same entries `decompressions` returns.
+    """
+    try:
+        import zstandard
+    except ImportError:
+        return [], ("zstandard is not installed, so the bytes the run asked "
+                    "for could not be decompressed")
+    want, grab = [], False
+    for ln in (text or "").splitlines():
+        if ln.startswith("---"):
+            grab = ln.strip() == "---WANTBYTES---"
+            continue
+        if grab and ln.strip():
+            want.append(ln.strip())
+    out, notes = [], []
+    for ln in want:
+        key, _, hexed = ln.partition(" ")
+        if not hexed:
+            continue
+        try:
+            raw = bytes.fromhex(hexed.strip())
+        except ValueError:
+            notes.append("a request came back with bytes that are not hex")
+            continue
+        if raw[:4] != ZSTD_MAGIC:
+            notes.append("the bytes asked for (%s) are not a Zstd frame; this "
+                         "stand-in only stands in for that one host service"
+                         % key)
+            continue
+        try:
+            plain = zstandard.ZstdDecompressor().decompress(
+                raw, max_output_size=500_000_000)
+        except Exception as exc:
+            notes.append("the frame the run asked for did not decompress (%s)"
+                         % exc.__class__.__name__)
+            continue
+        out.append({"key": key_for(raw), "compressed_len": len(raw),
+                    "plain": plain, "blob_key": "asked for at run time",
+                    "alphabet_index": None})
+    return out, "; ".join(notes)
+
+
 _SAFE = set(range(32, 127)) - {ord('"'), ord("\\")}
 
 

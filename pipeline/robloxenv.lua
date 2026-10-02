@@ -858,12 +858,34 @@ local function sideKey(s)
     return n .. ":" .. hex(head) .. ":" .. hex(tail)
 end
 
+-- What was asked for and could not be answered, in full. The answers are
+-- computed before the run from the blobs this tool can find in the script, and
+-- a build that packs its bytes some other way - several frames in a table, its
+-- own alphabet, a decoder of its own - produces bytes at RUN time that no
+-- amount of looking at the file beforehand would have found.
+--
+-- Those bytes are in hand at exactly this moment: the program just passed
+-- them. So the miss is written out with the bytes themselves, and the run that
+-- follows is given the answer. It costs one more run of the payload and it
+-- needs nothing to be known about how the build packs anything.
+VMSMART_DECOMPRESS_WANT = {}
+
+local function hexOf(s)
+    local out = {}
+    for i = 1, #s do out[i] = string.format("%02x", string.byte(s, i)) end
+    return table.concat(out)
+end
+
 local function hostDecompress(bytes)
     local key = sideKey(bytes)
     VMSMART_DECOMPRESS_ASKED[#VMSMART_DECOMPRESS_ASKED + 1] = key
     local table_ = VMSMART_DECOMPRESS
     local got = table_ and table_[key]
     if got then return got end
+    if #VMSMART_DECOMPRESS_WANT < 8 then
+        VMSMART_DECOMPRESS_WANT[#VMSMART_DECOMPRESS_WANT + 1] =
+            key .. " " .. hexOf(bytes)
+    end
     error("this stand-in has no decompressed bytes for " .. key
           .. " (prepared: " .. tostring(table_ and #key or "none") .. ")", 0)
 end

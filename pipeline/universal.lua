@@ -2599,6 +2599,15 @@ if VMSMART_STANDIN then
         for i = 1, #asked do say(asked[i]) end
     end
 end
+-- Bytes the program handed the stand-in to decompress, where no answer had
+-- been prepared for them. Written out with the bytes, so the next run can be
+-- given the answer. This is what lets a build that packs its payload some way
+-- this tool has never seen be run anyway: the program itself produces the
+-- bytes, and they are taken from its hands.
+if VMSMART_DECOMPRESS_WANT and #VMSMART_DECOMPRESS_WANT > 0 then
+    say("---WANTBYTES---")
+    for i = 1, #VMSMART_DECOMPRESS_WANT do say(VMSMART_DECOMPRESS_WANT[i]) end
+end
 if fieldN > 0 then
     say("---FIELDS---")
     for _, line in pairs(fields) do say(line) end

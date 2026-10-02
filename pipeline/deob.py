@@ -389,6 +389,27 @@ def main():
         side = sidecarmod.emit_lua(ents, snote) if ents else None
         rec = localvm.run(luau, harness, sidecar_text=side)
         print("              " + localvm.describe(rec))
+        # A build whose packing this tool does not recognise hands its bytes
+        # over at run time instead. The run writes down what it was asked for
+        # and could not be given; those bytes are decompressed here and the
+        # payload is run again with the answer. Bounded, because each round
+        # must bring back something new or there is nothing to gain.
+        for _round in range(4):
+            more, mnote = sidecarmod.from_request(rec.get("stdout") or "")
+            fresh = [e for e in more
+                     if e["key"] not in {x["key"] for x in ents}]
+            if not fresh:
+                if mnote and not ents:
+                    print("              " + mnote)
+                break
+            ents = ents + fresh
+            print("              the run asked for %d frame(s) this tool had "
+                  "not found in the file; decompressed from the bytes the "
+                  "program itself produced, running again"
+                  % len(fresh))
+            side = sidecarmod.emit_lua(ents, snote)
+            rec = localvm.run(luau, harness, sidecar_text=side)
+            print("              " + localvm.describe(rec))
         # The whole run is kept, not only the block inside it. When a capture
         # comes back empty the reason is almost always in the lines before the
         # block, and those were being thrown away - the file below is the one
