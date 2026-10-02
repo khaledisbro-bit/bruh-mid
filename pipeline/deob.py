@@ -349,6 +349,23 @@ def main():
             return 1
         rec = localvm.run(luau, harness)
         print("              " + localvm.describe(rec))
+        # The whole run is kept, not only the block inside it. When a capture
+        # comes back empty the reason is almost always in the lines before the
+        # block, and those were being thrown away - the file below is the one
+        # thing worth sending when an offline run says nothing.
+        whole = os.path.join(a.out, "offline_stdout.txt")
+        with open(whole, "w", encoding="utf-8") as f:
+            f.write("command: %s\n" % rec["command"])
+            f.write("exit: %s%s\n\n" % (rec["returncode"],
+                                        "  (timed out)" if rec["timed_out"]
+                                        else ""))
+            f.write("---- stdout ----\n" + (rec["stdout"] or "") + "\n")
+            f.write("---- stderr ----\n" + (rec["stderr"] or "") + "\n")
+        print("              whole run -> %s" % whole)
+        for ln in (rec["stderr"] or "").strip().splitlines()[:3]:
+            print("              luau said: " + ln)
+        if rec["returncode"] not in (0, None):
+            print("              luau exited %s" % rec["returncode"])
         if rec["capture"]:
             path = os.path.join(a.out, "offline_capture.txt")
             with open(path, "w", encoding="utf-8") as f:
@@ -356,9 +373,6 @@ def main():
             print("              capture -> %s" % path)
             a.trace = [path]
         else:
-            if rec["stderr"].strip():
-                print("              luau said: "
-                      + rec["stderr"].strip().splitlines()[0])
             return 1
 
     if not a.trace:

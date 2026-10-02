@@ -26,7 +26,9 @@ and why each was rejected, and `probe` makes a candidate prove it runs Luau
 before anything is handed to it. Picking the first thing named `luau` on PATH
 would be a claim about the machine rather than a reading of it.
 """
+import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -62,6 +64,16 @@ def _candidates(explicit=None):
                 "tools/luau", "tools/luau.exe"):
         out.append((os.path.join(here, rel), "beside the package"))
         out.append((os.path.join(os.getcwd(), rel), "in the working directory"))
+    # a release asset is often left under the name it was downloaded as, so
+    # anything named luau-something is worth trying too. The ones that are a
+    # different tool are rejected by name later, with that as the reason.
+    for root, where in ((here, "beside the package"),
+                        (os.getcwd(), "in the working directory"),
+                        (os.path.join(here, "bin"), "in bin/"),
+                        (os.path.join(here, "tools"), "in tools/")):
+        for hit in sorted(glob.glob(os.path.join(root, "luau*"))):
+            if os.path.isfile(hit):
+                out.append((hit, where + ", by name"))
     seen, uniq = set(), []
     for p, why in out:
         q = os.path.abspath(p)
@@ -71,12 +83,64 @@ def _candidates(explicit=None):
     return uniq
 
 
+# The Luau project ships more than one binary. Only `luau` runs a script; the
+# others parse, analyse or compile and exit. Their names say so, so a candidate
+# whose name is one of them is rejected for what it is rather than after a run
+# whose output would be misread.
+_NOT_A_RUNNER = ("ast", "analyze", "analyse", "compile", "reduce", "bytecode")
+
+
+def _wrong_tool(path):
+    """The reason this binary is not the one that runs scripts, or None."""
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    for part in re.split(r"[-_.]", stem):
+        if part in _NOT_A_RUNNER:
+            return ("this is luau-%s, a different tool in the same release - it "
+                    "prints a %s and exits, it does not run a script" %
+                    (part, "parse tree" if part == "ast" else "report"))
+    return None
+
+
+def _not_a_program(path):
+    """The reason the file cannot start as a program, or None.
+
+    Windows answers a file that is named .exe but is not a Windows program with
+    "The system cannot execute the specified program", which says nothing about
+    why. The first two bytes do: a real one begins MZ. A download that was saved
+    as an HTML error page, or a zip that was never unpacked, does not."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+    except OSError as exc:
+        return "could not be read (%s)" % (exc.strerror or exc.__class__.__name__)
+    if not head:
+        return "the file is empty - the download did not finish"
+    if path.lower().endswith(".exe") and head[:2] != b"MZ":
+        if head[:2] == b"PK":
+            return ("this is still a zip, not the program inside it - unpack "
+                    "luau-windows.zip and use the luau.exe from it")
+        return ("this is not a Windows program: it does not start with MZ. The "
+                "download was saved as something else (an error page, or a "
+                "partial file)")
+    if head[:2] == b"MZ" and not path.lower().endswith(".exe"):
+        return None
+    return None
+
+
 def probe(path, timeout=30):
     """Make a candidate prove it runs Luau. Returns (ok, why)."""
     if not os.path.isfile(path):
         return False, "no file there"
-    if not os.access(path, os.X_OK):
-        return False, "not executable"
+    wrong = _wrong_tool(path)
+    if wrong:
+        return False, wrong
+    broken = _not_a_program(path)
+    if broken:
+        return False, broken
+    # os.access(X_OK) is a real answer on POSIX and close to meaningless on
+    # Windows, where almost any existing file passes it, so it only decides here.
+    if os.name != "nt" and not os.access(path, os.X_OK):
+        return False, "not executable (chmod +x it)"
     d = tempfile.mkdtemp(prefix="vmsmart-probe-")
     s = os.path.join(d, "probe.luau")
     try:
@@ -92,9 +156,34 @@ def probe(path, timeout=30):
     except subprocess.TimeoutExpired:
         return False, "did not finish the probe in %ds" % timeout
     except OSError as exc:
-        return False, "could not be run (%s)" % exc.__class__.__name__
+        return False, "could not be started - %s" % _why_it_would_not_start(exc)
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+def _why_it_would_not_start(exc):
+    """The OS message, plus the cause behind the ones that hide it.
+
+    Windows reports a binary built for another architecture, and one whose
+    runtime DLLs are absent, with the same sentence. Saying which two things to
+    check beats repeating the sentence back."""
+    msg = (getattr(exc, "strerror", None) or str(exc) or
+           exc.__class__.__name__).strip()
+    win = getattr(exc, "winerror", None)
+    if win in (193, 216):
+        return ("%s (WinError %d). The file is not a program this Windows runs: "
+                "wrong architecture for this machine, or the download is not "
+                "the binary. Download the x64 Windows asset and unpack it."
+                % (msg, win))
+    if win == 2:
+        return "%s (WinError 2). Nothing is at that path." % msg
+    if win == 5:
+        return ("%s (WinError 5). Windows refused it: the file is blocked after "
+                "download (Properties, then Unblock), or a policy stops it."
+                % msg)
+    if win:
+        return "%s (WinError %d)" % (msg, win)
+    return msg
 
 
 def find(explicit=None):
@@ -111,9 +200,20 @@ def find(explicit=None):
 
 
 def where_to_put_one():
-    return ("Download a `luau` binary from the Luau project's releases and put "
-            "it beside this package, on PATH, or name it in $VMSMART_LUAU. It "
-            "is one file and needs no install.")
+    lines = [
+        "Download a `luau` binary from the Luau project's releases and put it "
+        "beside this package, on PATH, or name it in $VMSMART_LUAU. It is one "
+        "file and needs no install.",
+        "Take the runner, not its neighbours: the release also ships luau-ast, "
+        "luau-analyze and luau-compile, and none of those runs a script.",
+    ]
+    if os.name == "nt":
+        lines.append(
+            "On Windows: unpack the zip (do not run the exe from inside it), "
+            "take the x64 build, and if Windows refuses to start it open "
+            "Properties and tick Unblock. `luau.exe --version` is the quickest "
+            "way to see whether the file starts at all.")
+    return "\n".join(lines)
 
 
 def build(harness, out_dir):
@@ -281,6 +381,72 @@ def _selftest():
                        "harness ran")
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+    # a different tool from the same release is rejected for what it is, and
+    # the runner itself is never caught by that rule
+    for name in ("luau-ast.exe", "luau-analyze", "luau_compile.exe",
+                 "/x/y/luau-ast"):
+        if _wrong_tool(name) is None:
+            bad.append("%s is not the runner and must be rejected" % name)
+    if _wrong_tool("luau-ast.exe") and "parse tree" not in _wrong_tool("luau-ast.exe"):
+        bad.append("the luau-ast rejection should say what it prints instead")
+    for name in ("luau", "luau.exe", "/opt/luau", "luau-win64.exe",
+                 "C:/tools/luau.exe"):
+        if _wrong_tool(name) is not None:
+            bad.append("%s is the runner and must not be rejected by name: %s"
+                       % (name, _wrong_tool(name)))
+
+    # a file that cannot start as a program is diagnosed from its first bytes,
+    # before anything is handed to the OS
+    d = tempfile.mkdtemp(prefix="vmsmart-head-")
+    try:
+        def wrote(name, data):
+            q = os.path.join(d, name)
+            with open(q, "wb") as f:
+                f.write(data)
+            return q
+
+        z = wrote("luaux.exe", b"PK\x03\x04rest")
+        why = _not_a_program(z)
+        if not why or "zip" not in why:
+            bad.append("a zip named .exe must be named as one: %r" % why)
+        if "zip" not in (probe(z)[1] or ""):
+            bad.append("probe must stop at the zip rather than try to run it")
+        e = wrote("empty.exe", b"")
+        if "empty" not in (_not_a_program(e) or ""):
+            bad.append("an unfinished download must be reported as empty")
+        h = wrote("page.exe", b"<!DOCTYPE html><html>")
+        why = _not_a_program(h)
+        if not why or "MZ" not in why:
+            bad.append("a non-program named .exe must be reported: %r" % why)
+        real = wrote("luau.exe", b"MZ\x90\x00")
+        if _not_a_program(real) is not None:
+            bad.append("a file that starts MZ must pass the header check")
+        # a POSIX binary has no .exe and is not judged by that rule
+        posix = wrote("luau", b"\x7fELF")
+        if _not_a_program(posix) is not None:
+            bad.append("a POSIX binary must pass the header check")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+    # the two Windows errors that hide their cause get the cause spelled out
+    def oserr(code):
+        exc = OSError(8, "The system cannot execute the specified program")
+        exc.winerror = code
+        return _why_it_would_not_start(exc)
+
+    for code, want in ((216, "architecture"), (193, "architecture"),
+                       (5, "Unblock"), (2, "Nothing is at that path")):
+        got = oserr(code)
+        if want not in got:
+            bad.append("WinError %d should point at %s: %r" % (code, want, got))
+    plain = _why_it_would_not_start(OSError("something else"))
+    if "WinError" in plain:
+        bad.append("an error with no winerror must not claim one: %r" % plain)
+
+    # the advice names the trap the release layout sets
+    if "luau-ast" not in where_to_put_one():
+        bad.append("the advice should say the other binaries are not the runner")
 
     print("localvm selftest %s" % ("ok" if not bad else "FAILURES"))
     for b in bad:

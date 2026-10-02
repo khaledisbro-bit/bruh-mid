@@ -76,26 +76,50 @@ class Capture:
         """Why this capture carries no instructions.
 
         "The hook did not match" was being printed for every empty capture,
-        which is one of three different things and the only one nobody can act
-        on. The harness writes what it did into the behaviour log, so read it
-        rather than assume.
+        which is one of four different things and the only one nobody can act
+        on. The harness says what it did in its own headers, so read those
+        first: `dispatch_patched` is the harness's answer to this exact
+        question. The behaviour log is the second source, and it is capped at
+        120 lines, so a long run can push the patch note out of the capture -
+        reading only the log turned a patched run into "never matched".
         """
         notes = "\n".join(self.sections.get("BEHAVIOR", []))
-        placed = "patched dispatch" in notes
+        patched = self.headers.get("dispatch_patched")
+        placed = patched == "true" or "patched dispatch" in notes
         skipped = "left untraced" in notes
+        err = self.run_error or ""
+        if not self.headers and not notes:
+            return ("this capture has no headers and no behaviour log, so the "
+                    "harness stopped before it reported anything about the "
+                    "chunk. Send the whole output of the run, not only the "
+                    "block: the reason is above the block, not in it.")
+        if self.headers.get("loaded") == "false":
+            return ("the chunk never loaded in this run%s, so the interpreter "
+                    "never started and there was nothing to log. This is a "
+                    "load failure, not a build the trace cannot read."
+                    % (" (" + err.splitlines()[0] + ")" if err else ""))
         if placed:
             return ("the trace hook WAS placed in this build's interpreter, "
-                    "and then never fired. That is not a build this cannot "
+                    "and then never fired%s. That is not a build this cannot "
                     "read - it is the hook being unreachable from where the "
-                    "interpreter runs, which is a fault here and worth "
-                    "reporting with this capture.")
+                    "interpreter runs, or the run ending before the first "
+                    "instruction, which is a fault here and worth reporting "
+                    "with this capture."
+                    % (", and the run raised: " + err.splitlines()[0]
+                       if err else ""))
         if skipped:
             return ("this run was asked to trace a different interpreter than "
                     "the one that ran the program. Run harness.lua on its own; "
                     "harness_chunk2.lua traces the next interpreter down and "
                     "produces nothing when there is only one.")
-        return ("the trace hook never matched this build's dispatch loop, so "
-                "no instruction was ever logged.")
+        if patched == "false":
+            return ("the harness reports dispatch_patched: false, so the trace "
+                    "hook never matched this build's dispatch loop and no "
+                    "instruction was ever logged.")
+        return ("this capture does not say whether the hook was placed: there "
+                "is no dispatch_patched header and no patch note in the "
+                "behaviour log, so nothing here answers why there are no "
+                "instructions. The run output above the block does.")
 
     def summary(self):
         return ("%s: %d instruction rows, %d in the code array, %d constants, "
@@ -987,6 +1011,42 @@ def _selftest():
     def check(what, got, want):
         if got != want:
             bad.append("%s: %r, expected %r" % (what, got, want))
+
+    def why(body):
+        return Capture("BEGIN_UNOBF_RESULT\n" + body + "\nEND_UNOBF_RESULT"
+                       ).why_no_instructions()
+
+    # 0) an empty capture is one of four things, and the headers say which.
+    # Reading only the behaviour log was wrong: it is capped at 120 lines, so a
+    # long run drops the patch note and a patched run read as "never matched".
+    w = why("---RUN---\ndispatch_patched: true\nloaded: true\n"
+            "run_ok: true  return_type: nil\n---BEHAVIOR---\n"
+            + "\n".join("  call x%d" % i for i in range(200)))
+    if "WAS placed" not in w:
+        bad.append("a patched run with no instructions must say the hook was "
+                   "placed, even when the log pushed the note out: %r" % w)
+    w = why("---RUN---\ndispatch_patched: false\nloaded: true\n"
+            "run_ok: true  return_type: nil")
+    if "never matched" not in w:
+        bad.append("dispatch_patched: false is the one case that did not "
+                   "match: %r" % w)
+    w = why("---RUN---\ndispatch_patched: true\nloaded: false\n"
+            "run_ok: false  return_type: nil\nerror: could not load\n")
+    if "never loaded" not in w or "could not load" not in w:
+        bad.append("a chunk that never loaded must be reported as that, with "
+                   "its error: %r" % w)
+    w = why("---OPCODES---")
+    if "no headers and no behaviour log" not in w:
+        bad.append("a capture that reports nothing must say so rather than "
+                   "blame the hook: %r" % w)
+    w = why("---RUN---\nloaded: true\nrun_ok: true  return_type: nil")
+    if "does not say whether" not in w:
+        bad.append("a capture with no dispatch_patched header must not claim "
+                   "the hook missed: %r" % w)
+    w = why("---RUN---\nloaded: true\nrun_ok: true  return_type: nil\n"
+            "---BEHAVIOR---\n  [chunk 2 left untraced; this run traces #1]")
+    if "different interpreter" not in w:
+        bad.append("tracing the wrong chunk stays its own answer: %r" % w)
 
     # 1) headers after an unclosed PROBE section - the real pre-RUN layout
     c = Capture("BEGIN_UNOBF_RESULT\n---PROBE---\nclock_is_monotonic\ttrue\n"
