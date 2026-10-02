@@ -744,7 +744,11 @@ local function patchSlices(s)
         function(fn, arg, v, tbl)
             hits = hits + 1
             return ("local function %s(%s)local %s=%s[%s];"
-                    .. "if __SLICE then __SLICE(%q,%s,%s~=nil,#%s)end;"
+                    -- `#tbl` runs __len, and these VMs put metatables on the
+                    -- tables they hand slices out of. rawlen asks no metamethod;
+                    -- where it does not exist the count is simply not reported.
+                    .. "if __SLICE then __SLICE(%q,%s,%s~=nil,"
+                    .. "(rawlen and rawlen(%s) or -1))end;"
                     .. "if not %s then return nil end"):format(
                 fn, arg, v, tbl, arg, fn, arg, v, tbl, v)
         end)
@@ -777,16 +781,27 @@ end
 
 local function patchJumps(s)
     local hits = 0
+    -- Match the WHOLE lookup statement, up to the semicolon that ends it, so the
+    -- probe goes AFTER it and the fallback table literal is left intact. An
+    -- earlier version cut the statement at `or {` and spliced the log in there,
+    -- which split the literal in half and produced source that would not parse.
     local out = s:gsub(
-        "local function (%w+)%((%w+),(%w+),(%w+),(%w+)%)(.-)local (%w+)=(%w+)%[%2%] or {",
-        function(fn, x, k, sp, o, mid, e, tbl)
+        "local function (%w+)%((%w+),(%w+),(%w+),(%w+)%)(.-)local (%w+)=(%w+)%[%2%] or ({[^}]*});",
+        function(fn, x, k, sp, o, mid, e, tbl, fallback)
             if #mid > 200 then return nil end     -- not the same statement run
             hits = hits + 1
-            return ("local function %s(%s,%s,%s,%s)%slocal %s=%s[%s] or {"):format(
-                fn, x, k, sp, o,
-                mid .. (";if __JMP then __JMP(%q,%s,%s[%s]~=nil,(%s[%s] or {})[1],%s)end;")
-                      :format(fn, x, tbl, x, tbl, x, sp),
-                e, tbl, x)
+            -- The probe must not INDEX the program's own table. These VMs put a
+            -- metatable on their lookup tables whose __index decrypts an entry
+            -- and advances a running key, so an extra read is an extra step of
+            -- that key and every later read comes out wrong. The first version
+            -- read the table twice more and the traced round went from 12
+            -- instructions to NONE - the watch destroyed the run it was there to
+            -- observe. rawget sees no metamethod; `e` is the value the VM just
+            -- computed, so reporting from it costs nothing.
+            return ("local function %s(%s,%s,%s,%s)%slocal %s=%s[%s] or %s;"
+                    .. "if __JMP then __JMP(%q,%s,rawget(%s,%s)~=nil,%s[1],%s)end;")
+                   :format(fn, x, k, sp, o, mid, e, tbl, x, fallback,
+                           fn, x, tbl, x, e, sp)
         end)
     if hits == 0 then return nil end
     return out, hits .. " jump decoder(s)"

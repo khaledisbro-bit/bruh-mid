@@ -283,7 +283,9 @@ def slice_hook(path=UNIVERSAL):
                        % (name, verdict))
         # pure insertion: deleting the injected call must give the original back
         import re as _re
-        undone = _re.sub(r"if __SLICE then __SLICE\([^)]*\)end;", "", out)
+        # the injected call now contains parentheses of its own, so the undo
+        # has to run to the call's own `)end;` rather than the first `)`
+        undone = _re.sub(r"if __SLICE then __SLICE\(.*?\)end;", "", out)
         if undone != text:
             bad.append("%s: the injection changed text around it. original %r, "
                        "recovered %r" % (name, text[:60], undone[:60]))
@@ -373,6 +375,72 @@ _JUMP_DECODER = ("local function el(x,k,s,o)if k~=0 then x=Nn(x,k)end;"
 _NOT_A_DECODER = ("local function f(a,b,c,d)local e=tbl[a] end;")
 
 
+def probes_are_passive(path=UNIVERSAL):
+    """A probe must not read through the program's own tables.
+
+    These VMs put a metatable on the tables they look values up in, whose
+    __index decrypts the entry and advances a running key. An extra read is an
+    extra step of that key, and every later read then comes out wrong. The first
+    jump watch read the lookup table twice more per branch; the traced round went
+    from 12 instructions to NONE. The watch destroyed the run it existed to
+    observe, and the capture reported that as the program failing.
+
+    So the test is a count, not an opinion: run the original and the patched
+    source against a table that counts every __index and __len it is asked for,
+    and demand the same number.
+    """
+    try:
+        import lupa
+    except ImportError:
+        return []
+    src = io.open(path, encoding="utf-8").read()
+    L = lupa.LuaRuntime(unpack_returned_tuples=True)
+    try:
+        jb = src.index("local jumps, jumpN = {}, 0")
+        sb = src.index("local slices, sliceN = {}, 0")
+        pp = src.index("local function patchProtos(s)")
+    except ValueError:
+        return ["universal.lua has no jump or slice watch to test"]
+    mkJ = L.execute("local HID={}\n" + src[jb:pp] + "\nreturn patchJumps\n")
+    mkS = L.execute("local HID={}\n" + src[sb:jb] + "\nreturn patchSlices\n")
+    run = L.eval("""function(src)
+  local reads = 0
+  local real = {}
+  local eO = setmetatable({}, {__index=function(t,k) reads=reads+1; return real[k] end,
+                              __len=function() reads=reads+100; return 0 end})
+  local env = {eO=eO, oz=eO, Nn=function(a) return a end, eK={0,0,0},
+               __JMP=function() end, __SLICE=function() end,
+               rawget=rawget, rawlen=rawlen}
+  local f = (load or loadstring)(src, "c", "t", setmetatable(env,{__index=_G}))
+  if not f then return -1 end
+  local ok = pcall(f)
+  if not ok then return -2 end
+  return reads
+end""")
+    cases = {
+        "jump decoder": (mkJ,
+            "local function el(x,k,s,o)if k~=0 then x=Nn(x,k)end;"
+            "local e=eO[x] or {eK[3]+x,-1,-1,-1};return e[1] end;return el(7,0,1,1)"),
+        "slice accessor": (mkS,
+            "local function oS(ow)local oM=oz[ow];if not oM then return nil end;"
+            "return {1,oM} end;return oS(3)"),
+    }
+    bad = []
+    for name, (mk, text) in cases.items():
+        got = mk(text)
+        if got is None:
+            bad.append("%s: not matched, so this check proves nothing" % name)
+            continue
+        base, patched = run(text), run(got[0])
+        if patched < 0:
+            bad.append("%s: the patched source does not run (%d)" % (name, patched))
+        elif patched != base:
+            bad.append("%s: the probe added %d read(s) through the program's own "
+                       "table - it would advance a decrypting key and corrupt "
+                       "the run it is watching" % (name, patched - base))
+    return bad
+
+
 def jump_hook(path=UNIVERSAL):
     """The jump decoder's lookup, and whether it hit or fell back.
 
@@ -404,13 +472,24 @@ def jump_hook(path=UNIVERSAL):
         out = got[0]
         if "__JMP(" not in out:
             bad.append("nothing was injected into the decoder")
-        if out.find("__JMP(") > out.find("local e=eO[x]"):
-            bad.append("the log must go BEFORE the lookup's fallback, or it "
-                       "cannot say whether the table had the entry")
+        # The log goes AFTER the lookup on purpose. Reporting from `e` - the
+        # value the VM just computed - and testing the table with rawget is what
+        # keeps the probe from reading through a decrypting metatable. An earlier
+        # version read the table again to answer "was it there", and that extra
+        # read is what killed the run.
+        if out.find("__JMP(") < out.find("local e=eO[x]"):
+            bad.append("the log must come AFTER the lookup, so it can report "
+                       "the value the VM computed instead of reading again")
+        seg = out[out.find("__JMP("):out.find("__JMP(") + 90]
+        if "rawget(" not in seg:
+            bad.append("the probe must test the table with rawget: %s" % seg)
+        if "eO[x]" in seg:
+            bad.append("the probe reads through the program's own table, which "
+                       "advances a decrypting key: %s" % seg)
         if chk(out) != "OK":
             bad.append("the patched decoder does not compile: %s" % chk(out))
         import re as _re
-        undone = _re.sub(r";if __JMP then __JMP\([^;]*\)end;", "", out)
+        undone = _re.sub(r"if __JMP then __JMP\(.*?\)end;", "", out)
         if undone.replace(";;", ";") != _JUMP_DECODER.replace(";;", ";"):
             bad.append("the injection changed text around it")
     # a four-parameter function with no `or {` fallback is not this decoder
@@ -701,7 +780,8 @@ def selftest(path=UNIVERSAL):
     """Returns (problems, ran). ran is False when no Lua runtime is here."""
     leaks = (_declared_locals(path) + proto_hook(path)
              + slice_hook(path) + op_rows(path) + dispatch_anchor(path)
-             + no_source_message(path) + loop_top(path) + jump_hook(path))
+             + no_source_message(path) + loop_top(path) + jump_hook(path)
+             + probes_are_passive(path))
     try:
         import lupa
     except ImportError:

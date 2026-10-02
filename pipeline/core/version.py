@@ -8,7 +8,7 @@ that does not say what made it cannot be trusted to describe the code you have,
 so every report now says, and the stages it lists are the ones that actually ran.
 """
 
-VERSION = 52
+VERSION = 53
 
 STAGES = (
     "captures read by shape",
@@ -196,6 +196,12 @@ STAGES = (
     "the row variable believed at the loop top and the array believed anywhere "
     "else, because this family re-fetches the row from a second array variable "
     "and preferring the named array there would reintroduce the mismatch",
+    "every probe passive: it never indexes the program's own tables, because "
+    "these VMs put a decrypting metatable on them and an extra read advances the "
+    "key - the first jump watch did that and took a traced round from twelve "
+    "instructions to none, which the capture then reported as the program "
+    "failing; probes report from values the VM already computed and test tables "
+    "with rawget, and a test counts the lookups to prove it",
     "the jump decoder watched, and whether each branch target was READ from its "
     "lookup table or COMPUTED from a base because the table had no entry - a "
     "computed target is not a branch the program wrote, and it can land outside "
