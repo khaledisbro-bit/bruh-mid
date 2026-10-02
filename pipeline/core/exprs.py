@@ -51,16 +51,33 @@ class Call:
 _PLAIN = re.compile(r"^(-?\d+(\.\d+)?|true|false|nil|table|function)$")
 
 
-def _as_written(arg):
+# What the recorder writes when it cannot show a value: its type. These are not
+# values and must never be written as ones - `function` is a keyword, and a
+# rendering carrying it does not parse at all.
+_TYPE_WORDS = {"function", "table", "userdata", "thread"}
+
+
+def _as_written(arg, runnable=False):
     """An argument the environment recorded as bare text is a string unless it
-    reads as one of the values that are written without quotes."""
+    reads as one of the values that are written without quotes.
+
+    A bare type word is the recorder saying it could not show the value. It is
+    not the value, so the rendering says so: a stand-in in the runnable file,
+    and a plain description in the readable one."""
     a = arg.strip()
+    if a in _TYPE_WORDS:
+        return "OP()" if runnable else "<a %s>" % a
     if a.startswith(('"', "{", "[")) or _PLAIN.match(a):
         return a
     return '"%s"' % a
 
 
 _NAME = re.compile(r"^[A-Za-z_]\w*$")
+# Lua's own string methods. A string receiver has these and nothing else, so a
+# host method on one would stop the run.
+_STRING_METHODS = {"byte", "char", "find", "format", "gmatch", "gsub", "len",
+                   "lower", "match", "rep", "reverse", "sub", "upper", "split",
+                   "pack", "unpack", "packsize"}
 _RISKY = re.compile(r"(^|[^\w.])nil\s*[\[.(]|^\s*-?\d+\s*\(|nil\s*[-+*/%]|"
                     r"[-+*/%]\s*nil|\{\}\s*[-+*/%]|[-+*/%]\s*\{\}")
 
@@ -404,6 +421,12 @@ class Renderer:
             return "v%d" % vid
         v = self.L.values[vid]
         out = self._render(v, depth)
+        # Whatever path produced it, a bare type word is not a value: it is the
+        # recorder saying it could not show one. `function` is also a keyword,
+        # so a rendering that contains it does not parse. One guard here covers
+        # every route into this function.
+        if out in _TYPE_WORDS:
+            out = self._stub(v, depth) if self.runnable else "<a %s>" % out
         self._cache[vid] = out
         return out
 
@@ -439,7 +462,8 @@ class Renderer:
         if v.kind == "external":
             return self._stub(v, depth) if self.runnable else "<unknown value>"
         if v.runtime and _LIT.match(v.runtime):
-            if v.runtime not in ("table", "{}"):
+            if v.runtime not in ("table", "{}") and \
+                    v.runtime not in _TYPE_WORDS:
                 return v.runtime
         if self.runnable:
             return self._stub(v, depth)
@@ -529,6 +553,8 @@ class Renderer:
         else:
             recv = rec.get("recv") or "?"
         args = [self.value(a.id, depth + 1) for a in call.arg_values]
+        if self.runnable:
+            args = ["OP()" if a.strip().startswith("<") else a for a in args]
         # The instruction may leave more on the stack than the call took. The
         # environment recorded how many arguments there were, so anything past
         # that is not an argument and is dropped rather than printed.
@@ -536,7 +562,8 @@ class Renderer:
         if want and len(args) > want:
             args = args[:want]
         if not args and rec.get("args"):
-            args = [_as_written(a) for a in rec["args"]]
+            args = [_as_written(a, self.runnable)
+                    for a in rec["args"]]
         if rec.get("recv") is None:
             return "%s(%s)" % (name, ", ".join(args))
         # __call is not a method. It is the metamethod Lua runs when something
@@ -551,9 +578,31 @@ class Renderer:
         # recognised: any receiver whose recorded method is __call was called
         # directly, whatever it is.
         if name == "__call":
+            if self.runnable and (recv.strip() in ("nil", "")
+                                  or recv.strip().startswith("<")):
+                recv = "OP()"
             if not _NAME.match(recv.strip()) and not recv.strip().startswith("("):
                 recv = "(%s)" % recv
             return "%s(%s)" % (recv, ", ".join(args))
+        # A method cannot be taken from nothing. Where the receiver came out as
+        # nil, or as a description this analysis writes when it has no value,
+        # the runnable rendering has to put its stand-in there instead: a line
+        # reading `nil:set_Parent(nil)` does not even parse, and one bad line
+        # stops the whole file - which is how the second sample's replay was
+        # ending before it made a single call.
+        if self.runnable and (recv.strip() in ("nil", "")
+                              or recv.strip().startswith("<")):
+            recv = "OP()"
+        # A string has only the string library's methods. Where the value
+        # feeding a call came out as a name the program had looked up - which
+        # happens when the instruction between the name and the thing it names
+        # was not identified - calling a host method on it stops the run at that
+        # line. The readable rendering keeps the name, because the name is what
+        # was recovered; the runnable one puts the stand-in there, so the rest of
+        # the file still runs and can still be compared.
+        if self.runnable and recv.strip().startswith('"') \
+                and name not in _STRING_METHODS:
+            recv = "OP()"
         # a method call needs something a method can be taken from: a literal or
         # an expression has to be parenthesised, or the line will not load
         if not _NAME.match(recv.strip()) and not recv.strip().startswith("("):

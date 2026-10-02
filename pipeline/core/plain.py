@@ -114,9 +114,40 @@ def build(capture, L, R, calls, unmatched, models, verdicts, slots, env_names,
 
     section("Services it asked the game for (%d)" % len(services),
             _count(services))
-    section("Objects it created (%d)" % len(created), _count(created),
-            "A name here that looks random is anti-tamper noise, not a real\n"
-            "object the script needs.")
+    section("Objects it created (%d)" % len(created), _count(created))
+    # What became of each one, from the records themselves. The old wording
+    # here said a name that "looks random" is anti-tamper noise. That is a
+    # guess about a string, and a string is not evidence: a build can give a
+    # real object an unreadable name, and a decoy can be called Folder. What
+    # the records do say is whether anything ever touched the object again.
+    used = {}
+    for rec in list(capture.calls):
+        r = rec.get("recv") if isinstance(rec, dict) else None
+        if r:
+            used.setdefault(r, []).append(rec.get("method") or "")
+    if created:
+        lines = []
+        for cls in sorted(set(created)):
+            got = used.get(cls) or []
+            n = created.count(cls)
+            if got:
+                what = Counter(got)
+                lines.append("  %s x%d - then %s"
+                             % (cls, n, ", ".join("%s%s" % (k, "" if v == 1
+                                                            else " x%d" % v)
+                                                  for k, v in
+                                                  what.most_common(6))))
+            else:
+                lines.append("  %s x%d - nothing recorded ever touched it "
+                             "again: not parented, not read, not destroyed. "
+                             "The creation is an action the program took and "
+                             "stays; nothing in the program was observed "
+                             "depending on it" % (cls, n))
+        out.append("What became of each object")
+        out.append("-" * len("What became of each object"))
+        out.append("Taken from the records, not from how the name reads.")
+        out += lines
+        out.append("")
     if methods:
         section("Other calls it made (%d)" % len(methods), _count(methods))
     section("Fields it read or wrote (%d)" % len(fields), _count(fields),

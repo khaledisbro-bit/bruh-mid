@@ -133,8 +133,15 @@ def influence(L, seeds, amap):
     return live
 
 
-def classify(L, g, calls, slots, amap, env_ops=(), models=None):
-    """Verdict per program counter, with the evidence behind it."""
+def classify(L, g, calls, slots, amap, env_ops=(), models=None,
+             register_file=False):
+    """Verdict per program counter, with the evidence behind it.
+
+    `register_file` says whether this build was observed keeping the program's
+    values somewhere other than the stack. It decides what "it moved nothing on
+    the stack" is worth: in a stack machine that is the whole story, and in a
+    register machine it is not even half of it.
+    """
     seeds, why_seed = sinks(L, calls, g, slots, env_ops, models)
     live = influence(L, seeds, amap)
     call_rows = {c.step.row for c in calls}
@@ -182,11 +189,56 @@ def classify(L, g, calls, slots, amap, env_ops=(), models=None):
                                      "control did not fall through after it, so "
                                      "it decides where execution goes")
                 continue
+            # "It moved nothing on the stack" is only a proof of no effect
+            # if the stack is the only place it could have written. This build
+            # keeps the program's values in a register file and most of its
+            # handlers write there, which moves no stack pointer and leaves
+            # nothing pending - exactly what this case looks like from outside.
+            #
+            # So the handler has to have been read before this can be called
+            # dead. Where it was and it only computes on the stack, nothing can
+            # depend on an instruction that moved nothing. Where it was not
+            # read, this is an instruction whose effect was not observable, and
+            # that is an unknown, not a decoy. Proving it dead is what earns
+            # the word.
+            m0 = (models or {}).get(st.op)
+            style0 = getattr(m0, "handler_style", None) if m0 else None
+            if style0 is None and register_file:
+                out[st.key()] = Verdict(
+                    st.key(), UNKNOWN,
+                    "it executed, moved nothing on the stack and produced no "
+                    "value, and its handler was not read. This build was "
+                    "observed keeping the program's values outside the stack, "
+                    "in the interpreter's own registers, and a handler that "
+                    "writes one of those moves no stack pointer and leaves "
+                    "nothing pending - which is exactly what this looks like "
+                    "from outside. Nothing here proves it has no effect, so "
+                    "nothing is claimed")
+                continue
+            if style0 is None:
+                out[st.key()] = Verdict(
+                    st.key(), DECOY,
+                    "it executed, moved nothing on the stack, produced no value "
+                    "and made no recorded call. Its handler was not read, but "
+                    "nothing in this capture shows this build keeping the "
+                    "program's values anywhere but the stack, so the stack was "
+                    "the only place it could have written and nothing can "
+                    "depend on it")
+                continue
+            if style0 != "stack":
+                out[st.key()] = Verdict(
+                    st.key(), UNKNOWN,
+                    "it executed and moved nothing on the stack, but its "
+                    "handler computes through the interpreter's registers, so "
+                    "the stack is not the only place it could have written and "
+                    "moving nothing there proves nothing")
+                continue
             out[st.key()] = Verdict(
                 st.key(), DECOY,
                 "it executed, moved nothing on the stack, produced no value and "
-                "made no recorded call, so nothing about the program can depend "
-                "on it")
+                "made no recorded call, and its handler was read and only ever "
+                "computes on the stack - so there was nowhere else for it to "
+                "write and nothing about the program can depend on it")
             continue
         # An instruction whose own handler performs a call, a store or a jump had
         # an effect, and it ran. "What it did with them was not observable" was

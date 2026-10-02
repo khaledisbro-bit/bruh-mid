@@ -22,7 +22,7 @@ Every line carries its evidence class, and the provenance listing underneath
 gives, for each line, the instructions and the data-flow relationships that
 produced it.
 """
-from evidence import OBSERVED, INFERRED, UNKNOWN, DECOY, TAG
+from evidence import OBSERVED, STANDIN, INFERRED, UNKNOWN, DECOY, TAG
 
 import re
 import cfgx
@@ -63,6 +63,35 @@ def _constant_condition(cond):
     return not [n for n in names if n not in _WORDS]
 
 
+
+# Lua allows only two kinds of expression statement: a call, and nothing else.
+# A line that is a bare expression - the arithmetic of an instruction whose
+# result nothing used - is a syntax error, and one of them stops the whole file
+# from loading. Binding it to a name keeps the computation, keeps it in the
+# place it happened, and parses. A leading `(` is the other half of the same
+# problem: it reads as a continuation of the line before, so the semicolon
+# separates them.
+_KEYWORD = re.compile(r"^(local|return|if|elseif|else|end|for|while|do|repeat|"
+                      r"until|break|continue|function)\b")
+_ASSIGN = re.compile(r"""^[A-Za-z_][\w.:\[\]"'\s]*=[^=]""")
+_CALL = re.compile(r"""^\(?[A-Za-z_"'{(][\w.:\[\]"'{}\s,()]*\)\s*$""")
+_MCALL = re.compile(r"^\(.*\)\s*[:.][A-Za-z_]\w*\s*\(")
+_COUNT = [0]
+
+
+def _as_statement(text):
+    t = text.strip()
+    if not t or t.startswith("--"):
+        return text
+    if _KEYWORD.match(t) or _ASSIGN.match(t):
+        return text
+    if _CALL.match(t) or _MCALL.match(t):
+        # a call, which is a statement; only the leading paren needs separating
+        return (";" + text) if t.startswith("(") else text
+    _COUNT[0] += 1
+    return "local _unused%d = %s" % (_COUNT[0], t)
+
+
 class Emitter:
     PRELUDE = """-- Runnable rendering of the reconstruction.
 --
@@ -92,7 +121,13 @@ end
 
     def __init__(self, L, g, models, slots, amap, calls, decoys=None,
                  env_slots=None, env_names=None, runnable=False,
-                 unplaced=(), webs=None, counters=None):
+                 unplaced=(), webs=None, counters=None, standin_pcs=()):
+        # Instructions whose values came, through the graph, from something the
+        # stand-in answered. They ran and they were observed; what they were
+        # observed doing depended on this tool's answer for a host object, so
+        # they are marked apart from the rest instead of being presented as
+        # evidence about a real client.
+        self.standin_pcs = set(standin_pcs)
         self.webs = webs
         self.counters = counters or {}
         self.runnable = runnable
@@ -307,6 +342,12 @@ end
             any(lp["back"] == st.key() for lp in self.g.loops)
 
     def _line(self, text, ev, st, why):
+        if ev == OBSERVED and st.key() in self.standin_pcs:
+            return Line(text, STANDIN, st.key(),
+                        why + "; and the value it worked on came from this "
+                              "tool's answer for a host object, so what it did "
+                              "here is evidence under this environment and not "
+                              "yet about a real client")
         return Line(text, ev, st.key(), why)
 
     # -- structure -----------------------------------------------------------
@@ -557,7 +598,12 @@ end
                 if tail is None:
                     tail = body
                 continue
-            out.append("    " * ln.indent + ln.text)
+            # A statement beginning with `(` continues the line before it as
+            # far as the language is concerned: `f(x)` then `(g):h()` is one
+            # call of what f returned, and Luau refuses the file as ambiguous.
+            # A semicolon separates them. Without it the rendering does not
+            # load at all, which is what running it found.
+            out.append("    " * ln.indent + _as_statement(ln.text))
         if tail:
             out.append(tail)
         return "\n".join(out) + "\n"
@@ -571,6 +617,9 @@ end
                 "-- nothing is filled in from a template or a known program.",
                 "--",
                 "--   [O] observed   the VM performed this at runtime",
+                "--   [S] stand-in   it ran, but the value came from this "
+                "tool's answer",
+                "--               for a host object, not from a real client",
                 "--   [I] inferred   forced by data flow over observed facts",
                 "--   [U] unknown    present but not resolved on this evidence",
                 "--   [D] decoy      shown to have no effect on the program",
@@ -578,7 +627,16 @@ end
             ]
         for ln in self.lines:
             pad = "    " * ln.indent
-            out.append("%s%s%s" % (pad, ln.text,
+            text = ln.text
+            # A statement that starts with `(` reads as a continuation of the
+            # line before it: `f(x)` followed by `(g):h()` is one call of the
+            # result of f, and Luau refuses the file outright for being
+            # ambiguous. A leading semicolon is how Lua separates the two, and
+            # without it the whole rendering does not load - which is what the
+            # replay found the first time it was run.
+            if text.lstrip().startswith("("):
+                text = ";" + text
+            out.append("%s%s%s" % (pad, text,
                                    "  --[%s]" % TAG.get(ln.evidence, "?")))
         return "\n".join(out)
 

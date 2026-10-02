@@ -148,10 +148,26 @@ end
 -- A watched name has to work in every shape the program might use it in: called
 -- directly, indexed then called, or used as a receiver with a colon. A proxy
 -- that only answers one of those ends the run at the first of the others.
+--
+-- A host object is named by what made it, on both sides. The capture's own
+-- recorder writes `Folder:Destroy()` for a method on an instance built by
+-- Instance.new("Folder"), and a service's methods under the service's name. A
+-- proxy that named itself after the local variable holding it wrote
+-- `v28.Destroy()` instead, and the two logs could not be lined up even where
+-- they described the same call. So the proxy a constructor or a service lookup
+-- hands back is named after the class or the service, which is the same
+-- convention the capture used.
 local watch
 watch = function(ns)
     local function record(...)
         seen[#seen + 1] = ns .. "(" .. argstr(...) .. ")"
+        local tail = tostring(ns):match("([%%w_]+)$")
+        local first = (select("#", ...) > 0) and (select(1, ...)) or nil
+        if first ~= nil and type(first) == "string"
+                and (tail == "new" or tail == "GetService"
+                     or tail == "FindService" or tail == "service") then
+            return watch(first)
+        end
         return watch(ns)
     end
     return setmetatable({}, {
@@ -169,10 +185,36 @@ watch = function(ns)
     })
 end
 
+-- The language itself is not the host. A reconstruction needs setmetatable,
+-- type, pairs and the standard tables to run at all - the stand-in for an
+-- unproven instruction is built out of them - and answering those with a watch
+-- proxy does two wrong things at once: it breaks the stub, because what comes
+-- back is a proxy and not the table that was passed in, and it records the
+-- rendering's own scaffolding as though the program had called it. The first
+-- run of this harness came back with seventeen calls, every one of them
+-- `setmetatable(table)`, and the reconstruction dead on its first piece of
+-- arithmetic.
+--
+-- So the language passes through and is not recorded. What is compared is what
+-- the program asked of its HOST, which is what the original capture recorded
+-- too: services, constructions, methods on host objects.
+local PASS = {
+    setmetatable = setmetatable, getmetatable = getmetatable,
+    rawget = rawget, rawset = rawset, rawequal = rawequal, rawlen = rawlen,
+    type = type, typeof = typeof, tostring = tostring, tonumber = tonumber,
+    select = select, unpack = unpack, pairs = pairs, ipairs = ipairs,
+    next = next, pcall = pcall, xpcall = xpcall, error = error,
+    assert = assert, table = table, string = string, math = math,
+    bit32 = bit32, buffer = buffer, os = os, coroutine = coroutine,
+    utf8 = utf8, newproxy = newproxy,
+}
+
 local env = setmetatable({}, { __index = function(_, k)
     if k == "print" then
         return function(...) seen[#seen + 1] = "print(" .. argstr(...) .. ")" end
     end
+    local p = PASS[k]
+    if p ~= nil then return p end
     return watch(tostring(k))
 end })
 
@@ -385,15 +427,37 @@ def fidelity(records, calls):
         L.append("")
         L.append("  not accounted for (%d):" % len(missing))
         for r in missing[:20]:
-            L.append("    " + (r.get("raw") or ""))
+            # WHERE it happened, for each one, because "not accounted for"
+            # covers two different situations and only one of them is a gap in
+            # the analysis. A call recorded before the loader reached
+            # loadstring was made by the outer chunk: the interpreter did not
+            # exist yet, so no instruction of the interpreted program is behind
+            # it and none can be found. A call with a row happened inside the
+            # traced program and the instruction at that row is the one that
+            # made it; if it is still unplaced, that is this analysis's gap.
+            where = ""
+            if isinstance(r, dict):
+                if r.get("outer"):
+                    where = ("   <- the outer chunk made this before the "
+                             "interpreter was created; no instruction of the "
+                             "program is behind it")
+                elif r.get("row") is not None:
+                    where = ("   <- happened at capture row %s; the "
+                             "instruction there is what made it"
+                             % r.get("row"))
+                else:
+                    where = ("   <- no row was recorded, so nothing anchors it "
+                             "to an instruction")
+            L.append("    " + (r.get("raw") if isinstance(r, dict)
+                               else str(r)) + where)
         if len(missing) > 20:
             L.append("    ... %d more" % (len(missing) - 20))
         L.append("")
         L.append("  An action the program took that the reconstruction does not")
-        L.append("  make is missing evidence, not a disagreement: the")
-        L.append("  instruction behind it is outside what this capture traced,")
-        L.append("  or nothing in the capture carried a value to anchor it on.")
-        L.append("  Tracing the chunk it happened in is what closes it.")
+        L.append("  make is missing evidence, not a disagreement. Each line")
+        L.append("  above says which kind it is: made by the loader before the")
+        L.append("  program existed, or made by the program at a row this")
+        L.append("  analysis has not tied to an instruction yet.")
     # the accounted SHARE as well, because "11 of 20 matched" and "the longest
     # unbroken run" both leave out the plainest question a reader has: how much
     # of what the program did does this reconstruction account for.

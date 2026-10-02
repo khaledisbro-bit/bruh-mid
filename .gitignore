@@ -1,15 +1,16 @@
-out/
-out2/
-obfuscated.lua
-pipeline/out_obf3/
-pipeline/out_obf2/
-pipeline/out_25ms/
-__pycache__/
-*.pyc
-app/node_modules/
-app/dist/
 
 # packaged build, rebuilt on demand from pipeline/ and app/
+*.pyc
 VmSmart.zip
+__pycache__/
+app/dist/
+app/node_modules/
+obfuscated.lua
+out/
+out2/
 out89/
 out91/
+out_replay/
+pipeline/out_25ms/
+pipeline/out_obf2/
+pipeline/out_obf3/

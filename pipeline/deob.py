@@ -131,6 +131,34 @@ def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
     return path
 
 
+def _replay(localvm, luau, out_dir):
+    """Run the generated behaviour harness under the stand-in and return what it
+    printed, or None.
+
+    It runs in its own folder: the builder writes one combined chunk under a
+    fixed name, and the capture's own chunk is in the output folder already.
+    Overwriting that would destroy the one file that reproduces the capture.
+    """
+    import os as _os
+    script = _os.path.join(out_dir, "behaviour_check.lua")
+    if not _os.path.isfile(script):
+        return None
+    where = _os.path.join(out_dir, "replay")
+    _os.makedirs(where, exist_ok=True)
+    try:
+        rec = localvm.run(luau, script, cwd=where)
+    except Exception:
+        return None
+    out = (rec.get("stdout") or "")
+    with open(_os.path.join(where, "replay_stdout.txt"), "w",
+              encoding="utf-8") as f:
+        f.write("command: %s\n" % rec.get("command"))
+        f.write(out)
+        if rec.get("stderr"):
+            f.write("\n---- stderr ----\n" + rec["stderr"])
+    return out if "BEGIN_BEHAVIOUR" in out else None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("input")
@@ -179,6 +207,11 @@ def main():
                     help="take the capture here, with no executor and no "
                          "Roblox: run the harness under a luau binary against "
                          "the stand-in environment. Optionally name the binary.")
+    ap.add_argument("--luau", metavar="PATH",
+                    help="where a Luau binary is, for running the "
+                         "reconstruction and comparing its calls with the "
+                         "program's. Use it when the capture is already in "
+                         "hand (--trace) and only that check is wanted")
     ap.add_argument("--safe", action="store_true",
                     help="also write a harness that does not trace opcodes, for "
                          "builds whose integrity check reacts to the trace")
@@ -487,12 +520,56 @@ def main():
         analyses.append(an)
         print("[4/4] ANALYSE : %s" % cap.name)
         print(an.summary())
+        # THE ACCEPTANCE TEST, run here rather than asked for. Coverage says
+        # how much of the run was explained; it does not say the reconstruction
+        # would DO the same things. The only check that says that is executing
+        # it and comparing the calls it makes, in order, with the ones the
+        # program made. The script to do it is written beside the report, and
+        # where a Luau binary is to hand there is no reason to leave it to the
+        # reader: it is run, and its result goes in the report.
+        if not behaviour:
+            import localvm as _lv
+            _hint = getattr(a, "luau", None) or (
+                None if getattr(a, "offline", None) is True
+                else getattr(a, "offline", None))
+            _luau, _why = _lv.find(_hint)
+            if _luau:
+                behaviour = _replay(_lv, _luau, a.out)
+                if behaviour:
+                    print("              the reconstruction was run here and "
+                          "its calls compared with the program's")
+                else:
+                    print("              the reconstruction could not be run "
+                          "here; behaviour_check.lua is beside the report")
         if behaviour:
             from core import verify as vmod
             text, matched, missing, extra = vmod.compare_behaviour(
                 cap.calls, behaviour)
             path = os.path.join(a.out, "BEHAVIOUR_COMPARISON.txt")
             open(path, "w").write(text + "\n")
+            # The verification report is written before this check can run - it
+            # needs the harness that report's own folder carries - so it says
+            # the behaviour check was not run. It has been now, and the result
+            # belongs in the same file: it is the only check that compares what
+            # the reconstruction DOES with what the program did, and a reader
+            # who stops at the verification report must not be told it is
+            # missing when it is not.
+            vpath = os.path.join(a.out, "VERIFICATION.txt")
+            if os.path.isfile(vpath):
+                with open(vpath, encoding="utf-8") as f:
+                    vtext = f.read()
+                with open(vpath, "w", encoding="utf-8") as f:
+                    f.write(vtext.rstrip("\n")
+                            + "\n\nbehaviour check - RUN. The reconstruction "
+                              "was executed against\nthe same stand-in "
+                              "environment and the calls it made were "
+                              "compared\nwith the program's, in order. This is "
+                              "the one check that tests\nwhat the "
+                              "reconstruction DOES rather than how much of the "
+                              "run was\nexplained, and the two numbers are not "
+                              "the same thing.\n\n"
+                            + "\n".join("  " + ln for ln in
+                                        text.splitlines()[3:]) + "\n")
             print("")
             print(text)
             print("")

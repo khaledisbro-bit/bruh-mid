@@ -1924,7 +1924,16 @@ env.loadstring = function(src, ...)
     if f then pcall(setfenv, f, env) end
     return f
 end
-env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c); return RI.new(c,...) end end return RI[k] end })
+-- Every recorded action carries the row the run was on, the same way the
+-- stand-in's own records do. Without it the report has an action the program
+-- took and no way to say which instruction took it, and fourteen of this
+-- build's first actions - the services it asked for, the objects it made -
+-- could be listed but never placed.
+local function atRow()
+  if type(VMSMART_ROW) == "number" then return "  @row=" .. tostring(VMSMART_ROW) end
+  return ""
+end
+env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c)..atRow(); return RI.new(c,...) end end return RI[k] end })
 
 -- Server-only services throw on a client executor and stop the trace. Proxy
 -- `game` so GetService returns LOGGING PROXIES: every method call and its
@@ -1980,6 +1989,7 @@ do
             if serverStubs[name] then
               behavior[#behavior + 1] = "GetService: " .. tostring(name)
                                         .. "  -> logging proxy (server-only)"
+                                        .. atRow()
               return logProxy(name)
             end
             -- everything else stays REAL (client services like HttpService work
@@ -1993,6 +2003,7 @@ do
             behavior[#behavior + 1] = "GetService: " .. tostring(name) .. "  -> "
                 .. ((ok and svc ~= nil) and "real service"
                     or "logging proxy (this engine has no such service)")
+                .. atRow()
             return (ok and svc ~= nil) and svc or logProxy(name)
           end
         end

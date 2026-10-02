@@ -1140,9 +1140,19 @@ def _calls(lines):
     """Structured call records from the proxied-environment log, by syntax only.
     Returns (calls, notes). A call is dict(recv, method, args, raw)."""
     calls, notes = [], []
+    # The log is in order, and the line where the loader hands its payload to
+    # loadstring is in it. Anything recorded before that happened in the outer
+    # chunk: the interpreter did not exist yet, so no instruction of the
+    # interpreted program can be behind it. That is a placement, not an excuse,
+    # and it is the honest answer for a call no row can be found for.
+    inner_exists = False
     for ln in lines:
         s = ln.strip()
         if not s:
+            continue
+        if s.startswith("loadstring #"):
+            inner_exists = True
+            notes.append(s)
             continue
         # `  @row=N` says which instruction row the run was on when the
         # environment answered this call. It is stripped before the syntax match
@@ -1156,12 +1166,23 @@ def _calls(lines):
         m = _METHOD.match(s)
         if m:
             calls.append({"recv": m.group(1), "method": m.group(2),
-                          "args": _args(m.group(3)), "raw": s, "row": at})
+                          "args": _args(m.group(3)), "raw": s, "row": at,
+                          "outer": not inner_exists})
             continue
         m = _NAMED.match(s)
         if m and " " not in m.group(1):
+            # `GetService: Players  -> real service` is one argument and one
+            # note: the name the program passed, and what this tool answered
+            # with. The note is the recorder's, not the program's, and leaving
+            # it in the argument made the behaviour comparison measure the
+            # logging convention - the program's GetService("Players") and the
+            # reconstruction's GetService("Players") read as different calls.
+            body, answer = m.group(2), None
+            if "  -> " in body:
+                body, answer = body.split("  -> ", 1)
             calls.append({"recv": None, "method": m.group(1),
-                          "args": _args(m.group(2)), "raw": s, "row": at})
+                          "args": _args(body), "raw": s, "row": at,
+                          "answer": answer, "outer": not inner_exists})
             continue
         notes.append(s)
     return calls, notes

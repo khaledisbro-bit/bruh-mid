@@ -16,6 +16,11 @@ fact as a Provenance record, and the fact's confidence is one of four classes:
             an unexecuted branch, an opcode whose effect never stabilised, a
             value whose producer is outside the trace. Kept, never deleted:
             one execution path is not the program.
+  STANDIN   observed, but against a stand-in environment rather than a real
+            host. The instruction ran and the value was on the stack; what fed
+            it was this tool's answer for a host object it had to stand in for.
+            So it is evidence about the program under THIS environment, and not
+            yet evidence about what the program does on a real client.
   DECOY     anti-analysis material, and we can say which signals made it so.
 
 A fact may hold several candidate readings. It stays multi-candidate until the
@@ -25,13 +30,15 @@ from dataclasses import dataclass, field
 
 
 OBSERVED = "OBSERVED"
+STANDIN = "STANDIN"
 INFERRED = "INFERRED"
 UNKNOWN = "UNKNOWN"
 DECOY = "DECOY"
 
-_RANK = {OBSERVED: 3, INFERRED: 2, UNKNOWN: 1, DECOY: 0}
+_RANK = {OBSERVED: 4, STANDIN: 3, INFERRED: 2, UNKNOWN: 1, DECOY: 0}
 
-TAG = {OBSERVED: "O", INFERRED: "I", UNKNOWN: "U", DECOY: "D"}
+TAG = {OBSERVED: "O", STANDIN: "S", INFERRED: "I", UNKNOWN: "U",
+       DECOY: "D"}
 
 
 def strongest(*classes):

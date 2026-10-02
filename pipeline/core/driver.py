@@ -27,6 +27,8 @@ if HERE not in sys.path:
 import cfgx            # noqa: E402
 import dataflow        # noqa: E402
 import decoy           # noqa: E402
+import branches        # noqa: E402
+import disagree        # noqa: E402
 import emit            # noqa: E402
 import evidence        # noqa: E402
 import exposure        # noqa: E402
@@ -74,10 +76,17 @@ class Analysis:
         self.models = opsem.measure(self.program)
         self.lift = stackint.lift(self.program, self.program, self.models)
         self.named = opsem.identify(self.models, self.lift.instances())
+        # Naming happens after the replay, so the operands that the newly named
+        # operations prove could not have been nil are cleared now rather than
+        # staying in the graph as a nil the program never had.
+        self.impossible_nils = stackint.clear_impossible_nils(
+            self.lift, self.models)
         # The interpreter states what its opcodes do; a short run cannot.
         self.vm, self.from_handlers, self.handler_why = (None, 0, {})
         self.relifted = False
         self.arity_corrected = []
+        self.withdrawn_ops = {}
+        self.unclaimed_values = 0
         if vm_source:
             # What the stack reading assumed before the interpreter's own
             # handlers were read. Kept so the reading can be redone if the
@@ -142,7 +151,22 @@ class Analysis:
                                           self.models)
                 self.named = opsem.identify(self.models,
                                             self.lift.instances())
+                self.impossible_nils += stackint.clear_impossible_nils(
+                    self.lift, self.models)
                 self.relifted = True
+                # Now that both the arities and the values are read with the
+                # handlers' own numbers, every named operation is recomputed
+                # and compared with what the machine reported. A reading that
+                # contradicts the machine is withdrawn here, before anything is
+                # rendered from it: an unresolved instruction in the output is
+                # better than an expression that does not hold.
+                self.differences = disagree.find(self.lift, self.models,
+                                                 capture.rows)
+                self.withdrawn_ops = disagree.withdraw(self.models,
+                                                       self.differences)
+                self.unclaimed_values = disagree.unproven_values(
+                    self.lift, self.differences)
+                self.from_handlers -= len(self.withdrawn_ops)
                 # The metatable question was asked against the old reading.
                 # It is asked again below, against this one.
                 if hasattr(self, "meta"):
@@ -231,9 +255,14 @@ class Analysis:
         # explanation of the other and the report prints a dictionary
         self.env_ops, self.env_op_why = exprs.identify_env(
             self.lift, self.models, self.calls, self.slots)
+        # Whether this build keeps the program's values outside the stack. It
+        # decides whether "it moved nothing on the stack" can be a proof of no
+        # effect, and it is read off what the analysis established rather than
+        # assumed either way.
+        has_registers = bool(self.slots is not None and self.slots.active())
         self.verdicts = decoy.classify(
             self.lift, self.cfg, self.calls, self.slots, self.alias,
-            self.env_ops, self.models)
+            self.env_ops, self.models, has_registers)
         # A branch whose condition is one constant on every path that reaches
         # it can only ever go one way. That is recorded against the branch and
         # against the target that was never entered. It does not delete
@@ -241,12 +270,29 @@ class Analysis:
         # an obfuscator's, and this pass cannot tell which it is looking at.
         self.opaque = decoy.apply_predicates(self.verdicts, self.predicates,
                                              self.cfg)
+        # Why each untaken side was not taken, in four groups. The first of
+        # them - a condition the environment decided - is the one the stand-in
+        # makes, not the program, and it has to be separated from the rest or
+        # the report claims a property of the program that belongs to this
+        # machine.
+        self.branch_why = branches.classify(
+            self.cfg, self.lift, self.predicates,
+            call_rows=[r.get("row") for r in (capture.calls or [])],
+            fiction_row=getattr(capture, "fiction_at_row", None),
+            models=self.models)
+        # Which instructions worked on a value the stand-in answered for. The
+        # same walk the branch classifier uses: back through the value graph to
+        # the row where the environment answered, so the mark is carried by
+        # evidence and not by a guess about which names look like host objects.
+        self.standin_pcs = branches.standin_instructions(
+            self.lift, [r.get("row") for r in (capture.calls or [])],
+            self.calls)
         self.emitter = emit.Emitter(
             self.lift, self.cfg, self.models, self.slots, self.alias,
             self.calls, {pc: v.why for pc, v in self.verdicts.items()
                          if v.verdict == evidence.DECOY},
             self.env_rows, self.env_names, False, self.unmatched, self.webs,
-            self.counters)
+            self.counters, self.standin_pcs)
         self.emitter.run()
         self.source = self.emitter.text()
         # a second rendering, this one made to load and run, for the behaviour
@@ -266,6 +312,13 @@ class Analysis:
         # measure the rename.
         self.source, self.names = naming.rename(self.source)
         self.runnable, _ = naming.rename(self.runnable)
+        # Where the reading and the machine differ, traced back through the
+        # graph. This runs before the verification summary so the summary can
+        # say how many of the differences are about the program and how many
+        # are about what the capture could compare.
+        if not hasattr(self, "differences"):
+            self.differences = disagree.find(self.lift, self.models,
+                                             capture.rows)
         self.verification, self.consistent = verify.report(
             self.lift, self.models, self.verdicts, capture.calls, self.calls,
             (getattr(self, "type_withdrawn", 0),
@@ -414,7 +467,16 @@ class Analysis:
              "differently from the stack; the values and the code were read "
              "again with the handlers' numbers"
              % len(self.arity_corrected),
-             ] if self.relifted else []) + [
+             ] if self.relifted else []) + ([
+             "readings withdrawn         %d opcode(s) whose named operation "
+             "recomputed to something the machine did not report; the opcode "
+             "keeps its number and nothing is written for it"
+             % len(self.withdrawn_ops),
+             ] if self.withdrawn_ops else []) + ([
+             "values left unclaimed      %d value(s) where the machine "
+             "reported something this operation cannot produce, so it was "
+             "another instruction's value" % self.unclaimed_values,
+             ] if self.unclaimed_values else []) + [
              "values recovered           %d (%d consumed from outside the "
              "capture)" % (len(self.lift.values), self.lift.externals),
              "stack desynchronisations   %d" % len(self.lift.divergences),
@@ -559,6 +621,9 @@ class Analysis:
                          decoy.readable(self.verdicts, self.lift,
                                         self.emitter.R, self.calls, self.models),
             "VERIFICATION.txt": self.verification,
+            "BRANCHES.txt": branches.report(self.branch_why, self.cfg),
+            "DISAGREEMENTS.txt": disagree.report(
+                self.lift, self.models, self.differences, self.capture.rows),
             "behaviour_check.lua": verify.behaviour_harness(self.runnable),
             "RECONSTRUCTED_runnable.lua": self.runnable,
         }

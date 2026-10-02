@@ -119,6 +119,13 @@ class Lift:
         return c
 
 
+# Operations whose result cannot be nil in Lua. Kept here so the replay can
+# tell an empty pending slot from an answer of nil.
+_NEVER_NIL = {"ADD", "SUB", "MUL", "DIV", "MOD", "POW", "IDIV", "UNM",
+              "CONCAT", "LEN", "NEWTABLE",
+              "EQ", "NE", "LT", "LE", "GT", "GE", "NOT"}
+
+
 def _is_value(v):
     return v is not None and v != "nil"
 
@@ -228,10 +235,33 @@ def lift(rows, program_rows, models):
         for n in range(pushes):
             kind = CONST if (pops == 0 and _is_value(product)) else COMPUTED
             shown = nxt_value.get(rid) if r.get("burst_after") else product
+            # An empty pending slot is not a value of nil. The slot is where
+            # the interpreter leaves what it computed, and this build writes
+            # most results into its register file instead, so the slot reads
+            # empty for them. Where the operation could not have returned nil
+            # in the first place - arithmetic on two numbers is a number or an
+            # error, a comparison is a boolean, a constructor is a table - an
+            # empty slot means nothing was reported here, not that the answer
+            # was nil. Storing it as a value makes the analysis compare its
+            # own arithmetic against nil and call the difference a
+            # disagreement, and makes the output render `nil + 6`.
+            unreported = None
+            if n == pushes - 1 and not _is_value(shown) and m is not None \
+                    and m.operation in _NEVER_NIL:
+                unreported = ("its handler performs %s, which in Lua returns a "
+                              "value or raises - never nil - so the empty "
+                              "pending slot after it is the absence of a "
+                              "reading and not a reading of nil"
+                              % m.operation)
+                shown = None
             v = L.new_value(kind, op=r["opcode"], pc=r["pc"], row=rid,
                             inputs=[p.id for p in popped],
                             runtime=(shown if n == pushes - 1 else None),
                             operands=r["operands"])
+            if unreported:
+                v.fact.note("stackint.not_reported", unreported,
+                            pcs=(r["pc"],), opcodes=(r["opcode"],),
+                            steps=(rid,))
             v.fact.evidence = ev
             v.fact.note("stackint.lift", why, pcs=(r["pc"],),
                         opcodes=(r["opcode"],), steps=(rid,),
@@ -260,7 +290,64 @@ def lift(rows, program_rows, models):
     for st in L.steps:
         for v in st.popped:
             v.uses.append(st.row)
+    clear_impossible_nils(L, models)
     return L
+
+
+# Which of an instruction's inputs cannot have been nil, given what its handler
+# does. In Lua, arithmetic on nil raises, an ordered comparison with nil raises,
+# concatenating nil raises, taking the length of nil raises, calling nil raises
+# and indexing nil raises. So an instruction that performed one of these and did
+# not raise had something there. Equality is left out on purpose: `x == nil` is
+# legal and is how Lua asks whether a value is missing.
+_NIL_IMPOSSIBLE_ALL = {"ADD", "SUB", "MUL", "DIV", "MOD", "POW", "IDIV", "UNM",
+                       "CONCAT", "LEN", "LT", "LE", "GT", "GE"}
+_NIL_IMPOSSIBLE_FIRST = {"CALL", "INDEX", "SETINDEX"}
+
+
+def clear_impossible_nils(L, models):
+    """An operand reported as nil, where nil is impossible, was not read.
+
+    The pending slot the capture reads is the one place a value shows up, and
+    this build leaves most of its results in its register file instead, so the
+    slot reads empty for them. Taking that as a value of nil puts nil into the
+    program: the output then says `nil + 6` and `nil("J9qxebuP0I")`, neither of
+    which is what ran - both would have stopped the script where it plainly
+    carried on.
+
+    So for each instruction whose handler was read, the operands that could not
+    have been nil are found, and where the capture reported nil for one of them
+    the reading is dropped rather than believed. What is lost is a value that
+    was never there; what is kept is the instruction, which did run."""
+    n = 0
+    for st in L.steps:
+        m = models.get(st.op)
+        if m is None or not m.operation:
+            continue
+        if m.operation in _NIL_IMPOSSIBLE_ALL:
+            where = list(st.popped)
+        elif m.operation in _NIL_IMPOSSIBLE_FIRST and st.popped:
+            where = [st.popped[0]]
+        else:
+            continue
+        for v in where:
+            if v.runtime is not None and not _is_value(v.runtime):
+                v.runtime = None
+                v.fact.note(
+                    "stackint.not_nil",
+                    "this value was consumed by an instruction whose handler "
+                    "performs %s, and %s nil in Lua raises. The instruction ran "
+                    "and the script carried on, so there was a value here; the "
+                    "nil the pending slot reported is the slot being empty, "
+                    "not the value" % (m.operation,
+                                       "calling" if m.operation == "CALL"
+                                       else ("indexing"
+                                             if m.operation in ("INDEX",
+                                                                "SETINDEX")
+                                             else "that operation on")),
+                    pcs=(v.pc,), opcodes=(st.op,), steps=(st.row,))
+                n += 1
+    return n
 
 
 def _arity(row, product, after, model, ceiling=None):
