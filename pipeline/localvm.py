@@ -216,12 +216,14 @@ def where_to_put_one():
     return "\n".join(lines)
 
 
-def build(harness, out_dir):
+def build(harness, out_dir, sidecar_text=None):
     """The stand-in and the harness as one chunk, written where it will run.
 
     They are concatenated rather than chained with dofile/require, because which
     of those a given Luau build exposes is itself a host question and this is one
-    less of them."""
+    less of them. The sidecar, when there is one, goes FIRST: it is data the
+    stand-in reads, so it has to exist before the stand-in does.
+    """
     with open(STANDIN, encoding="utf-8") as f:
         pre = f.read()
     with open(harness, encoding="utf-8", errors="replace") as f:
@@ -230,14 +232,17 @@ def build(harness, out_dir):
     pre = pre.replace("\nreturn VMSMART_STANDIN\n", "\n")
     path = os.path.join(out_dir, "offline_harness.luau")
     with open(path, "w", encoding="utf-8") as f:
+        if sidecar_text:
+            f.write("-- ---- host decompression, computed before the run ----\n")
+            f.write(sidecar_text)
         f.write(pre + "\n-- ---- harness ----\n" + body)
     return path
 
 
-def run(luau, harness, timeout=DEFAULT_TIMEOUT, cwd=None):
+def run(luau, harness, timeout=DEFAULT_TIMEOUT, cwd=None, sidecar_text=None):
     """Run one harness offline and bring back everything it said."""
     cwd = cwd or os.path.dirname(os.path.abspath(harness)) or "."
-    script = build(harness, cwd)
+    script = build(harness, cwd, sidecar_text)
     rec = {"harness": harness, "script": script, "timeout": timeout,
            "command": "%s %s" % (luau, script), "timed_out": False,
            "stdout": "", "stderr": "", "capture": None, "returncode": None}

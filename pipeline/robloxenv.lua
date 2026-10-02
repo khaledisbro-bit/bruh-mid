@@ -111,12 +111,93 @@ end
 -- payload wanted is recorded rather than answered). That split is deliberate -
 -- answering would be inventing Roblox, and refusing the service would hide the
 -- call the capture exists to record.
+-- Enum. A root the payload indexes to name a constant, and the names it uses
+-- are not knowable in advance, so this answers any of them with a token that
+-- carries its own path and nothing else. A token is not a value this file
+-- claims to know: it compares equal to itself, prints what it was asked for,
+-- and every read of it lands in the record. What matters is that indexing Enum
+-- stops being an error, because `Enum.Something.Other` as a nil index ends the
+-- run before the payload has done anything worth watching.
+if Enum == nil then
+    local seen = {}
+    local function token(path)
+        if seen[path] == nil then
+            seen[path] = setmetatable({ Name = path:match("[^.]+$"),
+                                        Path = path, Value = 0 },
+                { __tostring = function() return "Enum." .. path end,
+                  __index = function() return nil end })
+        end
+        return seen[path]
+    end
+    local function level(path)
+        return setmetatable({}, {
+            __index = function(_, k)
+                k = tostring(k)
+                if path == "" then return level(k) end
+                return token(path .. "." .. k)
+            end,
+            __tostring = function() return "Enum." .. path end,
+        })
+    end
+    Enum = level("")
+    VMSMART_ENUM_TOKENS = seen
+end
+
+-- The decompression the host does and this binary cannot. sidecar.py computes
+-- it before the run from the script's own blobs, with a real Zstd decoder, and
+-- leaves the answers in VMSMART_DECOMPRESS keyed by the bytes. A key that is
+-- not there is a miss, and a miss raises with the key it looked for rather than
+-- returning something that was never asked for.
+VMSMART_DECOMPRESS_ASKED = {}
+
+local function sideKey(s)
+    local n = #s
+    local function hex(part)
+        local out = {}
+        for i = 1, #part do
+            out[i] = string.format("%02x", string.byte(part, i))
+        end
+        return table.concat(out)
+    end
+    local head = string.sub(s, 1, 8)
+    local tail = n >= 8 and string.sub(s, n - 7, n) or s
+    return n .. ":" .. hex(head) .. ":" .. hex(tail)
+end
+
+local function hostDecompress(bytes)
+    local key = sideKey(bytes)
+    VMSMART_DECOMPRESS_ASKED[#VMSMART_DECOMPRESS_ASKED + 1] = key
+    local table_ = VMSMART_DECOMPRESS
+    local got = table_ and table_[key]
+    if got then return got end
+    error("this stand-in has no decompressed bytes for " .. key
+          .. " (prepared: " .. tostring(table_ and #key or "none") .. ")", 0)
+end
+
 if game == nil then
     local services = {}
+    -- What a stand-in service can answer. Everything not here stays absent, as
+    -- the rest of this file does; this is the one capability the offline run
+    -- cannot do without, because a payload that never gets its bytes back never
+    -- reaches its own interpreter.
+    local function capability(name, key)
+        if key == "DecompressBuffer" or key == "DecompressString" then
+            return function(_, data, _algorithm)
+                local isBuffer = buffer ~= nil and type(data) ~= "string"
+                local bytes = isBuffer and buffer.tostring(data) or data
+                local plain = hostDecompress(bytes)
+                if key == "DecompressBuffer" and buffer ~= nil then
+                    return buffer.fromstring(plain)
+                end
+                return plain
+            end
+        end
+        return nil
+    end
     local function service(name)
         if services[name] == nil then
             services[name] = setmetatable({ Name = name, ClassName = name },
-                { __index = function() return nil end,
+                { __index = function(_, k) return capability(name, k) end,
                   __tostring = function() return name end })
         end
         return services[name]

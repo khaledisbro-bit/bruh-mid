@@ -347,7 +347,14 @@ def main():
         if not luau:
             print("              " + localvm.where_to_put_one())
             return 1
-        rec = localvm.run(luau, harness)
+        # The one host service a Luau binary cannot perform. It is computed
+        # from the script's own blobs by a real Zstd decoder, before the run,
+        # and handed to the stand-in as data. See core/sidecar.py.
+        from core import sidecar as sidecarmod
+        ents, snote = sidecarmod.decompressions(src)
+        print("              " + sidecarmod.describe(ents, snote))
+        side = sidecarmod.emit_lua(ents, snote) if ents else None
+        rec = localvm.run(luau, harness, sidecar_text=side)
         print("              " + localvm.describe(rec))
         # The whole run is kept, not only the block inside it. When a capture
         # comes back empty the reason is almost always in the lines before the
@@ -448,6 +455,10 @@ def main():
             note = tracefmt.stopped_under_the_trace(cap)
             if note:
                 print("              %s" % note)
+            for extra in (tracefmt.the_program_ended_itself(cap),
+                          tracefmt.what_the_interpreter_had(cap)):
+                if extra:
+                    print("              " + extra.replace("\n", "\n              "))
             continue
         stopped = (getattr(cap, "run_error", None)
                    or getattr(cap, "rows_from_failed_run", False))
@@ -460,6 +471,10 @@ def main():
                   "a reconstruction")
             print("              of the script; it is a reconstruction of its "
                   "first few steps.")
+            for extra in (tracefmt.the_program_ended_itself(cap),
+                          tracefmt.what_the_interpreter_had(cap)):
+                if extra:
+                    print("              " + extra.replace("\n", "\n              "))
         an = driver.Analysis(cap, vm_src)
         an.write(a.out)
         analyses.append(an)

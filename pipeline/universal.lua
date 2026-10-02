@@ -543,23 +543,158 @@ end
 -- Forward declaration: patchDispatch calls this when the loop top does not
 -- match, and without the declaration the call would resolve to a nil global.
 local patchDispatchFallback
+-- patchBlocks is defined with the other watches, below the hook it
+-- records into, and patchDispatch calls it. Without this declaration that
+-- call resolves to a nil global and the whole dispatch patch fails inside
+-- a pcall, which reads downstream as a build whose loop never matched.
+local patchBlocks
+local patchChecks
+local patchKeyTables
+
+-- The row fetch, in the four shapes a dispatch loop writes it.
+--
+-- Two real builds of this class write it two different ways. One declares the
+-- row:   local ROW = ARR[PC]
+-- the other assigns an outer local and guards the array:
+--        ROW = ARR and ARR[PC]
+-- A matcher with `local` and no guard in it finds the first and reports the
+-- second as a build with no interpreter in it. The spacing is the minifier's
+-- too, so every token is separated by %s*, and the trailing semicolon the
+-- sample happened to have is not required.
+local ROWFETCH_SHAPES = {
+    "local%s+([%a_][%w_]*)%s*=%s*([%a_][%w_]*)%s*%[%s*([%a_][%w_]*)%s*%]",
+    "local%s+([%a_][%w_]*)%s*=%s*([%a_][%w_]*)%s+and%s+%2%s*%[%s*([%a_][%w_]*)%s*%]",
+    "([%a_][%w_]*)%s*=%s*([%a_][%w_]*)%s+and%s+%2%s*%[%s*([%a_][%w_]*)%s*%]",
+    "([%a_][%w_]*)%s*=%s*([%a_][%w_]*)%s*%[%s*([%a_][%w_]*)%s*%]",
+}
+local ROWFETCH = ROWFETCH_SHAPES[1]   -- the miss report counts this one
+
+-- How far after the row fetch the loop top is. A dispatch loop reads its
+-- opcode out of the row in the next statement or two; nothing useful is further
+-- away. The first version allowed 4000 characters, which on a one-line chunk
+-- reaches into unrelated handlers, and a handler variable compared against
+-- small numbers was picked as the opcode.
+local TOP_WINDOW = 500
+
+-- The loop advances its program counter. This is what separates a dispatch loop
+-- from the accessors that have the same shape - a constant reader also fetches
+-- a row out of an array by a key, and it does not then step that key.
+local function advances(window, pc)
+    return window:find("%f[%w_]" .. pc .. "%f[^%w_]%s*=%s*" .. pc .. "%s*[%+%-]")
+        or window:find("%f[%w_]" .. pc .. "%f[^%w_]%s*[%+%-]=")
+end
+
+-- Reads of the row at the loop top, guarded (`ROW and ROW[i] or n`) and bare
+-- (`ROW[i]`). All of them, because a row carries more than its opcode: both
+-- builds seen here also read a second field beside it, and taking the first
+-- read found logged that field as the opcode.
+local function rowReads(window, row)
+    local list = {}
+    local shapes = {
+        { "guarded", "local%s+([%a_][%w_]*)%s*=%s*" .. row .. "%s+and%s+" .. row
+                     .. "%s*%[%s*(%-?%d+)%s*%]%s*or%s*%-?%w+" },
+        { "bare", "local%s+([%a_][%w_]*)%s*=%s*" .. row
+                  .. "%s*%[%s*(%-?%d+)%s*%]" },
+    }
+    for _, sh in ipairs(shapes) do
+        local from = 1
+        while true do
+            local a, b, v, idx = window:find(sh[2], from)
+            if not a then break end
+            list[#list+1] = { v = v, idx = tonumber(idx), at = b, shape = sh[1] }
+            from = b + 1
+        end
+    end
+    return list
+end
+
+-- Which of those reads is the opcode. The answer is in what the loop DOES with
+-- it: the opcode is the value the dispatch compares against numbers, and the
+-- other fields are carried. That is a behavioural test, so it survives renaming,
+-- and the index comes out of it rather than going into it. Picking by the
+-- fallback value instead - `or 0` is the opcode, `or -1` is not - held on one
+-- build and is a property of that build's codegen, not of this class.
+local function numberComparisons(window, v)
+    local c = 0
+    for _ in window:gmatch("%f[%w_]" .. v .. "%f[^%w_]%s*==%s*%-?%d+") do
+        c = c + 1
+    end
+    for _ in window:gmatch("%-?%d+%s*==%s*%f[%w_]" .. v .. "%f[^%w_]") do
+        c = c + 1
+    end
+    return c
+end
 
 local function findLoopTop(s)
-    local from = 1
-    while true do
-        local a, b, row, arr, pc = s:find("local (%w+)=(%w+)%[(%w+)%];", from)
-        if not a then return nil end
-        -- the opcode assignment has to follow, close enough to be the same loop
-        local window = s:sub(b, math.min(#s, b + 4000))
-        local oa, ob, opv, idx = window:find("local (%w+)=" .. row
-                                            .. " and " .. row
-                                            .. "%[(%-?%d+)%]%s*or%s*0")
-        if oa then
-            return { row = row, arr = arr, pc = pc, op = opv,
-                     opindex = tonumber(idx), at = b + ob - 1 }
+    for shapeIndex, pat in ipairs(ROWFETCH_SHAPES) do
+        local from = 1
+        while true do
+            local a, b, row, arr, pc = s:find(pat, from)
+            if not a then break end
+            local near = s:sub(b, math.min(#s, b + TOP_WINDOW))
+            -- the comparisons that name the opcode are in the chain under the
+            -- loop, which is long, so they are counted over a wide window while
+            -- the reads themselves have to be at the top
+            local wide = s:sub(b, math.min(#s, b + 40000))
+            if advances(near, pc) then
+                local best
+                for _, c in ipairs(rowReads(near, row)) do
+                    c.score = numberComparisons(wide, c.v)
+                    if c.score > 0 and (not best or c.score > best.score
+                                        or (c.score == best.score
+                                            and c.at < best.at)) then
+                        best = c
+                    end
+                end
+                if best then
+                    return { row = row, arr = arr, pc = pc, op = best.v,
+                             opindex = best.idx, at = b + best.at - 1,
+                             shape = best.shape, compared = best.score,
+                             fetch = shapeIndex }
+                end
+            end
+            from = b + 1
         end
-        from = b + 1
     end
+    return nil
+end
+
+-- What the chunk looked like when nothing matched.
+--
+-- "dispatch_patched: false" was the whole report, and it says nothing a person
+-- or a later version of this file can act on. These are counts of the shapes
+-- the matchers look for, measured on the chunk in front of it, plus the text
+-- around the closest thing to a loop top. No build is named and nothing is
+-- assumed: if the counts are all zero this is not a dispatch interpreter, and
+-- if they are not, the numbers say which shape moved.
+local function patchMissReport(s)
+    local out = {}
+    local function n(pat)
+        local c = 0
+        for _ in s:gmatch(pat) do c = c + 1 end
+        return c
+    end
+    out[#out+1] = "chunk_bytes: " .. #s
+    out[#out+1] = "chunk_lines: " .. (select(2, s:gsub("\n", "")) + 1)
+    out[#out+1] = "row_fetches: " .. n(ROWFETCH)
+    out[#out+1] = "guarded_opcode_reads: "
+        .. n("local%s+[%a_][%w_]*%s*=%s*[%a_][%w_]*%s+and%s+[%a_][%w_]*%s*%[%s*%-?%d+%s*%]%s*or%s*%-?%d+")
+    out[#out+1] = "numeric_elseif_arms: " .. n("elseif%s+[%a_][%w_]*%s*==%s*%-?%d+%s*then")
+    out[#out+1] = "numeric_if_arms: " .. n("if%s+[%a_][%w_]*%s*==%s*%-?%d+%s*then")
+    out[#out+1] = "while_true_loops: " .. n("while%s+true%s+do")
+    out[#out+1] = "repeat_loops: " .. n("repeat[%s\n]")
+    out[#out+1] = "goto_statements: " .. n("goto%s+[%a_][%w_]*")
+    out[#out+1] = "masked_opcode_exprs: " .. n("%%%s*0[xX]%x+")
+    -- the closest thing to a loop top, so the shape that moved can be read
+    local a, b, row, arr, pc = s:find(ROWFETCH)
+    if a then
+        out[#out+1] = "first_row_fetch: " .. row .. "=" .. arr .. "[" .. pc .. "]"
+        local after = s:sub(b + 1, math.min(#s, b + 220))
+        out[#out+1] = "what_follows_it: " .. (after:gsub("[\r\n]", " "))
+    else
+        out[#out+1] = "first_row_fetch: none - no `local X = Y[Z]` anywhere"
+    end
+    return out
 end
 
 local function patchDispatch(s)
@@ -578,9 +713,39 @@ local function patchDispatch(s)
         local before = select(2, s:sub(1, top.at):gsub("\n", ""))
         PATCH_AT, PATCH_ADDED = before + 1, select(2, inject:gsub("\n", ""))
         ORIGINAL_LINES = select(2, s:gsub("\n", "")) + 1
-        return s:sub(1, top.at) .. inject .. s:sub(top.at + 1),
-               ("loop top: " .. top.op .. "=" .. top.row .. "[" .. top.opindex
-                .. "] pc=" .. top.pc .. " sp=" .. sp2)
+        local out = s:sub(1, top.at) .. inject .. s:sub(top.at + 1)
+        -- The array the loop reads is rebuilt as the program runs on this
+        -- build, so where it came from is part of reading a nil row. Watched at
+        -- the top patch level only, like the other watches, so a round that
+        -- objects to being watched still gets a plain traced round after it.
+        local blockNote = ""
+        -- PATCH_LEVEL is nil only when these functions are extracted on their
+        -- own by a test, and there the watch is what is being tested.
+        if PATCH_LEVEL == nil or PATCH_LEVEL >= 3 then
+            local keyed, howManyKeys = patchKeyTables(out, top.at, top.pc)
+            if howManyKeys > 0 then
+                out = keyed
+                blockNote = " pc_tables=" .. howManyKeys
+            end
+            local checked, howManyChecks = patchChecks(out, top.pc)
+            if howManyChecks > 0 then
+                out = checked
+                blockNote = blockNote .. " checks_watched=" .. howManyChecks
+            end
+            local patched, howMany, skipped = patchBlocks(out, top.at,
+                                                           top.arr, top.pc)
+            if howMany > 0 then
+                out = patched
+                blockNote = blockNote .. " blocks_watched=" .. howMany
+                    .. (skipped > 0 and (" blocks_skipped=" .. skipped) or "")
+            end
+        end
+        return out,
+               ("loop top (" .. top.shape .. "): " .. top.op .. "="
+                .. top.row .. "[" .. top.opindex .. "] pc=" .. top.pc
+                .. " sp=" .. sp2 .. " compared_against_numbers="
+                .. tostring(top.compared) .. " fetch_shape=" .. top.fetch
+                .. blockNote)
     end
     return patchDispatchFallback(s)
 end
@@ -777,6 +942,335 @@ HID.__JMP = function(fn, x, hit, target, from)
     jumps[#jumps+1] = tostring(fn) .. ":" .. tostring(from) .. ":" .. tostring(x)
                       .. ":" .. (hit and "table" or "COMPUTED") .. ":"
                       .. tostring(target)
+end
+
+-- Which counters this build has anything at all for.
+--
+-- The loop looks several tables up by its own counter: the block's metadata, the
+-- end of the region it belongs to, the cache. A counter that none of them has an
+-- entry for is not a counter the program was ever meant to reach, and that tells
+-- a wrong branch target apart from a target the environment failed to prepare -
+-- which a trace on its own cannot do.
+--
+-- Read raw, with `next`, so no __index runs. These tables decrypt on access in
+-- this family, and a dump that decrypted them would advance the key and change
+-- the run. Keys only; no value is read.
+local keyTabs, keyTabN = {}, 0
+HID.__KEYS = function(name, t)
+    if keyTabs[name] ~= nil or type(t) ~= "table" then return end
+    -- Under a pcall, and the failure is recorded rather than raised. A watch
+    -- that ends the run it is there to observe has already been the cause of
+    -- one wrong finding in this project; iterating a table the VM owns is
+    -- exactly the kind of read that can be refused.
+    local ok, err = pcall(function()
+    local nums, other, total = {}, 0, 0
+    for k in next, t do
+        total = total + 1
+        if type(k) == "number" then
+            if #nums < 400 then nums[#nums+1] = k end
+        else
+            other = other + 1
+        end
+        if total > 4000 then break end
+    end
+    table.sort(nums)
+    local shown = {}
+    for i = 1, math.min(#nums, 60) do shown[i] = tostring(nums[i]) end
+    keyTabN = keyTabN + 1
+    keyTabs[name] = name .. ": " .. total .. " key(s), " .. other
+        .. " not numbers, first " .. #shown .. " in order: "
+        .. table.concat(shown, ",")
+    end)
+    if not ok then
+        keyTabN = keyTabN + 1
+        keyTabs[name] = name .. ": could not be read - " .. tostring(err)
+    end
+end
+
+function patchKeyTables(s, at, pc)
+    -- every table the loop indexes by the counter, named once each
+    local from = math.max(1, at - 3000)
+    local region = s:sub(from, at)
+    local seen, calls = {}, {}
+    local i = 1
+    while true do
+        local a, b, name = region:find("([%a_][%w_]*)%s*%[%s*" .. pc
+                                       .. "%s*%]", i)
+        if not a then break end
+        if not seen[name] and name ~= pc then
+            seen[name] = true
+            calls[#calls+1] = "if __KEYS then __KEYS("
+                              .. string.format("%q", name) .. "," .. name
+                              .. ")end"
+        end
+        i = b + 1
+    end
+    if #calls == 0 then return s, 0 end
+    -- No trailing semicolon, and the pieces are joined with one. Luau rejects an
+    -- empty statement, so the `;;` this produced where the next injection began
+    -- with its own semicolon was a syntax error - and the harness then silently
+    -- fell back to the unpatched chunk, which reads downstream as a traced round
+    -- that logged nothing. Lua 5.2 and later accept `;;`, so a test running
+    -- under a plain Lua never saw it.
+    return s:sub(1, at) .. ";" .. table.concat(calls, ";") .. s:sub(at + 1), #calls
+end
+
+-- The interpreter's own verdict on its integrity.
+--
+-- This build carries the same three-statement block in more than a thousand
+-- places: a counter is bumped, a running value is stirred, and once the counter
+-- passes a threshold the code reads an entry of a table that is not there. That
+-- read is the crash this capture has been reporting as "attempt to index nil
+-- with number" - the program ending itself on purpose, not a trace going wrong.
+--
+-- Matched by shape, and the shape is the point: a `do` block whose first
+-- statement increments a counter and whose second stirs another variable from
+-- itself by a multiplier. No name is written here, and nothing about which
+-- check it belongs to is assumed. Numbering them in file order is enough to say
+-- WHICH one fired first, which is the question a capture could not answer.
+local viols, violN = {}, 0
+HID.__VIOL = function(site, count, pc)
+    violN = violN + 1
+    if violN > 400 then return end
+    viols[#viols+1] = "site" .. tostring(site) .. ":count=" .. tostring(count)
+                      .. ":pc=" .. tostring(pc)
+end
+
+function patchChecks(s, pc)
+    local n = 0
+    local pcArg = pc and ("," .. pc) or ",nil"
+    local out = s:gsub("do ([%a_][%w_]*)=%1%+1;([%a_][%w_]*)=%(%2%*(%d+)",
+        function(counter, stir, mult)
+            n = n + 1
+            return "do if __VIOL then __VIOL(" .. n .. "," .. counter
+                .. pcArg .. ")end;" .. counter .. "=" .. counter .. "+1;"
+                .. stir .. "=(" .. stir .. "*" .. mult
+        end)
+    if n == 0 then return s, 0 end
+    return out, n
+end
+
+-- Where the array the loop reads comes from.
+--
+-- This build does not keep one array per program. The loop reads its row out of
+-- a table it rebuilds as it goes - a block - and the row for a given counter
+-- exists only while the block holding it is the one in hand. So "the
+-- interpreter read nil at pc N" has two different causes that look identical in
+-- a trace: the branch went somewhere there is no code, or the block for that
+-- counter was never built. Nothing in a dispatch trace separates them.
+--
+-- This logs what the block came back as, per counter, at every assignment to
+-- the array variable in the loop's own text. It reads nothing through the VM's
+-- tables: rawlen and rawget do not run a metatable, and these tables decrypt on
+-- __index, so a probe that indexed them would change the run it is watching.
+local blocks, blockN = {}, 0
+HID.__BLOCK = function(pc, site, b)
+    blockN = blockN + 1
+    if blockN > 2000 then return b end
+    local kind = type(b)
+    local len, has = -1, "no"
+    if kind == "table" then
+        len = rawlen and rawlen(b) or -1
+        has = (rawget(b, pc) ~= nil) and "yes" or "no"
+    end
+    -- the site number says WHICH assignment in the loop produced this. A loop
+    -- that has more than one - a cache hit, a build, and the branches that give
+    -- up and store nothing - is answering a different question at each of them,
+    -- and "the array was nil" does not say which question was answered.
+    blocks[#blocks+1] = tostring(pc) .. ":site" .. tostring(site) .. ":" .. kind
+                        .. ":" .. tostring(len) .. ":row_at_pc=" .. has
+    return b
+end
+
+-- When the loop gives up on its array, what it was testing.
+--
+-- A site that assigns nil is the interpreter deciding not to produce a block.
+-- The decision has a condition behind it, and without the values that condition
+-- was reading, "the array was nil at this counter" is the end of the trail. So
+-- the enclosing condition's text is recorded with the values of the plain
+-- locals in it.
+--
+-- Plain locals only. An index or a call inside the condition is NOT read again:
+-- these VMs decrypt on __index and advance a key as they go, so re-reading one
+-- would change the run. A table is reported as a table and never printed, for
+-- the same reason - __tostring would be the VM's own code.
+local conds, condN = {}, 0
+HID.__COND = function(pc, site, text, ...)
+    condN = condN + 1
+    if condN > 400 then return end
+    local parts = {}
+    local n = select("#", ...)
+    for i = 1, n, 2 do
+        local name = select(i, ...)
+        local v = select(i + 1, ...)
+        local t = type(v)
+        local shown
+        if t == "number" or t == "boolean" or t == "nil" then
+            shown = tostring(v)
+        elseif t == "string" then
+            shown = "string[" .. #v .. "]"
+        else
+            shown = t
+        end
+        parts[#parts+1] = tostring(name) .. "=" .. shown
+    end
+    conds[#conds+1] = tostring(pc) .. ":site" .. tostring(site) .. ":"
+                      .. tostring(text) .. " -> " .. table.concat(parts, " ")
+end
+
+-- The condition a site sits under, and the plain locals in it.
+local LUA_WORDS = {
+    ["if"]=true, ["then"]=true, ["elseif"]=true, ["else"]=true, ["end"]=true,
+    ["and"]=true, ["or"]=true, ["not"]=true, ["nil"]=true, ["true"]=true,
+    ["false"]=true, ["local"]=true, ["function"]=true, ["return"]=true,
+    ["while"]=true, ["do"]=true, ["for"]=true, ["in"]=true, ["repeat"]=true,
+    ["until"]=true, ["break"]=true, ["continue"]=true,
+}
+local function conditionAt(region, pos)
+    local best
+    local from = math.max(1, pos - 400)
+    local i = from
+    while true do
+        local a, b = region:find("%f[%w_]els?e?if%f[^%w_]", i)
+        if not a or a >= pos then break end
+        best = b
+        i = b + 1
+    end
+    if not best then return nil, nil end
+    local t = region:find("%f[%w_]then%f[^%w_]", best)
+    if not t or t >= pos then return nil, nil end
+    local text = region:sub(best + 1, t - 1)
+    -- Walked by position. A gmatch with a trailing `(.?)` capture eats the
+    -- first character of the next token, so `not Yw` yielded `w` - and the
+    -- injected code then read a global that does not exist and reported its nil
+    -- as the local's value. A watch may not invent the thing it reports.
+    local names, seen = {}, {}
+    local i = 1
+    while true do
+        local a, b, name = text:find("([%a_][%w_]*)", i)
+        if not a then break end
+        local before = a > 1 and text:sub(a - 1, a - 1) or ""
+        local after = text:sub(b + 1, b + 1)
+        if not LUA_WORDS[name] and not seen[name]
+           and before ~= "." and before ~= ":"
+           and after ~= "[" and after ~= "(" and after ~= "."
+           and after ~= ":" then
+            seen[name] = true
+            names[#names+1] = name
+            if #names >= 6 then break end
+        end
+        i = b + 1
+    end
+    return text, names
+end
+
+-- The assignments are found by walking back from the loop top, so every name
+-- belongs to that loop, and the call's end is found by matching its parentheses
+-- rather than by looking for the next one - an argument list that contains a
+-- call of its own would otherwise be cut in half.
+-- Where the right-hand side of one of those assignments ends.
+--
+-- Only the three forms this loop writes are handled, each with an end that can
+-- be found exactly: a literal, a call (by matching its parentheses, so an
+-- argument that is itself a call is not cut in half), and an index (by matching
+-- its brackets). Anything else is left alone and counted, because a wrapper
+-- around a guess would produce source that does not parse, and a watch may not
+-- be the thing that ends the run it is there to observe.
+local function blockRhsEnd(region, i)
+    while region:sub(i, i):match("%s") do i = i + 1 end
+    local lit = region:match("^nil%f[^%w_]", i) or region:match("^false%f[^%w_]", i)
+                or region:match("^true%f[^%w_]", i)
+    if lit then return i + #lit - 1 end
+    local name = region:match("^[%a_][%w_]*", i)
+    if not name then return nil end
+    local j = i + #name
+    while region:sub(j, j):match("%s") do j = j + 1 end
+    local open = region:sub(j, j)
+    local close = (open == "(" and ")") or (open == "[" and "]") or nil
+    if not close then
+        -- a plain name, which ends where the name ends
+        return i + #name - 1
+    end
+    local depth = 1
+    j = j + 1
+    while j <= #region and depth > 0 do
+        local c = region:sub(j, j)
+        if c == open then depth = depth + 1
+        elseif c == close then depth = depth - 1 end
+        j = j + 1
+    end
+    if depth ~= 0 then return nil end
+    -- an index may be followed by another index or a call: YY[2](x)[3]
+    local k = j
+    while true do
+        while region:sub(k, k):match("%s") do k = k + 1 end
+        local nxt = region:sub(k, k)
+        local nclose = (nxt == "(" and ")") or (nxt == "[" and "]") or nil
+        if not nclose then break end
+        local d2 = 1
+        k = k + 1
+        while k <= #region and d2 > 0 do
+            local c = region:sub(k, k)
+            if c == nxt then d2 = d2 + 1
+            elseif c == nclose then d2 = d2 - 1 end
+            k = k + 1
+        end
+        if d2 ~= 0 then return nil end
+        j = k
+    end
+    return j - 1
+end
+
+function patchBlocks(s, at, arr, pc)
+    local from = math.max(1, at - 3000)
+    local region = s:sub(from, at)
+    local pieces, i, n, skipped = {}, 1, 0, 0
+    while true do
+        -- the pattern ends ON the `=`, so eq is its position. Letting it end
+        -- after optional spaces put eq on a space or on the `=` depending on
+        -- the spacing, and the comparison test below then read the wrong
+        -- character and skipped every assignment in the loop.
+        local a, eq = region:find("%f[%w_]" .. arr .. "%f[^%w_]%s*=", i)
+        if not a then break end
+        -- `==`, `~=`, `<=`, `>=` are comparisons, not assignments
+        if region:sub(eq + 1, eq + 1) == "="
+           or region:sub(eq - 1, eq - 1):match("[=~<>]") then
+            i = eq + 2
+        else
+            local rhsEnd = blockRhsEnd(region, eq + 1)
+            if rhsEnd then
+                n = n + 1
+                pieces[#pieces+1] = region:sub(i, eq)
+                local rhs = region:sub(eq + 1, rhsEnd)
+                -- a site that produces nothing is a decision, so record what
+                -- the decision was reading
+                local extra = ""
+                if rhs:match("^%s*nil%s*$") or rhs:match("^%s*false%s*$") then
+                    local text, names = conditionAt(region, a)
+                    if text then
+                        local args = {}
+                        for _, nm in ipairs(names) do
+                            args[#args+1] = string.format("%q", nm) .. "," .. nm
+                        end
+                        extra = ";if __COND then __COND(" .. pc .. "," .. n
+                            .. "," .. string.format("%q", text)
+                            .. (#args > 0 and ("," .. table.concat(args, ",")) or "")
+                            .. ")end"
+                    end
+                end
+                pieces[#pieces+1] = "(function(__b)if __BLOCK then __BLOCK("
+                    .. pc .. "," .. n .. ",__b)end" .. extra
+                    .. ";return __b end)(" .. rhs .. ")"
+                i = rhsEnd + 1
+            else
+                skipped = skipped + 1
+                i = eq + 1
+            end
+        end
+    end
+    if n == 0 then return s, 0, skipped end
+    pieces[#pieces+1] = region:sub(i)
+    return s:sub(1, from - 1) .. table.concat(pieces) .. s:sub(at + 1), n, skipped
 end
 
 local function patchJumps(s)
@@ -1211,6 +1705,9 @@ for i = 1, #probe do say(probe[i]) end
 -- reads the same as "run_ok: false".
 say("---RUN---")
 local attempts = {}
+-- Set only after a round proves the loadstring path found no interpreter. See
+-- the retry below for why it is not on from the start.
+local OUTER_TRY, outerDone = false, false
 local function runPayload()
     dispatchDone = false
     resolverDone = false
@@ -1224,7 +1721,33 @@ local function runPayload()
     local rec = { level = PATCH_LEVEL, mode = "unpatched",
                   ok = false, rtype = "nil", loaded = false, err = nil,
                   rows0 = #ops, const0 = constSeen }
-    local f = realLoad(SOURCE)
+    -- The interpreter is not always a chunk the payload hands to loadstring.
+    -- A build that keeps its dispatch loop in the file itself never calls
+    -- loadstring at all, so the hook that patches what loadstring is given
+    -- never sees an interpreter, and the round reports no trace and no
+    -- instructions. The same patch works on the top-level chunk; it just has to
+    -- be applied to it.
+    local source = SOURCE
+    outerDone = false
+    if OUTER_TRY and PATCH_LEVEL >= 2 then
+        local okD, patchedD, dn = pcall(patchDispatch, SOURCE)
+        if okD and patchedD then
+            -- a patch that does not compile is not a patch. Prove it loads
+            -- before the run depends on it, or a text edit becomes a load
+            -- failure reported as the script's own.
+            if realLoad(patchedD) then
+                source, outerDone, dispatchDone = patchedD, true, true
+                behavior[#behavior+1] = "  [patched the top-level chunk itself ("
+                    .. tostring(dn) .. ")]"
+            else
+                behavior[#behavior+1] = "  [the top-level patch did not compile; "
+                    .. "the chunk was left alone]"
+            end
+        else
+            behavior[#behavior+1] = "  [no dispatch loop in the top-level chunk]"
+        end
+    end
+    local f = realLoad(source)
     rec.loaded = (f ~= nil)
     if not f then
         rec.err = "loadstring failed"
@@ -1259,6 +1782,7 @@ local function runPayload()
     -- as far as the one before.
     rec.const_added = constSeen - rec.const0
     rec.applied_dispatch = dispatchDone
+    rec.outer = outerDone
     rec.applied_resolver = resolverDone
     rec.applied_protos = protosDone
     rec.applied_slices = slicesDone
@@ -1277,6 +1801,32 @@ end
 
 local last = runPayload()
 local first = last
+-- One retry, on evidence rather than on a guess about the build. The first
+-- round has already said whether anything reached the loadstring hook; if
+-- nothing did and no instruction was logged, the interpreter is either absent
+-- or it is the file itself, and only the second of those is actionable here. A
+-- build that does use loadstring never reaches this, so its behaviour is the
+-- behaviour it had.
+if PATCH_LEVEL >= 2 and first.loaded and not first.applied_dispatch
+   and first.rows_added == 0 then
+    -- Ask the patcher first, run second. A chunk with no dispatch loop in it
+    -- gains nothing from a second run, and running the payload twice to find
+    -- that out doubles everything the first run logged.
+    local okD, patchedD = pcall(patchDispatch, SOURCE)
+    if okD and patchedD then
+        OUTER_TRY = true
+        behavior[#behavior+1] = "  [no interpreter was reached through "
+            .. "loadstring, and the top-level chunk has a dispatch loop; "
+            .. "running it again with that patched]"
+        local retry = runPayload()
+        if retry.rows_added > 0 then
+            last, first = retry, retry
+        end
+    else
+        behavior[#behavior+1] = "  [no interpreter through loadstring, and no "
+            .. "dispatch loop in the top-level chunk either]"
+    end
+end
 while not last.ok do
     -- Which edit is there to remove? Only one that actually went in: dropping a
     -- level that changed nothing would repeat the same run and read as evidence.
@@ -1346,12 +1896,16 @@ say("harness_engine: " .. tostring(HARNESS_ENGINE))
 say("hooks_hidden: " .. tostring(HIDE_HOOKS))
 say("harness_id: " .. hid)
 say("dispatch_patched: " .. tostring(first.applied_dispatch))
+say("outer_chunk_patched: " .. tostring(first.outer or false))
 say("resolver_patched: " .. tostring(first.applied_resolver))
 say("protos_hooked: " .. tostring(first.applied_protos))
 say("slices_hooked: " .. tostring(first.applied_slices))
 say("protos_seen: " .. protoN)
 say("slice_requests: " .. sliceN)
 say("jump_decodes: " .. jumpN)
+say("block_builds: " .. blockN)
+say("block_conditions: " .. condN)
+say("integrity_checks_fired: " .. violN)
 say("attempts: " .. #attempts)
 for i = 1, #attempts do
     local a = attempts[i]
@@ -1414,6 +1968,30 @@ end
 say("counts: prints="..#prints.." loads="..#loads.." behavior="..#behavior)
 say("traced_chunk: "..TRACE_CHUNK.."  patchable_interpreters: "..first.patchable)
 say("mode: universal")
+-- What the chunk looked like when no dispatch loop was found in it. Without
+-- this the capture said only "dispatch_patched: false", which names the outcome
+-- and none of the evidence.
+if keyTabN > 0 then
+    say("---PCTABLES---")
+    for _, line in pairs(keyTabs) do say(line) end
+end
+if #viols > 0 then
+    say("---CHECKS---")
+    for i = 1, math.min(#viols, 200) do say(viols[i]) end
+end
+if #conds > 0 then
+    say("---CONDS---")
+    for i = 1, math.min(#conds, 200) do say(conds[i]) end
+end
+if #blocks > 0 then
+    say("---BLOCKS---")
+    for i = 1, math.min(#blocks, 400) do say(blocks[i]) end
+end
+if not first.applied_dispatch then
+    say("---PATCHMISS---")
+    local miss = patchMissReport(SOURCE)
+    for i = 1, #miss do say(miss[i]) end
+end
 say("---PRINTS---"); for i=1,math.min(#prints,80) do say("PRINT: "..prints[i]) end
 say("---BEHAVIOR---"); for i=1,math.min(#behavior,120) do say(behavior[i]) end
 -- real constants dumped from the inner VM resolver (the deep recovery)

@@ -265,6 +265,14 @@ class Analysis:
         note = tracefmt.stopped_under_the_trace(cap)
         if note:
             L += ["  " + note, ""]
+        # Whether the interpreter stopped the run on purpose, and what it was
+        # holding when it did. Both come from the harness's own watches, so this
+        # says a cause where the report used to say a symptom.
+        for fn in (tracefmt.the_program_ended_itself,
+                   tracefmt.what_the_interpreter_had):
+            text = fn(cap)
+            if text:
+                L += ["  " + x for x in text.split("\n")] + [""]
         # Where the run happened, before anything is read from it.
         for ln in tracefmt.taken_against_a_standin(cap):
             L += ["  " + ln, ""]

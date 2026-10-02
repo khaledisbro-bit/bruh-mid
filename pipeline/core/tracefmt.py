@@ -60,6 +60,10 @@ class Capture:
         self.protos_seen = _int(self.headers.get("protos_seen"))
         self.slices = _slices(self.sections.get("SLICES", []))
         self.jumps = _jumps(self.sections.get("JUMPS", []))
+        self.checks = _checks(self.sections.get("CHECKS", []))
+        self.conds = _conds(self.sections.get("CONDS", []))
+        self.block_rows = _blockrows(self.sections.get("BLOCKS", []))
+        self.pctables = _pctables(self.sections.get("PCTABLES", []))
         self.recheck = _recheck(self.body)
         self.env_missing = [l.strip() for l in
                             self.sections.get("ENVMISSING", []) if l.strip()]
@@ -300,6 +304,68 @@ def _row_notes(body):
     return out
 
 
+def _checks(lines):
+    """The integrity checks that fired, in the order they fired.
+
+    `site<N>:count=<c>:pc=<p>` - the site number is the check's position in the
+    interpreter's own text, so the FIRST line is the first check this build
+    failed, which is the only one whose cause is still visible.
+    """
+    out = []
+    for ln in lines:
+        m = re.match(r"site(\d+):count=(-?\d+):pc=(\S+)\s*$", ln.strip())
+        if m:
+            out.append({"site": int(m.group(1)), "count": int(m.group(2)),
+                        "pc": m.group(3)})
+    return out
+
+
+def _conds(lines):
+    """`<pc>:site<N>:<condition text> -> name=value name=value`."""
+    out = []
+    for ln in lines:
+        m = re.match(r"(\S+):site(\d+):(.*?) -> (.*)$", ln.strip())
+        if m:
+            out.append({"pc": m.group(1), "site": int(m.group(2)),
+                        "text": m.group(3).strip(), "values": m.group(4).strip()})
+    return out
+
+
+def _blockrows(lines):
+    """`<pc>:site<N>:<type>:<len>:row_at_pc=<yes|no>`."""
+    out = []
+    for ln in lines:
+        m = re.match(r"(\S+):site(\d+):(\w+):(-?\d+):row_at_pc=(yes|no)\s*$",
+                     ln.strip())
+        if m:
+            out.append({"pc": m.group(1), "site": int(m.group(2)),
+                        "kind": m.group(3), "len": int(m.group(4)),
+                        "has_row": m.group(5) == "yes"})
+    return out
+
+
+def _pctables(lines):
+    """`<name>: <n> key(s), <k> not numbers, first <m> in order: a,b,c`."""
+    out = []
+    for ln in lines:
+        # `in order:` with nothing after it is the empty-table case, and the
+        # strip has already taken the trailing space off, so the space after the
+        # colon cannot be required.
+        m = re.match(r"(\w+): (\d+) key\(s\), (\d+) not numbers, "
+                     r"first (\d+) in order:\s*(.*)$", ln.strip())
+        if m:
+            keys = [int(x) for x in m.group(5).split(",") if x.strip().lstrip("-").isdigit()]
+            out.append({"name": m.group(1), "total": int(m.group(2)),
+                        "not_numbers": int(m.group(3)), "keys": keys})
+        else:
+            m2 = re.match(r"(\w+): could not be read - (.*)$", ln.strip())
+            if m2:
+                out.append({"name": m2.group(1), "total": -1,
+                            "not_numbers": 0, "keys": [],
+                            "error": m2.group(2)})
+    return out
+
+
 def _jumps(lines):
     """Every branch target this run resolved, and how.
 
@@ -382,6 +448,99 @@ def _run_error(headers, body):
     if ok and not err:
         return None
     return err or "the run did not finish"
+
+
+def the_program_ended_itself(capture):
+    """Whether the interpreter stopped the run on purpose, and on what.
+
+    This family carries one three-statement block in more than a thousand
+    places: bump a counter, stir a value, and once the counter passes a
+    threshold read an entry of a table that is not there. That read is the
+    error every capture of this build has carried, and reporting it as "the
+    interpreter read something that was not an instruction" put the blame on
+    the trace. The harness now numbers those sites and records which one fired
+    first, so the sentence can name the cause instead of the symptom.
+    """
+    checks = getattr(capture, "checks", None) or []
+    if not checks:
+        return None
+    first = checks[0]
+    lines = ["FINDING - this build ended the run itself. Its interpreter carries "
+             "a check that, once it has failed often enough, reads an entry of a "
+             "table that does not exist - which is the error this capture "
+             "reports."]
+    lines.append("  The first check to fail was site %d, at counter %s, with the "
+                 "failure count at %d. %d check(s) fired in all."
+                 % (first["site"], first["pc"], first["count"], len(checks)))
+    sites = []
+    for c in checks:
+        if c["site"] not in sites:
+            sites.append(c["site"])
+    if len(sites) > 1:
+        lines.append("  Sites involved, in order: %s."
+                     % ", ".join(str(x) for x in sites[:8]))
+    # the decision that came before it, if the harness recorded one
+    conds = getattr(capture, "conds", None) or []
+    if conds:
+        c = conds[0]
+        lines.append("  Before that, at counter %s, the interpreter refused to "
+                     "produce the instruction table it reads from. The condition "
+                     "it tested was `%s`, and the values it read were: %s."
+                     % (c["pc"], c["text"], c["values"]))
+    rows = getattr(capture, "block_rows", None) or []
+    nil_rows = [r for r in rows if r["kind"] != "table"]
+    if nil_rows:
+        lines.append("  So the instruction table was %s at counter %s, and every "
+                     "counter after that read no instruction. The branch that "
+                     "got there is not what failed; the refusal is."
+                     % (nil_rows[0]["kind"], nil_rows[0]["pc"]))
+    lines.append("  What this means for the capture: the rows above are the "
+                 "instructions that ran BEFORE the refusal. They are real. "
+                 "Nothing after it is the program.")
+    return "\n".join(lines)
+
+
+def what_the_interpreter_had(capture):
+    """The tables the loop looks up by its counter, and what was in them.
+
+    An empty one is the finding. These builds keep the program in one table and
+    its verification data in others, and a run that ends early with a full
+    program table and an empty verification table says where to look next -
+    which no instruction trace can.
+    """
+    tabs = getattr(capture, "pctables", None) or []
+    if not tabs:
+        return None
+    lines = ["WHAT THE INTERPRETER HAD TO WORK WITH",
+             "  Read once, at the loop's first turn, so these are the tables as "
+             "the run started. One that fills as the program goes - a cache - is "
+             "empty here for that reason and not for any other."]
+    biggest = None
+    for t in sorted(tabs, key=lambda x: -x["total"]):
+        if t.get("error"):
+            lines.append("  %s: could not be read - %s" % (t["name"], t["error"]))
+            continue
+        if t["total"] == 0:
+            lines.append("  %s: EMPTY. The loop looks this up by its counter and "
+                         "there is nothing in it." % t["name"])
+            continue
+        span = ""
+        if t["keys"]:
+            span = " first key %d" % t["keys"][0]
+        lines.append("  %s: %d entries%s" % (t["name"], t["total"], span))
+        if biggest is None or t["total"] > biggest[1]:
+            biggest = (t["name"], t["total"])
+    if biggest:
+        lines.append("  The largest is %s with %d entries, which is the size of "
+                     "the program this interpreter was given."
+                     % (biggest[0], biggest[1]))
+    empties = [t["name"] for t in tabs if t["total"] == 0]
+    if empties:
+        lines.append("  %s came back empty while the program table did not. A "
+                     "loop that needs an entry there gets nil for every counter, "
+                     "and this build treats that as a reason to stop."
+                     % ", ".join(empties))
+    return "\n".join(lines)
 
 
 def stopped_under_the_trace(capture):
@@ -1011,6 +1170,54 @@ def _selftest():
     def check(what, got, want):
         if got != want:
             bad.append("%s: %r, expected %r" % (what, got, want))
+
+    # The four sections the watches write, and the two reports that read them.
+    # Each case is the shape the real harness produced on a real build.
+    cap = Capture(
+        "BEGIN_UNOBF_RESULT\n---RUN---\ndispatch_patched: true\nloaded: true\n"
+        "run_ok: false  return_type: nil\nerror: attempt to index nil with number\n"
+        "---PCTABLES---\n"
+        "BQ: 3077 key(s), 0 not numbers, first 60 in order: 1,2,3\n"
+        "YN: 0 key(s), 0 not numbers, first 0 in order: \n"
+        "BH: 1043 key(s), 0 not numbers, first 60 in order: 1,19,23\n"
+        "---CHECKS---\nsite3:count=0:pc=2668\nsite259:count=1:pc=2669\n"
+        "---CONDS---\n2667:site2: not Yw and (Bm~=0 or BR[3]~=0)  -> Yw=nil Bm=531573\n"
+        "---BLOCKS---\n1:site4:table:8:row_at_pc=yes\n2667:site2:nil:-1:row_at_pc=no\n"
+        "---OPCODES---\n1;344;;0;nil\nEND_UNOBF_RESULT")
+    check("checks parsed", len(cap.checks), 2)
+    check("the first check is the first one", cap.checks[0]["site"], 3)
+    check("its counter is kept", cap.checks[0]["pc"], "2668")
+    check("conditions parsed", len(cap.conds), 1)
+    check("the condition text survives", cap.conds[0]["text"],
+          "not Yw and (Bm~=0 or BR[3]~=0)")
+    check("block rows parsed", len(cap.block_rows), 2)
+    check("a nil array is read as one", cap.block_rows[1]["kind"], "nil")
+    check("pc tables parsed", len(cap.pctables), 3)
+    t = the_program_ended_itself(cap)
+    if not t or "ended the run itself" not in t:
+        bad.append("a capture with integrity checks must name the cause: %r" % t)
+    if t and "site 3" not in t:
+        bad.append("the first site has to be named: %r" % t)
+    if t and "not Yw and" not in t:
+        bad.append("the condition before the refusal belongs in the finding: %r" % t)
+    w = what_the_interpreter_had(cap)
+    if not w or "YN: EMPTY" not in w:
+        bad.append("an empty table is the finding and must be stated: %r" % w)
+    if w and "3077" not in w:
+        bad.append("the program size should come from the largest table: %r" % w)
+    # a capture with none of those sections says nothing rather than guessing
+    plain = Capture("BEGIN_UNOBF_RESULT\n---RUN---\nloaded: true\n"
+                    "---OPCODES---\n1;344;;0;nil\nEND_UNOBF_RESULT")
+    if the_program_ended_itself(plain) is not None:
+        bad.append("with no checks recorded there is no finding to report")
+    if what_the_interpreter_had(plain) is not None:
+        bad.append("with no tables recorded there is nothing to describe")
+    # a table the watch could not read is reported as that, not as empty
+    cap2 = Capture("BEGIN_UNOBF_RESULT\n---PCTABLES---\n"
+                   "BQ: could not be read - refused\n---OPCODES---\nEND_UNOBF_RESULT")
+    w2 = what_the_interpreter_had(cap2)
+    if not w2 or "could not be read" not in w2:
+        bad.append("an unreadable table must not be reported as empty: %r" % w2)
 
     def why(body):
         return Capture("BEGIN_UNOBF_RESULT\n" + body + "\nEND_UNOBF_RESULT"

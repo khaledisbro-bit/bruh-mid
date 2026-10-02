@@ -47,6 +47,10 @@ local LEVEL_NAME = { [3] = "protos+traced", [2] = "traced",
 local dispatchDone, resolverDone, protosDone, patchable = false, false, false, 0
 local protoN = 0
 local slices, sliceN = {}, 0
+local blocks, blockN = {}, 0
+local conds, condN = {}, 0
+local viols, violN = {}, 0
+local keyTabs, keyTabN = {}, 0
 local jumps, jumpN = {}, 0
 local slicesDone = false
 local ORIGINAL_LINES, PATCH_AT, PATCH_ADDED = nil, nil, 0
@@ -370,6 +374,33 @@ _LOOP_TOP = ("local function I(ed,Jq) while true do local Jg=ed[Jq];"
              "if ((JZ-JP)%0x7FFFFFFF)==1 then end end end end;")
 
 
+# The same loop, formatted the way a build that does NOT minify emits it, and
+# the same loop with an unguarded opcode read. Neither is a different kind of
+# interpreter; both were invisible to a matcher that had one minifier's spacing
+# written into it.
+_LOOP_TOP_SPACED = (
+    "local function I(ed, Jq)\n"
+    "  while true do\n"
+    "    local Jg = ed[Jq]\n"
+    "    local Jd = Jg and Jg[1] or -1\n"
+    "    local JY = Jg and Jg[0] or 0\n"
+    "    Jq = Jq + 1\n"
+    "    if JY == 156 then elseif JY == 339 then end\n"
+    "  end\n"
+    "end\n")
+
+_LOOP_TOP_BARE = ("local function I(ed,Jq) while true do local Jg=ed[Jq];"
+                  "local JY=Jg[0];Jq=Jq+1;"
+                  "if JY==156 then elseif JY==339 then end end end;")
+
+# a bare read early, a guarded loop later. The guarded one is the dispatch loop,
+# and a matcher that takes whichever comes first picks the wrong one.
+_BARE_THEN_GUARDED = ("local function pre(t,k) local r=t[k];local v=r[2] "
+                      "return v end;" + _LOOP_TOP)
+
+_NO_LOOP = "local a=1 local b=a+2 print(b) return b"
+
+
 _JUMP_DECODER = ("local function el(x,k,s,o)if k~=0 then x=Nn(x,k)end;"
                  "local e=eO[x] or {eK[3]+x,-1,-1,-1};local z=e[1];return z end;")
 _NOT_A_DECODER = ("local function f(a,b,c,d)local e=tbl[a] end;")
@@ -560,12 +591,54 @@ def loop_top(path=UNIVERSAL):
                    "it would miss every instruction a handler takes")
     if chk(out) != "OK":
         bad.append("the patched source does not compile: %s" % chk(out))
+    # Luau has no empty statement, so `;;` anywhere in the result is a syntax
+    # error there even though the Lua this test runs under accepts it. The
+    # harness then loads the UNPATCHED chunk instead and the round reports a
+    # trace that logged nothing.
+    if ";;" in out:
+        bad.append("the patched source contains `;;`, which Luau rejects")
     # pure insertion
     import re as _re
+    # every watch the harness adds at the loop top is an INSERTION, so removing
+    # the inserted text has to give the original chunk back character for
+    # character. Each new watch is listed here on purpose: a watch that rewrote
+    # the chunk instead of adding to it would pass unnoticed otherwise.
     undone = _re.sub(r";if __OP then __OP\([^)]*\)end;if __CODE then "
                      r"__CODE\([^)]*\)end", "", out)
+    undone = _re.sub(r";if __KEYS then __KEYS\([^)]*\)end"
+                     r"(?:;if __KEYS then __KEYS\([^)]*\)end)*", "", undone)
     if undone != _LOOP_TOP:
         bad.append("the injection changed text around it")
+
+    # The spacing is the minifier's, not the build's. These three cases are the
+    # same loop written differently, and each was a loop the matcher reported as
+    # absent.
+    for name, text, want in (("spaced out over lines", _LOOP_TOP_SPACED,
+                              "guarded"),
+                             ("an unguarded opcode read", _LOOP_TOP_BARE,
+                              "bare"),
+                             ("a bare read before the real loop",
+                              _BARE_THEN_GUARDED, "guarded")):
+        got = pd(text)
+        if got is None:
+            bad.append("%s: the loop top was not found" % name)
+            continue
+        out2, why2 = got[0], got[1]
+        if want not in why2:
+            bad.append("%s: the capture should name the shape %s: %r"
+                       % (name, want, why2))
+        if "__OP(" not in out2:
+            bad.append("%s: nothing was injected" % name)
+            continue
+        if ",JY," not in out2[out2.find("__OP("):out2.find("__OP(") + 80]:
+            bad.append("%s: the wrong opcode variable was logged" % name)
+        if chk(out2) != "OK":
+            bad.append("%s: the patched source does not compile: %s"
+                       % (name, chk(out2)))
+        if out2.find("__OP(") > out2.find("if JY==156" if "\n" not in text
+                                          else "if JY == 156"):
+            bad.append("%s: the injection landed after the dispatch chain"
+                       % name)
     return bad
 
 
