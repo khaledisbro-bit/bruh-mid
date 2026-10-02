@@ -734,7 +734,7 @@ def apply(models, src, steps):
                 rejected["handler takes %d off the stack, execution measured %d"
                          % (pops, model.pops)] += 1
                 continue                     # not what execution measured
-            cands.append((sem, pops, body))
+            cands.append((sem, pops, body, pushes))
         agreed = {c[0] for c in cands}
         if len(agreed) != 1:
             if agreed:
@@ -769,6 +769,17 @@ def apply(models, src, steps):
                     "set" % model.pushes, opcodes=(op,))
             model.pushes = 0
             model.pops = 0
+        # The split, as the handler states it. A stack pointer before and a
+        # stack pointer after give the NET only: 1->1 and 0->0 move the stack
+        # by nothing and look identical from outside. The handler's text says
+        # how many values it takes off and how many it leaves, so where the two
+        # agree on the net the split is read from the source rather than guessed
+        # from the value that happened to be pending afterwards. Nothing here
+        # changes a net that was measured.
+        hp = [c[3] for c in cands if c[3] is not None]
+        if hp and len(set(hp)) == 1 and len({c[1] for c in cands}) == 1:
+            model.handler_pops = cands[0][1]
+            model.handler_pushes = hp[0]
         model.fact.evidence = "INFERRED" if model.pops is None else "OBSERVED"
         model.fact.note(
             "vmsrc.handler",

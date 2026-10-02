@@ -76,7 +76,17 @@ class Analysis:
         self.named = opsem.identify(self.models, self.lift.instances())
         # The interpreter states what its opcodes do; a short run cannot.
         self.vm, self.from_handlers, self.handler_why = (None, 0, {})
+        self.relifted = False
+        self.arity_corrected = []
         if vm_source:
+            # What the stack reading assumed before the interpreter's own
+            # handlers were read. Kept so the reading can be redone if the
+            # handlers disagree: an instruction read as taking two values and
+            # returning one, which the handler shows only jumps, was lifted
+            # into a call with arguments that do not exist.
+            before = {op: (m.pops, m.pushes,
+                           m.handler_pops, m.handler_pushes)
+                      for op, m in self.models.items()}
             self.vm, self.from_handlers, self.handler_why = vmsrc.apply(
                 self.models, vm_source, self.lift.steps)
             dropped, _checked = vmsrc.revoke(self.models, self.lift,
@@ -112,6 +122,31 @@ class Analysis:
             self.type_withdrawn, self.type_examined = bad, examined
             self.handler_why.update(why)
             self.from_handlers -= bad
+            # The first reading had to guess how many values each instruction
+            # took and left, because a trace shows the stack moving and not
+            # why. The handlers say it outright. Where the two disagree the
+            # handler wins, and everything built on the guess has to be built
+            # again: the values an instruction consumed, which expression each
+            # one came from, and the statements written from them. Nothing is
+            # re-measured here, only re-read with the arities the interpreter
+            # itself states.
+            changed = sorted(op for op, was in before.items()
+                             if op in self.models
+                             and was != (self.models[op].pops,
+                                         self.models[op].pushes,
+                                         self.models[op].handler_pops,
+                                         self.models[op].handler_pushes))
+            self.arity_corrected = changed
+            if changed:
+                self.lift = stackint.lift(self.program, self.program,
+                                          self.models)
+                self.named = opsem.identify(self.models,
+                                            self.lift.instances())
+                self.relifted = True
+                # The metatable question was asked against the old reading.
+                # It is asked again below, against this one.
+                if hasattr(self, "meta"):
+                    del self.meta
         # The interpreter's handlers say which opcodes touch a variable. That
         # is checked the same way a guessed pair is, and only used if it holds.
         self.slots, self.slot_hits, self.slot_checks = (None, 0, 0)
@@ -374,6 +409,12 @@ class Analysis:
              "distinct opcodes           %d, arity measured for %d, operation "
              "known for %d (%d read from the interpreter's handlers)"
              % (len(self.models), arity, named, self.from_handlers),
+             ] + ([
+             "arities corrected          %d opcode(s) the handlers read "
+             "differently from the stack; the values and the code were read "
+             "again with the handlers' numbers"
+             % len(self.arity_corrected),
+             ] if self.relifted else []) + [
              "values recovered           %d (%d consumed from outside the "
              "capture)" % (len(self.lift.values), self.lift.externals),
              "stack desynchronisations   %d" % len(self.lift.divergences),

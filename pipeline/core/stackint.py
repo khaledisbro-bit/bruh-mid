@@ -336,6 +336,24 @@ def _arity(row, product, after, model, ceiling=None):
                    "shape the movement allows, not a measurement"
                    % (net, row["opcode"], pops, pushes))
             ev = UNKNOWN
+        # The net is measured; the split is read. Two stack pointers cannot
+        # tell 1->1 from 0->0 - both move the stack by nothing - so the split
+        # was taken from whether a value was reported pending afterwards. In a
+        # build that writes results into registers, the pending value after an
+        # instruction is often the previous one's, and a jump came out as
+        # consuming and producing one. Where the handler's own net is the net
+        # that was measured, its split is the better reading of the same
+        # movement, and the movement itself is unchanged.
+        if model is not None and model.handler_pushes is not None:
+            hp, hu = model.handler_pops, model.handler_pushes
+            if hu - hp == net and (hp, hu) != (pops, pushes):
+                return (hp, hu,
+                        "stack pointer moved %+d, which is what this opcode's "
+                        "handler does. The handler takes %d value(s) off and "
+                        "leaves %d, so that is the split; the %d->%d this "
+                        "movement alone allows came from the value reported "
+                        "afterwards, which this handler does not set"
+                        % (net, hp, hu, pops, pushes), INFERRED)
         if model is not None and model.pops is not None and \
                 (model.pops, model.pushes) != (pops, pushes):
             why += ("; this run of OP_%d disagrees with the opcode's usual "

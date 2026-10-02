@@ -114,6 +114,11 @@ class OpModel:
         self.produces = None
         self.pops = None
         self.pushes = None
+        # What the interpreter's own handler takes off the stack and leaves on
+        # it, where its source was read. The measurement gives the net; this
+        # gives the split.
+        self.handler_pops = None
+        self.handler_pushes = None
         self.role = UNSURE
         self.operation = None          # named only by value algebra
         # "stack" when the handler took its inputs through the pop helper, so a
