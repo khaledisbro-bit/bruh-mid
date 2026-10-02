@@ -227,6 +227,16 @@ end
         if st.pushes == 0 and st.pops >= 1 and not self._is_control(st):
             args = ", ".join(self.R.value(v.id) for v in st.popped)
             ev = OBSERVED
+            # An operation the interpreter's own handler named, written as the
+            # statement it is. Without this a store read as `OP_318(a, b)` and a
+            # call with an unused result read as `OP_393(f)`, which is the
+            # opcode's number standing where the program's own line belongs.
+            named = self._named_statement(st)
+            if named is not None:
+                return self._line(
+                    named, OBSERVED, st,
+                    "the interpreter's own handler for opcode %d performs this"
+                    % st.op)
             if (self._last is not None and st.row == self._last.row
                     and self.slots.writes.get(st.row) is None):
                 return self._line(
@@ -244,6 +254,39 @@ end
                               DECOY if d else UNKNOWN, st,
                               d or "this instruction moved nothing on the stack "
                                    "and produced no value")
+        return None
+
+    def _named_statement(self, st):
+        """A statement for an instruction whose operation the handler named.
+
+        Only the shapes that ARE statements: a store, a call whose result is
+        unused, and nothing else. An operation this does not know returns None
+        and the caller writes what it wrote before.
+        """
+        m = self.models.get(st.op)
+        if m is None or not m.operation:
+            return None
+        args = [self.R.value(v.id) for v in st.popped]
+        op = m.operation
+        if op == "SETINDEX" and len(args) >= 3:
+            base, key, value = args[0], args[1], args[2]
+            name = key[1:-1] if key.startswith('"') and key.endswith('"') else None
+            if name and re.fullmatch(r"[A-Za-z_]\w*", name):
+                return "%s.%s = %s" % (base, name, value)
+            return "%s[%s] = %s" % (base, key, value)
+        if op == "SETINDEX" and len(args) == 2:
+            return "%s[%s] = nil" % (args[0], args[1])
+        if op in ("SETVAR", "SETSLOT") and args:
+            slot = self.slots.writes.get(st.row) if self.slots else None
+            target = self.R.slot_name(slot) if (slot is not None
+                        and hasattr(self.R, "slot_name")) else None
+            if target is None:
+                target = "var_%d_%d" % (st.fn, st.pc)
+            return "%s = %s" % (target, args[-1])
+        if op == "CALL" and args:
+            return "%s(%s)" % (args[0], ", ".join(args[1:]))
+        if op == "LEN" and args:
+            return "#%s" % args[0]
         return None
 
     def _sink(self, st):

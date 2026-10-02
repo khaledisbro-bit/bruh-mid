@@ -11,3 +11,4 @@ app/dist/
 
 # packaged build, rebuilt on demand from pipeline/ and app/
 VmSmart.zip
+out89/

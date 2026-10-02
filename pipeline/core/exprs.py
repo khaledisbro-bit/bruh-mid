@@ -476,6 +476,27 @@ class Renderer:
             return "%s[%s]" % (base, args[1])
         if op == "NEWTABLE" and not args:
             return "{}"
+        # The operations added when the handler reader learned to see them. A
+        # value rendered as OP_60(...) is the opcode's number standing where the
+        # program's own expression belongs, and the reader has no way to know the
+        # analysis had already named it.
+        if op == "GETVAR":
+            if len(args) == 1:
+                return "%s" % args[0]
+            if v.operands:
+                return "var_%s" % v.operands[0]
+            return None
+        if op == "GETSLOT":
+            if v.operands:
+                return "slot_%s" % v.operands[0]
+            return None
+        if op == "LEN" and len(args) == 1:
+            return "#%s" % args[0]
+        if op in ("SETVAR", "SETSLOT", "SETINDEX"):
+            # a store is a statement, not a value: the emitter writes it
+            return None
+        if op in ("JMP", "CJMP"):
+            return None
         if op == "LOADK":
             if v.runtime:
                 return v.runtime

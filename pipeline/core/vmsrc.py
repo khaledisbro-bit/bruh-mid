@@ -752,6 +752,23 @@ def apply(models, src, steps):
         sem = agreed.pop()
         model.operation = sem
         model.handler_style = style(cands[0][2], vm)
+        # A jump produces no value. The arity pass had to guess that from the
+        # value reported after the instruction, and after a jump that value is
+        # the previous instruction's leftover - so a jump was modelled as
+        # pushing one, and the reconstruction rendered thousands of lines of
+        # `local t = OP_311(...)` for an instruction that only moves the counter.
+        # The handler says what it does, and where the measured net agrees with
+        # producing nothing, the handler wins.
+        if sem in ("JMP", "CJMP") and (model.delta in (None, 0)):
+            if model.pushes:
+                model.fact.note(
+                    "vmsrc.jump",
+                    "its handler only writes the program counter, so it "
+                    "produces no value; the %d it was modelled as pushing came "
+                    "from the value reported after it, which a jump does not "
+                    "set" % model.pushes, opcodes=(op,))
+            model.pushes = 0
+            model.pops = 0
         model.fact.evidence = "INFERRED" if model.pops is None else "OBSERVED"
         model.fact.note(
             "vmsrc.handler",
