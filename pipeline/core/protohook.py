@@ -420,9 +420,14 @@ def patch_gate(src, sites):
     # which is itself the answer.
     marks = []
     for key, prog, at, ins, call_at in sites:
-        marks.append((at, " if __KEY then __KEY(%s%s) end "
-                      "if VMSMART_PAYLOAD_KEY then %s=VMSMART_PAYLOAD_KEY end "
-                      % (key, ("," + ",".join(ins)) if ins else "", key)))
+        # The substitution comes FIRST and the record second, so what is written
+        # down is the key actually used. Recording before substituting meant a
+        # supplied key left no trace and there was no way to tell whether it had
+        # reached the decryption at all.
+        marks.append((at,
+                      " if VMSMART_PAYLOAD_KEY then %s=VMSMART_PAYLOAD_KEY end "
+                      "if __KEY then __KEY(%s%s) end "
+                      % (key, key, ("," + ",".join(ins)) if ins else "")))
         marks.append((call_at, " if __GATE then __GATE(%s) end " % prog))
     for at, text in sorted(marks, key=lambda m: -m[0]):
         edit = text

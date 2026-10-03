@@ -46,6 +46,7 @@ import plain           # noqa: E402
 import probes         # noqa: E402
 import protodecode     # noqa: E402
 import protolift       # noqa: E402
+import gate            # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -421,6 +422,7 @@ class Analysis:
         self.program_text = ""
         self.flow_text = ""
         self.vocab_text = ""
+        self.gate_text = ""
         raw = getattr(self.capture, "raw", "") or ""
         if "---PROTOS---" not in raw:
             self.program_text = protodecode.report(protodecode.Program())
@@ -430,6 +432,16 @@ class Analysis:
         self.program_decoded = P
         self.program_text = protodecode.report(P)
         self.flow_text = self._decode_flow(raw, P)
+        # THE GATE. The most useful thing in a capture of this family: the key
+        # the payload is decrypted with, what the decryption produced, every
+        # slice in the table rather than only the ones the run asked for, and
+        # what the digests it carries are digests OF. All of it was already in
+        # the capture and none of it was in any report.
+        try:
+            self.gate_text = gate.report(gate.read(self.capture))
+        except Exception as exc:
+            self.gate_text = ("The gate could not be read (%s: %s).\n"
+                              % (exc.__class__.__name__, exc))
 
     def _decode_flow(self, raw, P):
         """Where each of those instructions goes, and what the entry reaches.
@@ -779,6 +791,7 @@ class Analysis:
             "ALL_INSTRUCTIONS.txt": self.program_text,
             "WHERE_IT_GOES.txt": getattr(self, "flow_text", ""),
             "WHAT_IT_SAYS.txt": getattr(self, "vocab_text", ""),
+            "THE_GATE.txt": getattr(self, "gate_text", ""),
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),
