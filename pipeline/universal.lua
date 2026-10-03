@@ -2033,6 +2033,19 @@ do
             -- everything else stays REAL (client services like HttpService work
             -- fine and must not be proxied, or the VM's integrity ops break).
             local ok, svc = pcall(function() return realGame:GetService(name) end)
+            -- WHEN THE HOST REFUSES, the program has to see the refusal. A name
+            -- that is not a service raises on a real client, and handing back a
+            -- proxy instead answers a question the build asked on purpose: it
+            -- names a service that cannot exist to find out whether anything is
+            -- standing in for the host. Against the stand-in the raise is the
+            -- host's own answer and it is passed through. On a real executor
+            -- the proxy stays, because there the failure means a service this
+            -- engine happens not to have.
+            if (not ok) and VMSMART_STANDIN and VMSMART_STRICT_SERVICES then
+                behavior[#behavior + 1] = "GetService: " .. tostring(name)
+                    .. "  -> refused, as a real client refuses it" .. atRow()
+                error(svc, 0)
+            end
             -- WHICH of the two was handed back matters and was not recorded. A
             -- proxy answers every field with a function, so a program that asked
             -- for a service this engine does not have gets something shaped
@@ -2624,6 +2637,20 @@ end
 if VMSMART_DECOMPRESS_WANT and #VMSMART_DECOMPRESS_WANT > 0 then
     say("---WANTBYTES---")
     for i = 1, #VMSMART_DECOMPRESS_WANT do say(VMSMART_DECOMPRESS_WANT[i]) end
+end
+-- Names the program asked its environment for and did not get, because a real
+-- client does not have them either. This is the list to work from when a run
+-- stops for want of one: it says what the program wanted, in its own words.
+if VMSMART_NOT_A_HOST_NAME ~= nil then
+    local names = {}
+    for k, n in pairs(VMSMART_NOT_A_HOST_NAME) do
+        names[#names + 1] = tostring(k) .. " x" .. tostring(n)
+    end
+    if #names > 0 then
+        table.sort(names)
+        say("---NOTAHOSTNAME---")
+        for i = 1, #names do say(names[i]) end
+    end
 end
 if type(VMSMART_INNER_SRC) == "string" then
     say("---INNERSRC---")

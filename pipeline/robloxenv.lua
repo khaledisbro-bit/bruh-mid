@@ -307,6 +307,114 @@ if spawn == nil then spawn = function(fn, ...) return task.spawn(fn, ...) end en
 -- Parenting, naming, lookup by name, GetChildren, FindFirstChild, WaitForChild,
 -- Destroy and IsA are the host's documented behaviour and are implemented as
 -- such. Anything else answers with a recording stub.
+-- WHAT A CLASS IS, in the host's own terms. Only the parents each class
+-- actually has; anything not named here is its own class and an Instance,
+-- which is what the host says too.
+VMSMART_PARENTS = {
+    Part = {"FormFactorPart", "BasePart", "PVInstance", "Instance"},
+    MeshPart = {"TriangleMeshPart", "BasePart", "PVInstance", "Instance"},
+    WedgePart = {"FormFactorPart", "BasePart", "PVInstance", "Instance"},
+    SpawnLocation = {"FormFactorPart", "BasePart", "PVInstance", "Instance"},
+    Model = {"PVInstance", "Instance"},
+    Folder = {"Instance"},
+    Workspace = {"WorldRoot", "Model", "PVInstance", "Instance"},
+    Players = {"Instance"},
+    Player = {"Instance"},
+    ReplicatedStorage = {"Instance"},
+    ServerStorage = {"Instance"},
+    ServerScriptService = {"Instance"},
+    StarterGui = {"Instance"},
+    Lighting = {"Instance"},
+    RunService = {"Instance"},
+    HttpService = {"Instance"},
+    TweenService = {"Instance"},
+    UserInputService = {"Instance"},
+    CollectionService = {"Instance"},
+    TeleportService = {"Instance"},
+    MarketplaceService = {"Instance"},
+    DataStoreService = {"Instance"},
+    Script = {"BaseScript", "LuaSourceContainer", "Instance"},
+    LocalScript = {"BaseScript", "LuaSourceContainer", "Instance"},
+    ModuleScript = {"LuaSourceContainer", "Instance"},
+    ScreenGui = {"LayerCollector", "GuiBase2d", "GuiBase", "Instance"},
+    Frame = {"GuiObject", "GuiBase2d", "GuiBase", "Instance"},
+    TextLabel = {"GuiLabel", "GuiObject", "GuiBase2d", "GuiBase", "Instance"},
+    TextButton = {"GuiButton", "GuiObject", "GuiBase2d", "GuiBase", "Instance"},
+    Humanoid = {"Instance"},
+    Tool = {"BackpackItem", "Instance"},
+    Sound = {"Instance"},
+    Attachment = {"Instance"},
+    Camera = {"Instance"},
+}
+
+function VMSMART_ISA(class, want)
+    want = tostring(want)
+    if class == want then return true end
+    local up = VMSMART_PARENTS[class]
+    if up then
+        for i = 1, #up do
+            if up[i] == want then return true end
+        end
+        return false
+    end
+    -- a class this file does not model is still an Instance, which is what the
+    -- host answers for everything in its tree
+    return want == "Instance"
+end
+
+-- THE SERVICES A ROBLOX CLIENT HAS. `game:GetService(name)` raises for a name
+-- that is not one of them - "'X' is not a valid Service name" - and that is a
+-- question a protected build asks on purpose: it names a service that cannot
+-- exist and sees what comes back. A stand-in that hands one over has told the
+-- build it is not on a real client, and the build then runs its checks instead
+-- of its work. That is what this environment was doing: it answered
+-- `GetService("EncodingService")` with a service, and there is no such service.
+-- THE NAMES A ROBLOX CLIENT HAS. Datatypes, libraries and the few globals the
+-- engine puts in every script's environment. It is what this file is willing to
+-- answer for; everything else is nil, because that is what the host says.
+--
+-- A name missing from here that the host really has costs a run, and the report
+-- names it, so the list grows from evidence rather than from guessing. A name
+-- here that the host does not have costs much more: it tells a protected build
+-- that nothing it is talking to is real.
+VMSMART_NOT_A_HOST_NAME = {}
+VMSMART_HOST_GLOBALS = {}
+for _, n in ipairs({
+    "Instance", "Enum", "EnumItem", "Vector3", "Vector2", "Vector3int16",
+    "Vector2int16", "CFrame", "UDim", "UDim2", "Color3", "BrickColor",
+    "Ray", "Region3", "Region3int16", "Rect", "NumberRange", "NumberSequence",
+    "NumberSequenceKeypoint", "ColorSequence", "ColorSequenceKeypoint",
+    "TweenInfo", "PhysicalProperties", "Faces", "Axes", "Random",
+    "RaycastParams", "RaycastResult", "OverlapParams", "DateTime",
+    "PathWaypoint", "Font", "CatalogSearchParams", "FloatCurveKey",
+    "RotationCurveKey", "SharedTable", "Secret", "Content", "CFrameValue",
+    "Workspace", "Game", "Players", "Lighting",
+}) do VMSMART_HOST_GLOBALS[n] = true end
+
+VMSMART_STRICT_SERVICES = false
+VMSMART_SERVICES = {}
+for _, n in ipairs({
+    "Workspace", "Players", "Lighting", "ReplicatedStorage",
+    "ReplicatedFirst", "ServerStorage", "ServerScriptService",
+    "StarterGui", "StarterPack", "StarterPlayer", "SoundService",
+    "Chat", "TextChatService", "Teams", "InsertService", "Debris",
+    "RunService", "HttpService", "TweenService", "UserInputService",
+    "ContextActionService", "CollectionService", "PathfindingService",
+    "PhysicsService", "TeleportService", "MarketplaceService",
+    "DataStoreService", "MessagingService", "MemoryStoreService",
+    "BadgeService", "GamePassService", "PointsService", "AnalyticsService",
+    "LocalizationService", "TextService", "ContentProvider",
+    "GuiService", "CoreGui", "VirtualUser", "VirtualInputManager",
+    "HapticService", "VRService", "GroupService", "FriendService",
+    "SocialService", "PolicyService", "AvatarEditorService",
+    "AssetService", "AnimationClipProvider", "KeyframeSequenceProvider",
+    "TestService", "LogService", "ScriptContext", "Stats", "StarterPlayerScripts",
+    "ProximityPromptService", "VoiceChatService", "NetworkClient",
+    "NetworkServer", "Selection", "ChangeHistoryService", "Studio",
+    "UserGameSettings", "TouchInputService", "CaptureService",
+    "SerializationService", "ReflectionService", "ScriptService",
+}) do VMSMART_SERVICES[n] = true end
+
 if Instance == nil then
     -- Attributes and signals are state the host keeps for an instance, so this
     -- file keeps them: what the program writes it reads back, and what it never
@@ -395,7 +503,14 @@ if Instance == nil then
                   elseif k == "Clone" then
                       return function() return newInstance(class) end
                   elseif k == "IsA" then
-                      return function(_, n) return n == class end
+                      -- IsA walks the class tree in the host: a Folder IS an
+                      -- Instance, a Part IS a BasePart and a PVInstance and an
+                      -- Instance. Answering only on an exact name match made
+                      -- this environment say no to `x:IsA("Instance")`, which
+                      -- is true of every object there is - and a build that
+                      -- asks that question is asking whether it is talking to
+                      -- a real host at all.
+                      return function(_, n) return VMSMART_ISA(class, n) end
                   elseif k == "SetAttribute" then
                       return function(_, n, v) attributes[tostring(n)] = v end
                   elseif k == "GetAttribute" then
@@ -815,6 +930,25 @@ do
                 -- as arithmetic on a function, inside the stand-in, during the
                 -- payload's run.
                 if k:sub(1, 7) == "VMSMART" then return nil end
+                -- A NAME THE HOST DOES NOT HAVE IS NIL. This answered every
+                -- capitalised name with something, and something is truthy: a
+                -- build that asks `if SomeName then` to find out whether it is
+                -- talking to a real client got yes, every time, for any name it
+                -- cared to invent. The capture of this build says so in as many
+                -- words - "a function the host does not have -> true" - and a
+                -- build that learns it is being watched runs its checks and not
+                -- its program, which is why a trace of it is all checks.
+                --
+                -- So only the names a Roblox client really has are answered.
+                -- The rest are nil, which is what a real client answers, and
+                -- each one is written down: what the program asked for and did
+                -- not get is a fact worth having, and it is the list to work
+                -- from if a run stops for want of one.
+                if not VMSMART_HOST_GLOBALS[k] then
+                    VMSMART_NOT_A_HOST_NAME[k] =
+                        (VMSMART_NOT_A_HOST_NAME[k] or 0) + 1
+                    return nil
+                end
                 if autos[k] == nil then
                     -- A type whose algebra robloxtypes.lua implements answers
                     -- with real numbers: the program reads back what it put in,
@@ -915,6 +1049,36 @@ if game == nil then
         return nil
     end
     local function service(name)
+        -- A name that is not a service raises on a real client, and this is a
+        -- question builds ask deliberately. Answering it with a service is a
+        -- plain statement that the host is not real, and from there a
+        -- protected build runs its checks instead of its program - which is
+        -- exactly what the first captures of this build contained.
+        if not VMSMART_SERVICES[tostring(name)] then
+            -- A name this file cannot place among the host's services. On a
+            -- real client GetService raises for a name that is not a service,
+            -- and a protected build asks for one on purpose to find out whether
+            -- anything is standing in for the host.
+            --
+            -- Both answers are wrong in their own way, so neither is assumed.
+            -- The list here is what this file knows, not what Roblox has, and
+            -- refusing a name that is real would end a run that should have
+            -- gone on. So the default is to answer and to RECORD that the
+            -- answer is one a real client would not have given - which is a
+            -- difference the build can see, and the report says so. The strict
+            -- answer is run as its own attempt, and the two are compared.
+            VMSMART_FAKE_SERVICE_ASKED = (VMSMART_FAKE_SERVICE_ASKED or 0) + 1
+            if VMSMART_CALLS then
+                VMSMART_CALLS[#VMSMART_CALLS + 1] =
+                    "host:GetService_unknown(\"" .. tostring(name) .. "\")"
+                    .. "  -- this file cannot place that name among the host's "
+                    .. "services; a real client may raise here"
+            end
+            if VMSMART_STRICT_SERVICES then
+                error("'" .. tostring(name) .. "' is not a valid Service name",
+                      0)
+            end
+        end
         if services[name] == nil then
             -- A service is a container in the host's tree, and this build puts
             -- the instance it makes INSIDE one and looks it up again later. So a
