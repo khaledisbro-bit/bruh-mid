@@ -1,0 +1,147 @@
+THE GATE: WHERE THE CHECKING ENDS AND THE PROGRAM BEGINS
+==========================================================
+This build does not compare the host against anything it carries. It
+measures the host, and the measurements ARE the key its own program is
+decrypted with. So no branch can be forced to reach the program, and a
+host that answers one measurement differently gets noise back.
+
+THE KEY THIS RUN PRODUCED
+----------------------------------------------------------
+  562797805, 1581986302, 337997813
+
+  made from the numbers it measured:
+    nil, 768435, 553584, 1705633901, 1508207997, 1621166966, 1733248236
+
+WHAT THE DECRYPTION PRODUCED
+----------------------------------------------------------
+  number
+  Not a program. The deserialiser does not raise on bad input -
+  it hands back a number - so a wrong key reaches the maker as a
+  number, and indexing it is the error the run ends on. The key
+  this environment produced is not the one the payload was
+  encrypted with.
+
+THE DATA IT IS DECRYPTED FROM
+----------------------------------------------------------
+  Every slice in the table, not only the ones the run asked for.
+
+  slice 1: 96891 byte(s) at offset 11   asked for
+  slice 2: 10494 byte(s) at offset 96902   asked for
+  slice 3: 1375 byte(s) at offset 107396   asked for
+  slice 4: 221 byte(s) at offset 108771   asked for
+
+THE DIGESTS IT CARRIES, AND WHAT THEY ARE OF
+----------------------------------------------------------
+  The build replaces comparisons with digest comparisons, so the
+  constants that look like a fingerprint of the host are digests
+  of its own literals. Watching the digest function says which.
+
+  c171febcd9c46e4e...  is the digest of "lw"
+  3121609a68402636...  is the digest of "number"
+  90acbd0a49843186...  is the digest of "string"
+  264f3c7323315bf6...  is the digest of 0
+  f5fab02e7c04cde7...  is the digest of 0.09375
+  933a879df8a43195...  is the digest of 0.15625
+  8fae61a8496b844c...  is the digest of 0.3125
+  76de5fea7ece3b82...  is the digest of 0.5
+  0733b1ad66d4850b...  is the digest of 0.5625
+  0dd143e337644af7...  is the digest of 0.625
+  d486ac253a5b0e24...  is the digest of 0.65625
+  ae322516b50b2773...  is the digest of 0.6875
+  39da2fb00ea2ed4c...  is the digest of 0.8125
+  946b5a82335e1d56...  is the digest of 1
+  515161f8efbc973b...  is the digest of 10
+  380d39966b16b42e...  is the digest of 111
+  b1024ea91fbc38e9...  is the digest of 128
+  24153987f0629349...  is the digest of 154
+  76088650773b2fbb...  is the digest of 19
+  3ab4617ec4657568...  is the digest of 2
+  b779b26fbe2a2401...  is the digest of 20
+  cbef705f26958d4f...  is the digest of 21
+  460242b607c59e7d...  is the digest of 320
+  c1f3d15efab35599...  is the digest of 36
+  70a4eff867de8161...  is the digest of 38
+  a22b867598935a60...  is the digest of 403
+  b71b063ededfdb06...  is the digest of 434
+  26adde2747aeb6e6...  is the digest of 452
+  6fa8008156324043...  is the digest of 51
+  3042eb8b2547beea...  is the digest of 579
+  e4887729d404a5ce...  is the digest of 70
+  aa4f5954a29e954f...  is the digest of 89
+  b2c49f3cecc480f7...  is the digest of 93
+
+WHAT THIS ENVIRONMENT REFUSED, AS THE HOST REFUSES IT
+----------------------------------------------------------
+  Class names the host cannot create. The build asks for them on
+  purpose: creating one anyway says plainly that nothing here is
+  real, and the answer goes into the key.
+
+  Instance.new('part') -> refused
+  Instance.new('qOyUT0qI5OURkfR1n0h0') -> refused
+
+WHAT IT READ OFF THE HOST
+----------------------------------------------------------
+  1938 read(s), 149 distinct. Each one is folded into the key, so
+  each one has to match what a real client would answer.
+
+    UDim2.X -> table/UDim  x210
+    UDim.Offset -> 940  x6
+    UDim2.Y -> table/UDim  x420
+    UDim.Scale -> 0.03125  x6
+    UDim.Offset -> 155  x6
+    UDim.Offset -> 558  x6
+    UDim.Scale -> 0.0625  x12
+    UDim.Offset -> 163  x6
+    Vector3.X -> 434  x12
+    Vector3.Y -> 452  x12
+    Vector3.Z -> 128  x12
+    UDim.Offset -> 308  x6
+    UDim.Scale -> 0.3125  x12
+    UDim.Offset -> 226  x6
+    UDim.Offset -> 38  x18
+    UDim.Offset -> 94  x6
+    TweenInfo.Time -> 0.3125  x12
+    TweenInfo.EasingStyle -> table/EnumItem  x6
+    TweenInfo.EasingDirection -> table/EnumItem  x6
+    TweenInfo.RepeatCount -> 1  x12
+    TweenInfo.Reverses -> true  x12
+    TweenInfo.DelayTime -> 0.5  x12
+    UDim.Offset -> 100  x6
+    UDim.Offset -> 24  x6
+    BrickColor.Name -> "Really black"  x12
+    BrickColor.Number -> 1003  x12
+    UDim.Offset -> 788  x6
+    UDim.Scale -> 0.5625  x6
+    UDim.Offset -> 152  x6
+    UDim.Offset -> 83  x6
+    UDim.Scale -> 0  x24
+    UDim.Offset -> 175  x12
+    Random:Clone() -> table/Random  x6
+    Random:NextInteger() -> 127  x12
+    UDim.Offset -> 500  x6
+    UDim.Scale -> 0.625  x12
+    UDim.Offset -> 84  x6
+    NumberSequence.Keypoints -> table/table  x6
+    NumberSequenceKeypoint.Time -> 0  x6
+    NumberSequenceKeypoint.Value -> 0.65625  x12
+    NumberSequenceKeypoint.Envelope -> 0.8125  x12
+    NumberSequenceKeypoint.Time -> 1  x6
+    NumberSequenceKeypoint.Value -> 0.5  x12
+    UDim.Offset -> 440  x6
+    UDim.Scale -> 0.25  x18
+    UDim.Offset -> 21  x12
+    UDim.Offset -> 646  x6
+    UDim.Scale -> 0.65625  x6
+    UDim.Offset -> 162  x6
+    Enum.PartType.Ball.Name -> "Ball"  x12
+    Enum.PartType.Ball.Value -> 0  x18
+    UDim.Offset -> 826  x6
+    UDim.Offset -> 146  x6
+    UDim.Scale -> 0.6875  x12
+    UDim.Offset -> 985  x6
+    UDim.Scale -> 1  x18
+    UDim.Offset -> 246  x6
+    Vector3.Z -> 0  x18
+    Vector3.Y -> 20  x18
+    Vector3.X -> 0  x24
+    ... and 89 more

@@ -1,0 +1,167 @@
+WHAT THE PROGRAM'S FUNCTIONS SAY
+==========================================================
+The values the instructions name, decrypted by the interpreter's own
+resolver rather than by a second implementation of its arithmetic.
+A function nothing called is read on the same terms as one that ran.
+
+FUNCTION 1 - 2536 instruction(s), 582 value(s) in its table
+  text (95):
+    [  21] 'Instance'
+    [  22] 'new'
+    [  23] 'Folder'
+    [  24] '4rI3AaoQ85'
+    [  26] 'SetAttribute'
+    [  27] 'GetAttributes'
+    [  28] 'GetAttribute'
+    [  32] 'typeof'
+    [  40] 'Destroy'
+    [  45] 'Enum'
+    [  46] 'PartType'
+    [  47] 'GetEnumItems'
+    [  48] 'type'
+    [  59] 'Vector3'
+    [  65] 'X'
+    [  68] 'Y'
+    [  71] 'Z'
+    [  79] 'game'
+    [  80] 'FindService'
+    [  81] 'Lighting'
+    [  82] 'GetService'
+    [  85] 'ClassName'
+    [  93] 'TweenInfo'
+    [  95] 'EasingStyle'
+    [  96] 'Back'
+    [  97] 'EasingDirection'
+    [  98] 'Out'
+    [ 102] 'Time'
+    [ 107] 'RepeatCount'
+    [ 110] 'Reverses'
+    [ 112] 'DelayTime'
+    [ 121] 'BrickColor'
+    [ 122] 'Really black'
+    [ 125] 'Name'
+    [ 128] 'Number'
+    [ 138] 'Workspace'
+    [ 139] 'workspace'
+    [ 144] 'Changed'
+    [ 152] 'Random'
+    [ 154] 'Clone'
+    [ 155] 'NextInteger'
+    [ 170] 'NumberSequence'
+    [ 171] 'NumberSequenceKeypoint'
+    [ 174] 'Keypoints'
+    [ 181] 'Value'
+    [ 184] 'Envelope'
+    [ 214] 'FromValue'
+    [ 215] 'EnumType'
+    [ 224] 'FromName'
+    [ 232] 'UDim'
+    [ 237] 'Scale'
+    [ 240] 'Offset'
+    [ 249] 'Cross'
+    [ 250] 'Dot'
+    [ 262] 'ReplicatedStorage'
+    [ 263] 'Players'
+    [ 264] 'IsA'
+    [ 266] 'ServiceProvider'
+    [ 268] 'RunService'
+    [ 279] 'coroutine'
+    [ 280] 'running'
+    [ 293] 'byte'
+    [ 294] 'math'
+    [ 295] 'max'
+    [ 296] 'floor'
+    [ 332] 'Vector2'
+    [ 346] 'HttpService'
+    [ 347] 'pcall'
+    [ 354] 'sub'
+    [ 372] 'Color3'
+    [ 377] 'R'
+    [ 380] 'G'
+    [ 382] 'B'
+    [ 390] 'Part'
+    [ 391] 'AZXyj26AUybzMh'
+    [ 392] 'Size'
+    [ 414] 'newproxy'
+    [ 417] 'Inner'
+    [ 425] '8CeGNFoPEPfT'
+    [ 426] 'ZeekraguZQ0x'
+    [ 427] 'Parent'
+    [ 428] 'GetFullName'
+    [ 451] 'NumberRange'
+    [ 456] 'Min'
+    [ 459] 'Max'
+    [ 466] 'Model'
+    [ 467] 'GetChildren'
+    [ 468] 'FindFirstChild'
+    [ 469] 'FindFirstChildOfClass'
+    [ 470] 'FindFirstChildWhichIsA'
+    [ 471] 'rawequal'
+    [ 486] 'Lerp'
+    [ 496] 'Rect'
+    [ 564] '264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb'
+    [ 571] '946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14'
+  numbers (487): 419130, 942725, 836810, 1656720098, 72882971, 607878787, 0, 1000003, 1, 738052, 31, -715574, -737859, 97327, -508854, 17, 508854, 715671, -97254, 960786, 579, 3443101919458758, 285, 1167
+
+FUNCTION 2 - 152 instruction(s), 20 value(s) in its table
+  numbers (20): 48271, 131, 7919, 1000003, 104729, 2147483647, 193, 40503, 313, 65537, 17, 131071, 31, 524287, 73, 1, 8191, 97, 257, 1000033
+
+FUNCTION 3 - 70 instruction(s), 12 value(s) in its table
+  text (5):
+    [   1] 'type'
+    [   2] '90acbd0a49843186a7e7ed827cba07b0ce31720d48faaba5117c2f3c7dfa035c'
+    [   3] '3121609a684026364f33af3329bd607f05e545fe643d2548cb87c50b7872496b'
+    [   6] 'string'
+    [   7] 'byte'
+  numbers (5): -1, 1, 65599, 67108864, 262147
+
+FUNCTION 4 - 93 instruction(s), 19 value(s) in its table
+  numbers (19): 48271, 131, 17, 257, 7919, 40503, 2147483647, 65599, 193, 31, 313, 104729, 73, 31337, 97, 19, 23, 65537, 1
+
+FUNCTION 5 - 38 instruction(s), 8 value(s) in its table
+  text (1):
+    [   1] '946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14'
+  numbers (6): 65599, 97, 17, 31, 1, 1000003
+
+FUNCTION 6 - 71 instruction(s), 15 value(s) in its table
+  text (6):
+    [   1] 'UDim2'
+    [   2] 'new'
+    [   5] 'X'
+    [   6] 'Offset'
+    [   7] 'Y'
+    [   8] 'Scale'
+  numbers (9): 0, 997, 131, 1000003, 257, 1, 73, 1000033, 2
+
+FUNCTION 8 - 31 instruction(s), 8 value(s) in its table
+  text (7):
+    [   1] '264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb'
+    [   4] 'string'
+    [   5] 'format'
+    [   6] '%.17g'
+    [   7] 'e([+-])0+(%d+)'
+    [   8] 'e%1%2'
+    [   9] 'gsub'
+
+FUNCTION 11 - 13 instruction(s), 1 value(s) in its table
+  text (1):
+    [   1] 'GenerateGUID'
+
+FUNCTION 13 - 6 instruction(s), 2 value(s) in its table
+  text (1):
+    [   1] 'vHmNZ0P7SZR9h'
+  numbers (1): 0
+
+FUNCTION 14 - 8 instruction(s), 2 value(s) in its table
+  text (1):
+    [   1] 'Inner'
+  numbers (1): 0
+
+FUNCTION 15 - 7 instruction(s), 3 value(s) in its table
+  text (3):
+    [   1] 'Instance'
+    [   2] 'new'
+    [   3] 'qOyUT0qI5OURkfR1n0h0'
+
+FUNCTION 17 - 180 instruction(s), 2 value(s) in its table
+  numbers (2): 1000003, 1

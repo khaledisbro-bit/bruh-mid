@@ -1,0 +1,3214 @@
+THE TWO PARTS, APART
+==========================================================
+First what the run executed. In a build of this family that is the
+measuring: it reads the host's datatypes, instances and enums and
+folds what it reads into the key its own program is decrypted with.
+
+Then what nothing can reach from a function's entry. That part is
+not the program either - it is unreachable - and it is listed so a
+reader can see it rather than take anyone's word for it.
+
+What is NOT in either list is the rest: reachable, never executed.
+That is where the program's own work is, and it stays unexecuted
+while the decryption is wrong.
+
+EXECUTED (3181 instruction(s))
+----------------------------------------------------------
+  f1       1  OP_272       
+  f1       2  OP_321       
+  f1       3  SETINDEX     565754, 419130
+  f1       4  INDEX        565754
+  f1       5  SETVAR       0, 1
+  f1       6  SETINDEX     646760, 942725
+  f1       7  INDEX        646760
+  f1       8  JMP          -> 835
+  f1       9  LOADK        7, 8, 2401, 808772
+  f1      10  INDEX        808772
+  f1      11  JMP          -> 2321, 55
+  f1      12  ADD          1000003, 53, -3
+  f1      13  JMP          -> 1343
+  f1      14  OP_233       3
+  f1      15  OP_170       
+  f1      16  ADD          12, 17, 1000003
+  f1      17  JMP          -> 2100
+  f1      18  LOADK        1
+  f1      19  CALL         4, 0
+  f1      20  OP_342       2392084894841675, 'Name', 7, -1
+  f1      21  JMP          -> 2228
+  f1      22  CALL         3, 0
+  f1      23  OP_86        'coroutine', 'running'
+  f1      24  CALL         0, -1
+  f1      25  SETVAR       0, 1
+  f1      26  JMP          -> 628
+  f1      27  OP_119       'Scale', -2, 21
+  f1      28  JMP          -> 1160
+  f1      29  CALL         4, 0
+  f1      30  OP_58        54, -2
+  f1      31  OP_99        3
+  f1      32  CJMP         -> 1063, 54
+  f1      33  OP_382       509894, 1000003, 53, -3
+  f1      34  INDEX        509894
+  f1      35  JMP          -> 861
+  f1      36  OP_257       32, 'Value'
+  f1      37  JMP          -> 1984
+  f1      38  SETINDEX     31, 833918, 63
+  f1      39  INDEX        833918
+  f1      40  SETINDEX     1, 0
+  f1      41  OP_384       955427, 1
+  f1      42  INDEX        955427
+  f1      43  JMP          -> 1783
+  f1      44  OP_78        1000003
+  f1      45  JMP          -> 349
+  f1      46  OP_392       -3, 28569, 5, 360455
+  f1      47  INDEX        360455
+  f1      48  CALL         3, 0
+  f1      49  JMP          -> 1207, 53
+  f1      50  LOADK        0, 6874, 562970
+  f1      51  INDEX        562970
+  f1      52  SETINDEX     603473, 8
+  f1      53  INDEX        603473
+  f1      54  JMP          -> 926, 106
+  f1      55  OP_127       1, 115, 631380094072186, 'G', 8
+  f1      56  CALL         4, 0
+  f1      57  JMP          -> 1494
+  f1      58  OP_29        'max', 'math', 'math', 'floor', 1, 93
+  f1      59  JMP          -> 308
+  f1      60  OP_70        10, 'Keypoints'
+  f1      61  SETVAR       0, 1
+  f1      62  OP_117       'typeof', -1
+  f1      63  JMP          -> 521
+  f1      64  EQ           84, -1, 'GetFullName'
+  f1      65  JMP          -> 2443
+  f1      66  SETVAR       0, 1
+  f1      67  GETSLOT      46
+  f1      68  OP_350       'Clone', 0, -1
+  f1      69  SETVAR       0, 1
+  f1      70  JMP          -> 2514
+  f1      71  LOADK        1
+  f1      72  CALL         4, 0
+  f1      73  OP_58        22, -1
+  f1      74  JMP          -> 97
+  f1      75  LOADK        1
+  f1      76  CALL         1, 1
+  f1      77  OP_99        3
+  f1      78  JMP          -> 2497, 1547
+  f1      79  SETVAR       0, 1
+  f1      80  CALL         1
+  f1      81  SETVAR       0, 1
+  f1      82  OP_311       1000003, 12
+  f1      83  JMP          -> 394
+  f1      84  OP_237       -737888, 737919, 20, 20, 547613
+  f1      85  INDEX        547613
+  f1      86  OP_307       355452, 63, 628619
+  f1      87  INDEX        628619
+  f1      88  JMP          -> 1628
+  f1      89  LOADK        0
+  f1      90  CALL         4, 0
+  f1      91  OP_58        18, -2
+  f1      92  CJMP         -> 1461
+  f1      93  JMP          -> 2158
+  f1      94  OP_103       54, 54
+  f1      95  OP_99        3
+  f1      96  JMP          -> 1558
+  f1      97  LOADK        223, 2012573742349900, 1
+  f1      98  CALL         4, 0
+  f1      99  CJMP         -> 695, -1
+  f1     100  OP_399       'GetEnumItems', 'PartType', 'PartType', 'Enum'
+  f1     101  JMP          -> 1378
+  f1     102  OP_156       
+  f1     103  SETINDEX     1, 0
+  f1     104  LOADK        1
+  f1     105  JMP          -> 237
+  f1     106  LOADK        0
+  f1     107  CALL         3, -1
+  f1     108  SETVAR       0, 1
+  f1     109  OP_39        'Lerp', 27, 5717
+  f1     110  INDEX        5717
+  f1     111  JMP          -> 242
+  f1     112  LOADK        0
+  f1     113  CALL         4, 0
+  f1     114  OP_58        67, -1
+  f1     115  JMP          -> 1945
+  f1     116  OP_172       0, 5760, 'Max'
+  f1     117  JMP          -> 1154
+  f1     118  OP_58        42, -2
+  f1     119  OP_99        3
+  f1     120  JMP          -> 2390
+  f1     121  GETSLOT      -2, 'Value', 37, 815777
+  f1     122  INDEX        815777
+  f1     123  JMP          -> 1484, 1
+  f1     124  OP_300       20, 17, 31, 63
+  f1     125  JMP          -> 296
+  f1     126  OP_139       275408, 1000003, 261308
+  f1     127  INDEX        261308
+  f1     128  JMP          -> 1572
+  f1     129  OP_215       17, 1000003, 20, -508854, 12
+  f1     130  JMP          -> 1437
+  f1     131  OP_384       625835, 1
+  f1     132  INDEX        625835
+  f1     133  LOADK        10, 500, 16
+  f1     134  JMP          -> 1419
+  f1     135  LOADK        1
+  f1     136  CALL         4, 0
+  f1     137  GETSLOT      -1, -5, -5, 'sub'
+  f1     138  JMP          -> 2340
+  f1     139  LOADK        1
+  f1     140  CALL         4, 0
+  f1     141  OP_58        71, -1
+  f1     142  JMP          -> 157
+  f1     143  CALL         4, 0
+  f1     144  OP_356       0, 'newproxy'
+  f1     145  CALL         1, -1
+  f1     146  SETVAR       0, 1
+  f1     147  JMP          -> 807
+  f1     148  SETINDEX     516899, 53
+  f1     149  INDEX        516899
+  f1     150  SETINDEX     557402, 3
+  f1     151  INDEX        557402
+  f1     152  GETVAR       5878, 30
+  f1     153  CALL         3, 0
+  f1     154  JMP          -> 1919
+  f1     155  ADD          70, 20, 1000003, 31, -735214
+  f1     156  JMP          -> 1424
+  f1     157  OP_99        3
+  f1     158  LOADK        7923, 1845051621242788, 1
+  f1     159  JMP          -> 1537
+  f1     160  NEWTABLE     359097, 56, 960025
+  f1     161  JMP          -> 1339
+  f1     162  LOADK        3402, 631380094072186, 1
+  f1     163  CALL         4, 0
+  f1     164  CJMP         -> 1140, -2
+  f1     165  OP_195       
+  f1     166  SETINDEX     691484, '946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14'
+  f1     167  INDEX        691484
+  f1     168  EQ           
+  f1     169  CJMP         -> 2195
+  f1     171  OP_279       853496
+  f1     172  INDEX        853496
+  f1     173  SETVAR       0, 1
+  f1     174  GETVAR       3, 53, 30
+  f1     175  JMP          -> 2493
+  f1     176  OP_90        'pcall'
+  f1     177  CALL         8
+  f1     178  CALL         1, -1
+  f1     179  SETVAR       0, 1
+  f1     180  CJMP         -> 1382, -1
+  f1     181  OP_65        0, 8152
+  f1     182  CALL         4, 0
+  f1     183  JMP          -> 290, 65599, 30
+  f1     184  OP_99        3
+  f1     185  OP_350       'byte', 1, 1
+  f1     186  OP_368       13, 581
+  f1     187  JMP          -> 1211
+  f1     188  MUL          63, 70, 1000003, -238476
+  f1     189  JMP          -> 16
+  f1     190  POP          
+  f1     191  JMP          -> 2168
+  f1     192  JMP          -> 2478, 0
+  f1     193  LOADK        1, 789
+  f1     194  CALL         4, 0
+  f1     195  OP_58        71, -1
+  f1     196  JMP          -> 2400
+  f1     197  LOADK        4192, 2276693662337817, 1
+  f1     198  CALL         4, 0
+  f1     199  JMP          -> 1370
+  f1     200  OP_359       838139
+  f1     201  INDEX        838139
+  f1     202  MUL          'DelayTime', -4, 16
+  f1     203  JMP          -> 1973
+  f1     204  POP          1000003, 226107
+  f1     205  JMP          -> 227
+  f1     206  POP          610809, 31, 63
+  f1     207  JMP          -> 362
+  f1     208  OP_23        1054576948921868, 3233, 89, 1
+  f1     209  JMP          -> 1621
+  f1     210  CALL         4, 0
+  f1     211  INDEX        19, 'IsA', 19
+  f1     212  JMP          -> 1671
+  f1     213  GETSLOT      'sub', -5, 19, -1, -5
+  f1     214  JMP          -> 2501
+  f1     215  OP_166       'HttpService', 'game'
+  f1     216  CALL         2, -1
+  f1     217  SETVAR       0, 1
+  f1     218  JMP          -> 2120
+  f1     219  EQ           -1, 2, 71, 'Value'
+  f1     220  JMP          -> 162
+  f1     221  OP_350       'byte', 1, 1
+  f1     222  OP_103       81, 81
+  f1     223  JMP          -> 184
+  f1     224  OP_350       'byte', 1, 1
+  f1     225  OP_176       'math', 'max', 59
+  f1     226  JMP          -> 2384
+  f1     227  OP_201       
+  f1     228  SETVAR       0, 1
+  f1     229  INDEX        30, 106301, 53, 3
+  f1     230  INDEX        106301
+  f1     231  JMP          -> 2179
+  f1     232  GETVAR       993, 30, 3, 53
+  f1     233  JMP          -> 1412
+  f1     234  SETVAR       0, 1
+  f1     235  OP_108       -1, 33, 'typeof'
+  f1     236  JMP          -> 1119
+  f1     237  SETINDEX     1, 0
+  f1     238  OP_384       673343, 1
+  f1     239  INDEX        673343
+  f1     240  LOADK        12, 4161
+  f1     241  JMP          -> 711
+  f1     242  INDEX        36, 27, 956864, 0
+  f1     243  INDEX        956864
+  f1     244  CALL         3, -1
+  f1     245  JMP          -> 756
+  f1     246  MUL          78371
+  f1     247  INDEX        78371
+  f1     248  ADD          142581, 63, 12, 1000003, -45564
+  f1     249  JMP          -> 845
+  f1     250  LOADK        2475, 2
+  f1     251  CALL         6, 0
+  f1     252  OP_143       483401, 'RunService', 'game'
+  f1     253  INDEX        483401
+  f1     254  JMP          -> 473
+  f1     255  OP_249       525, 37, 0
+  f1     256  CALL         4, 0
+  f1     257  JMP          -> 781
+  f1     258  CJMP         -> 2088
+  f1     260  OP_58        15, 58
+  f1     261  CALL         2, 1
+  f1     262  EQ           5123, 1
+  f1     263  JMP          -> 1761
+  f1     264  LOADK        72882971
+  f1     265  SETVAR       0, 1
+  f1     266  LOADK        607878787
+  f1     267  SETVAR       0, 1
+  f1     268  JMP          -> 79, 0
+  f1     269  CALL         2
+  f1     270  SETVAR       0, 1
+  f1     271  CALL         3
+  f1     272  SETVAR       0, 1
+  f1     273  CALL         4
+  f1     274  JMP          -> 2027
+  f1     276  LOADK        7188, 116946329100847, 1
+  f1     277  CALL         4, 0
+  f1     278  CJMP         -> 1476, -2
+  f1     279  CALL         3, 0
+  f1     280  OP_262       'new', 'Vector2', 403, 111
+  f1     281  JMP          -> 1261
+  f1     282  EQ           'game', 'GetService', 'game', 40
+  f1     283  JMP          -> 602
+  f1     284  JMP          -> 1325, 13
+  f1     285  EQ           468044, 0.5, 1
+  f1     286  INDEX        468044
+  f1     287  CALL         6, -1
+  f1     288  SETVAR       0, 1
+  f1     289  JMP          -> 409
+  f1     290  NEWTABLE     17, 20
+  f1     291  SETINDEX     1, 0
+  f1     292  JMP          -> 389, 1
+  f1     293  NEWTABLE     80
+  f1     294  OP_99        3
+  f1     295  CJMP         -> 656, 80
+  f1     296  SETINDEX     1, 0
+  f1     297  ADD          1
+  f1     298  JMP          -> 2421
+  f1     299  ADD          65599, 20, 30, 17
+  f1     300  JMP          -> 525
+  f1     301  LOADK        1, 1429
+  f1     302  CALL         4, 0
+  f1     303  CJMP         -> 2034, 90
+  f1     304  ADD          1, 7330, 155, 32
+  f1     305  JMP          -> 574
+  f1     306  OP_332       19, 10, 20, 'Vector3', 'new'
+  f1     307  JMP          -> 1129
+  f1     308  GETSLOT      93
+  f1     309  OP_99        3
+  f1     310  LOADK        2
+  f1     311  JMP          -> 1723
+  f1     312  OP_18        'floor', 1, 'max', 'math', 'math', 14
+  f1     313  JMP          -> 2062
+  f1     314  SETINDEX     533693, 1739
+  f1     315  INDEX        533693
+  f1     316  CALL         6, 0
+  f1     317  OP_58        93, -2
+  f1     318  JMP          -> 984
+  f1     319  OP_108       -1, 86, 'typeof'
+  f1     320  CALL         1, 1
+  f1     321  JMP          -> 1416
+  f1     322  LOADK        38, 0.6875
+  f1     323  CALL         2, -1
+  f1     324  SETVAR       0, 1
+  f1     325  JMP          -> 518
+  f1     326  CALL         1, 1
+  f1     327  LOADK        3489, 3442829613117176, 1
+  f1     328  CALL         4, 0
+  f1     329  JMP          -> 978
+  f1     330  CALL         4, 0
+  f1     331  OP_101       2012573742349900, 93, -1
+  f1     332  JMP          -> 1830
+  f1     334  INDEX        'Back', 'EasingStyle'
+  f1     335  JMP          -> 2529
+  f1     336  OP_53        910793, 889151, 30
+  f1     337  INDEX        910793
+  f1     338  GETVAR       1000003, 63, 70
+  f1     339  JMP          -> 910
+  f1     340  CALL         4, 0
+  f1     341  EQ           62, -1, 'Y'
+  f1     342  JMP          -> 1227
+  f1     343  LOADK        30, 3739, 3
+  f1     344  CALL         3, 0
+  f1     345  JMP          -> 2300
+  f1     346  OP_58        15, 94
+  f1     347  CALL         2, 1
+  f1     348  JMP          -> 2333, 1
+  f1     349  SETVAR       0, 1
+  f1     350  ADD          1000003, 32, 56, 436114, -3
+  f1     351  JMP          -> 2355
+  f1     352  OP_401       
+  f1     353  CALL         1, 1
+  f1     354  LOADK        4871, 1286136070326683, 1
+  f1     355  JMP          -> 2024
+  f1     356  OP_23        1679014374428165, 1427, 14, 1
+  f1     357  JMP          -> 330
+  f1     358  ADD          24, 'type'
+  f1     359  CALL         1, 1
+  f1     360  OP_99        3
+  f1     361  JMP          -> 2375
+  f1     362  LOADK        1000003
+  f1     363  SETVAR       0, 1
+  f1     364  GETVAR       3, 53
+  f1     365  JMP          -> 2072
+  f1     366  ADD          935939
+  f1     367  INDEX        935939
+  f1     368  GETVAR       1000003, 63, 70
+  f1     369  JMP          -> 830
+  f1     370  GETSLOT      48
+  f1     371  CALL         1, 1
+  f1     372  SUB          1000003
+  f1     373  JMP          -> 492
+  f1     374  OP_350       'FromValue', 1, 1
+  f1     375  OP_39        5516, 37, 381470
+  f1     376  INDEX        381470
+  f1     377  LOADK        0
+  f1     378  CALL         4, 0
+  f1     379  JMP          -> 121
+  f1     381  MUL          30, 63, -869073, 664991
+  f1     382  INDEX        664991
+  f1     383  SETINDEX     705494, 1000003, 70
+  f1     384  INDEX        705494
+  f1     385  JMP          -> 1281, 17
+  f1     386  CALL         4, 0
+  f1     387  OP_101       'Y', 72, -1
+  f1     388  JMP          -> 880
+  f1     389  ADD          31, 63
+  f1     390  SETINDEX     1, 0
+  f1     391  JMP          -> 2117
+  f1     392  CJMP         -> 2045
+  f1     393  JMP          -> 728
+  f1     394  SETINDEX     1, 0
+  f1     395  POP          738052, 1
+  f1     396  JMP          -> 561
+  f1     397  LOADK        1, 4689
+  f1     398  CALL         4, 0
+  f1     399  OP_58        71, -1
+  f1     400  JMP          -> 2517
+  f1     401  POP          1000003
+  f1     402  SETVAR       0, 1
+  f1     403  JMP          -> 645, 53
+  f1     404  LOADK        1000003
+  f1     405  SETVAR       0, 1
+  f1     406  JMP          -> 1978, 53
+  f1     407  EQ           -1, 'Name', -6, 154084391981126
+  f1     408  JMP          -> 441
+  f1     409  OP_108       -1, -4, 'typeof'
+  f1     410  CALL         1, 1
+  f1     411  SETINDEX     690137, 1334042204734443
+  f1     412  INDEX        690137
+  f1     413  JMP          -> 857
+  f1     414  GETSLOT      15
+  f1     415  CALL         2, 1
+  f1     416  EQ           1, 0, 5706
+  f1     417  JMP          -> 2095
+  f1     418  LOADK        6824
+  f1     419  CALL         6, 0
+  f1     420  ADD          65599, 20, 17, 30
+  f1     421  JMP          -> 1805
+  f1     425  OP_156       
+  f1     426  SETINDEX     1, 0
+  f1     427  INDEX        1
+  f1     428  JMP          -> 38
+  f1     429  LOADK        'Part'
+  f1     430  CALL         1, -1
+  f1     431  SETVAR       0, 1
+  f1     432  CJMP         -> 590, -6
+  f1     433  CALL         1, -1
+  f1     434  SETVAR       0, 1
+  f1     435  OP_27        'Folder', 'new', 'Instance'
+  f1     436  JMP          -> 2244
+  f1     437  LOADK        1
+  f1     438  CALL         4, 0
+  f1     439  OP_236       -2
+  f1     440  JMP          -> 1515
+  f1     441  LOADK        1, 5934
+  f1     442  CALL         4, 0
+  f1     443  OP_117       'typeof', -1
+  f1     444  JMP          -> 1959
+  f1     445  MUL          13, 666452, -188069
+  f1     446  JMP          -> 1200
+  f1     447  ADD          1000003, 12, 31
+  f1     448  JMP          -> 33
+  f1     449  CALL         2, -1
+  f1     450  OP_350       'byte', 1, 1
+  f1     451  OP_59        14
+  f1     452  JMP          -> 1665
+  f1     454  CALL         6, 0
+  f1     455  GETSLOT      89, -2
+  f1     456  JMP          -> 718
+  f1     457  GETSLOT      93
+  f1     458  OP_99        3
+  f1     459  OP_350       'byte', 1, 1
+  f1     460  JMP          -> 568
+  f1     461  LOADK        75, 32, 3525
+  f1     462  CALL         6, 0
+  f1     463  CJMP         -> 1180, -2
+  f1     464  OP_70        -6, 'ClassName'
+  f1     465  OP_99        3
+  f1     466  INDEX        'Name', -6
+  f1     467  JMP          -> 2290
+  f1     468  POP          'Y', 72
+  f1     469  JMP          -> 1800
+  f1     470  CALL         1, 1
+  f1     471  LOADK        5070, 3204103258971524, 1
+  f1     472  JMP          -> 965
+  f1     473  OP_350       'GetService', 1, -1
+  f1     474  SETVAR       0, 1
+  f1     475  OP_39        'ClassName', 68, 618920
+  f1     476  INDEX        618920
+  f1     477  JMP          -> 500
+  f1     478  SETVAR       0, 1
+  f1     479  OP_70        33, 'Min'
+  f1     480  SETVAR       0, 1
+  f1     481  CJMP         'Max', 217992894, 33
+  f1     482  CALL         6, 0
+  f1     483  SETINDEX     65599, 983447, 30
+  f1     484  INDEX        983447
+  f1     485  ADD          63, 31, 20, 17
+  f1     486  JMP          -> 1022
+  f1     487  CJMP         -> 1041
+  f1     488  JMP          -> 1993
+  f1     489  SETVAR       0, 1
+  f1     490  GETVAR       4665, 30, 3, 53
+  f1     491  JMP          -> 279
+  f1     492  OP_201       
+  f1     493  SETINDEX     1, 0
+  f1     494  LOADK        1
+  f1     495  SETVAR       0, 1
+  f1     496  JMP          -> 1011
+  f1     497  CALL         3, 0
+  f1     498  INDEX        'GetService', 'game'
+  f1     499  JMP          -> 215
+  f1     500  SETVAR       0, 1
+  f1     501  OP_402       68, 'type'
+  f1     502  CALL         1, -1
+  f1     503  JMP          -> 1185
+  f1     504  OP_27        'Part', 'new', 'Instance'
+  f1     505  CALL         1, -1
+  f1     506  SETVAR       0, 1
+  f1     507  JMP          'new', 'Instance', 223811657
+  f1     508  MOD          1000003, 31, 522557, 12
+  f1     509  INDEX        522557
+  f1     510  JMP          -> 1470
+  f1     511  GETVAR       6280, 30
+  f1     512  CALL         3, 0
+  f1     513  JMP          'new', 'UDim', 215852470
+  f1     514  LOADK        7666, 5
+  f1     515  CALL         6, 0
+  f1     516  MUL          17, 20, 65599, 30
+  f1     517  JMP          -> 678
+  f1     518  OP_108       -1, 21, 'typeof'
+  f1     519  CALL         1, 1
+  f1     520  JMP          -> 2283
+  f1     521  GETSLOT      10
+  f1     522  CALL         1, 1
+  f1     523  LOADK        5587, 262706693189208
+  f1     524  JMP          -> 139
+  f1     525  MUL          63, 31
+  f1     526  SETINDEX     1, 0
+  f1     527  LOADK        616136, 1
+  f1     528  INDEX        616136
+  f1     529  JMP          -> 1642
+  f1     530  CALL         4, 0
+  f1     531  OP_260       1446, -1, 631380094072186, 'DelayTime', -4
+  f1     532  JMP          -> 620
+  f1     533  LOADK        1
+  f1     534  SETINDEX     1, 0
+  f1     535  OP_384       102170, 1
+  f1     536  INDEX        102170
+  f1     537  JMP          -> 1698
+  f1     538  OP_371       183176
+  f1     539  INDEX        183176
+  f1     540  LOADK        2666, 3833009842808630, 1
+  f1     541  JMP          -> 2048
+  f1     542  LOADK        1166, 1845051487025058, 1
+  f1     543  CALL         4, 0
+  f1     544  CJMP         -> 1818, -1
+  f1     545  GETVAR       5344, 30, 3, 53
+  f1     546  JMP          -> 1528
+  f1     547  OP_402       75, 'typeof'
+  f1     548  CALL         1, -1
+  f1     549  SETVAR       0, 1
+  f1     550  CJMP         -> 1301, -1
+  f1     551  OP_320       114743, 1000003
+  f1     552  INDEX        114743
+  f1     553  LOADK        195749, -775735
+  f1     554  INDEX        195749
+  f1     555  JMP          -> 2015, -818044, 30
+  f1     556  ADD          384702, 31, 63, 17, 20
+  f1     557  JMP          -> 1774
+  f1     561  NEWTABLE     70, -715574, 31, 1000003, 30
+  f1     562  JMP          -> 801
+  f1     563  POP          1000003, 172951
+  f1     564  JMP          -> 1811
+  f1     565  CALL         4, 0
+  f1     566  GETSLOT      'EasingStyle', -4, 'Enum', -1
+  f1     567  JMP          -> 334
+  f1     568  LOADK        6, 32, 2782, 370334
+  f1     569  INDEX        370334
+  f1     570  LOADK        2307, 133
+  f1     571  JMP          -> 454
+  f1     572  INDEX        -6, 'Destroy', -6
+  f1     573  JMP          -> 993
+  f1     574  LOADK        5870
+  f1     575  CALL         6, 0
+  f1     576  GETSLOT      49
+  f1     577  OP_350       'Destroy', 0, 0
+  f1     578  SETINDEX     65599, 896873, 30
+  f1     579  INDEX        896873
+  f1     580  JMP          -> 2040
+  f1     581  ADD          -160259, -3, -3, 160390
+  f1     582  JMP          -> 1841
+  f1     583  OP_201       
+  f1     584  SETVAR       0, 1
+  f1     585  GETVAR       3, 53
+  f1     586  JMP          -> 2330
+  f1     587  NEWTABLE     504416, 'X', 62
+  f1     588  INDEX        504416
+  f1     589  JMP          -> 1754
+  f1     590  LOADK        'AZXyj26AUybzMh', 'Name'
+  f1     591  SETVAR       2, 1
+  f1     592  OP_95        'Size', -6
+  f1     593  JMP          -> 306
+  f1     594  OP_401       
+  f1     595  CALL         1, 1
+  f1     596  LOADK        4431, 957939909767423, 1
+  f1     597  JMP          -> 763
+  f1     598  LOADK        'Workspace'
+  f1     599  OP_350       'GetService', 1, -1
+  f1     600  SETVAR       0, 1
+  f1     601  CJMP         -> 779, -1
+  f1     602  LOADK        'Workspace'
+  f1     603  CALL         2, 1
+  f1     604  LOADK        0, 3669
+  f1     605  CALL         4, 0
+  f1     606  JMP          -> 2102
+  f1     607  CJMP         -> 2010
+  f1     608  JMP          -> 2468
+  f1     609  OP_156       
+  f1     610  SETINDEX     1, 0
+  f1     611  OP_384       760007, 1
+  f1     612  INDEX        760007
+  f1     613  SETINDEX     1, 0
+  f1     614  JMP          -> 754
+  f1     615  SETINDEX     1, 0
+  f1     616  OP_384       962522, 1
+  f1     617  INDEX        962522
+  f1     618  SETVAR       0, 1
+  f1     619  JMP          -> 1510
+  f1     620  LOADK        1
+  f1     621  CALL         4, 0
+  f1     622  OP_101       'Time', -4, -2
+  f1     623  JMP          -> 1350
+  f1     624  SETINDEX     31, 327047, 63
+  f1     625  INDEX        327047
+  f1     626  ADD          518174
+  f1     627  JMP          -> 1037
+  f1     628  OP_50        'type', -1, 570065
+  f1     629  INDEX        570065
+  f1     630  GETSLOT      66
+  f1     631  CALL         1, 1
+  f1     632  JMP          -> 1718
+  f1     633  OP_402       75, 'type'
+  f1     634  CALL         1, -1
+  f1     635  SETVAR       0, 1
+  f1     636  JMP          -> 547
+  f1     637  OP_95        5878, -3
+  f1     638  CALL         3, 0
+  f1     639  CALL         12
+  f1     640  SETVAR       0, 1
+  f1     641  JMP          -> 1565
+  f1     642  LOADK        299117, 608906, 1000003
+  f1     643  INDEX        299117
+  f1     644  JMP          -> 381, 283812, 30
+  f1     645  LOADK        30, 1333, 3
+  f1     646  CALL         3, 0
+  f1     647  JMP          -> 504
+  f1     648  CALL         4, 0
+  f1     649  GETSLOT      'BrickColor', 7, 'Number', 'new', -1
+  f1     650  JMP          -> 1765
+  f1     651  SETINDEX     825656, 1
+  f1     652  INDEX        825656
+  f1     653  OP_69        54, 'floor', 'math'
+  f1     654  OP_99        3
+  f1     655  JMP          -> 1028
+  f1     656  LOADK        1
+  f1     657  OP_350       'byte', 1, 1
+  f1     658  OP_59        80
+  f1     659  JMP          -> 2066
+  f1     660  INDEX        271187, 'Envelope'
+  f1     661  INDEX        271187
+  f1     662  INDEX        32
+  f1     663  JMP          -> 2491
+  f1     664  ADD          'Reverses', -4
+  f1     665  CJMP         -> 1752
+  f1     666  JMP          -> 1501
+  f1     667  GETSLOT      'Parent', 11, 84
+  f1     668  SETVAR       2, 1
+  f1     669  CJMP         -> 1463, -1
+  f1     670  GETSLOT      31
+  f1     671  CALL         1, 1
+  f1     672  LOADK        581, 3442829680226041, 1
+  f1     673  JMP          -> 1172
+  f1     674  LOADK        26, 2780, 7938, 4, 8
+  f1     675  JMP          -> 688
+  f1     676  OP_127       1, 1663, 3260074923048023, 'ClassName', 40
+  f1     677  JMP          -> 2164
+  f1     678  POP          714017, 31, 63
+  f1     679  JMP          -> 2170
+  f1     680  OP_59        41
+  f1     681  OP_99        3
+  f1     682  OP_359       891305
+  f1     683  INDEX        891305
+  f1     684  JMP          -> 1938
+  f1     685  MUL          53, -3, 1000003, 53315
+  f1     686  INDEX        53315
+  f1     687  JMP          -> 2523
+  f1     688  CALL         6, 0
+  f1     689  MUL          255830, 17, 65599, 20, 30
+  f1     690  INDEX        255830
+  f1     691  JMP          -> 1190
+  f1     692  LOADK        498848, 53, 1000003
+  f1     693  INDEX        498848
+  f1     694  JMP          -> 637, 6
+  f1     695  GETSLOT      1, 741866, 1054576948921868, 1810, 78
+  f1     696  INDEX        741866
+  f1     697  JMP          -> 29
+  f1     698  LOADK        2485, 1, 3806596396345127, 903878
+  f1     699  INDEX        903878
+  f1     700  CALL         4, 0
+  f1     701  CJMP         -> 733, -1
+  f1     702  OP_108       -1, 62, 'typeof'
+  f1     703  CALL         1, 1
+  f1     704  JMP          -> 1322
+  f1     705  OP_108       -2, 66, 'type'
+  f1     706  CALL         1, 1
+  f1     707  OP_99        3
+  f1     708  JMP          -> 674
+  f1     709  CJMP         -> 2344
+  f1     711  LOADK        175, 16, 7974
+  f1     712  CALL         6, 0
+  f1     713  JMP          -> 124, 65599, 30
+  f1     714  LOADK        1
+  f1     715  OP_350       'byte', 1, 1
+  f1     716  OP_59        81
+  f1     717  JMP          -> 1431
+  f1     718  OP_99        3
+  f1     719  OP_95        1, 89
+  f1     720  OP_350       'byte', 1, 1
+  f1     721  JMP          -> 1044
+  f1     722  LOADK        7854, 1216616166438295, 1
+  f1     723  CALL         4, 0
+  f1     724  CJMP         -> 587, -2
+  f1     725  JMP          -> 358, 19
+  f1     726  ADD          31, 12, 1000003
+  f1     727  JMP          -> 1508
+  f1     728  JMP          -> 2045, 0
+  f1     729  LOADK        1783
+  f1     730  CALL         3, 0
+  f1     731  OP_262       'new', 'Vector3', 434, 452
+  f1     732  JMP          -> 1292
+  f1     733  OP_316       9, -5, 'sub', -5, 9
+  f1     734  JMP          -> 945
+  f1     735  SETVAR       0, 1
+  f1     736  GETSLOT      'Enum', 'typeof', -1
+  f1     737  CALL         1, 1
+  f1     738  JMP          -> 2306
+  f1     739  POP          1000003, 53, -3
+  f1     740  JMP          -> 1459
+  f1     741  SETINDEX     860591, 1000003, 12
+  f1     742  INDEX        860591
+  f1     743  ADD          31
+  f1     744  JMP          -> 685
+  f1     745  LOADK        1
+  f1     746  CALL         4, 0
+  f1     747  OP_101       'ClassName', 92, -1
+  f1     748  JMP          -> 1878
+  f1     749  CALL         6, 0
+  f1     750  ADD          65599, 20, 17, 30
+  f1     751  JMP          -> 624
+  f1     752  OP_318       1, -1, 'typeof', 90
+  f1     753  JMP          -> 2197
+  f1     754  INDEX        3, 6426, 1
+  f1     755  JMP          -> 1659
+  f1     756  SETVAR       0, 1
+  f1     757  OP_108       -1, 4, 'typeof'
+  f1     758  CALL         1, 1
+  f1     759  JMP          -> 1512
+  f1     760  CALL         4, 0
+  f1     761  OP_254       51, -1, 1845051487025058, 4818
+  f1     762  JMP          -> 1734
+  f1     763  CALL         4, 0
+  f1     764  OP_101       'Value', 37, -1
+  f1     765  JMP          -> 866
+  f1     766  CALL         4, 0
+  f1     767  OP_164       60, -1, 1
+  f1     768  JMP          -> 1546
+  f1     769  LOADK        1000003
+  f1     770  SETVAR       0, 1
+  f1     771  JMP          -> 1076, 53
+  f1     772  OP_101       '4rI3AaoQ85', 49, -1
+  f1     773  OP_350       'GetAttribute', 1, 1
+  f1     774  JMP          -> 2213, 3443101919458758
+  f1     775  SETINDEX     250262, 64
+  f1     776  INDEX        250262
+  f1     777  CJMP         -> 2032
+  f1     778  JMP          -> 2465
+  f1     779  GETSLOT      4518, 0, 73, 'workspace'
+  f1     780  JMP          -> 1079
+  f1     781  GETSLOT      695795, 'Value', 37, 69, -1
+  f1     782  INDEX        695795
+  f1     783  JMP          -> 374
+  f1     784  LOADK        0, 2158
+  f1     785  CALL         4, 0
+  f1     786  CJMP         -> 2293, -1
+  f1     787  INDEX        'ClassName', 76, 1875755228503392, 1883
+  f1     788  JMP          -> 745
+  f1     789  OP_162       343841, 'Z', 31
+  f1     790  INDEX        343841
+  f1     791  LOADK        174, 1203409610978706
+  f1     792  JMP          -> 2326
+  f1     793  LOADK        5232, 213
+  f1     794  CALL         6, 0
+  f1     795  OP_95        'Destroy', 11
+  f1     796  JMP          -> 1147
+  f1     797  OP_94        78
+  f1     798  OP_99        3
+  f1     799  OP_95        1, 78
+  f1     800  JMP          -> 1236
+  f1     801  MUL          1000003, 12, 97327, 63, -737859, 1000003, 12
+  f1     802  JMP          -> 129
+  f1     803  SETINDEX     234905, 9
+  f1     804  INDEX        234905
+  f1     805  LOADK        152, 16, 7994
+  f1     806  JMP          -> 1114
+  f1     807  OP_90        'pcall'
+  f1     808  CALL         9
+  f1     809  CALL         1, -1
+  f1     810  SETVAR       0, 1
+  f1     811  JMP          -> 874
+  f1     812  GETSLOT      89
+  f1     813  OP_99        3
+  f1     814  OP_350       'byte', 1, 1
+  f1     815  OP_156       
+  f1     816  SETINDEX     1, 0
+  f1     817  JMP          -> 824
+  f1     818  GETSLOT      'Reverses', 8065, -4, 0, 1, -1
+  f1     819  JMP          -> 530
+  f1     820  LOADK        1
+  f1     821  CALL         4, 0
+  f1     822  OP_108       -2, 90, 'typeof'
+  f1     823  JMP          -> 75
+  f1     824  LOADK        1
+  f1     825  SETINDEX     1, 0
+  f1     826  JMP          -> 1900, 1
+  f1     827  CALL         1, 1
+  f1     828  MOD          1000003
+  f1     829  JMP          -> 2369
+  f1     830  LOADK        12, 17, 1000003, 895526
+  f1     831  INDEX        895526
+  f1     832  JMP          -> 12, 31
+  f1     833  ADD          648857, 844166
+  f1     834  JMP          -> 2001
+  f1     835  SETVAR       0, 1
+  f1     836  LOADK        836810
+  f1     837  SETVAR       0, 1
+  f1     838  LOADK        1656720098
+  f1     839  SETVAR       0, 1
+  f1     840  JMP          -> 264
+  f1     841  MUL          1357, 1000003
+  f1     842  JMP          -> 1768
+  f1     843  LOADK        226, 32, 3654, 10
+  f1     844  JMP          -> 1605
+  f1     845  ADD          -142508, 63
+  f1     846  JMP          -> 1341
+  f1     847  GETSLOT      9
+  f1     848  CALL         1, -1
+  f1     849  SETVAR       0, 1
+  f1     850  CJMP         -> 356, -1
+  f1     851  LOADK        21, 8, 4753, 2
+  f1     852  CALL         6, 0
+  f1     853  JMP          -> 1948
+  f1     854  OP_127       1, 7109, 1999602483037140, 'Name', 92
+  f1     855  CALL         4, 0
+  f1     856  JMP          -> 1701
+  f1     857  LOADK        1, 7910
+  f1     858  CALL         4, 0
+  f1     859  OP_58        -4, -1
+  f1     860  JMP          -> 1777
+  f1     861  ADD          -453680, 30, -275408
+  f1     862  JMP          -> 1083
+  f1     863  CALL         4, 0
+  f1     864  OP_342       3802193719060254, 'Z', 72, -1
+  f1     865  JMP          -> 1654
+  f1     866  INDEX        3015, 1845051487025058, 1
+  f1     867  CALL         4, 0
+  f1     868  JMP          -> 1589
+  f1     869  SETINDEX     730730, 0
+  f1     870  INDEX        730730
+  f1     871  CALL         4, 0
+  f1     872  GETSLOT      34, -2, 171, 82
+  f1     873  JMP          -> 1815
+  f1     874  OP_76        0, 1305, -1, 44
+  f1     875  JMP          -> 898
+  f1     876  GETSLOT      15
+  f1     877  CALL         2, 1
+  f1     878  EQ           2689, 1
+  f1     879  JMP          -> 1864
+  f1     880  INDEX        4656, 3797791444428571, 1
+  f1     881  JMP          -> 863
+  f1     882  LOADK        30, 2010, 3
+  f1     883  CALL         3, 0
+  f1     884  JMP          -> 1285, 0
+  f1     885  OP_393       864812, 1845051554133923, 'RepeatCount', -4
+  f1     886  INDEX        864812
+  f1     887  LOADK        1, 1600
+  f1     888  CALL         4, 0
+  f1     889  JMP          -> 818
+  f1     890  CALL         3, 0
+  f1     891  OP_143       148331, 'ReplicatedStorage', 'game'
+  f1     892  INDEX        148331
+  f1     893  OP_350       'GetService', 1, -1
+  f1     894  JMP          -> 2133
+  f1     895  OP_23        1054576948921868, 7751, 80, 1
+  f1     896  CALL         4, 0
+  f1     897  JMP          -> 1248
+  f1     898  LOADK        0
+  f1     899  CALL         4, 0
+  f1     900  OP_108       -1, 24, 'type'
+  f1     901  JMP          -> 1374
+  f1     902  MUL          1000003, 70, 63
+  f1     903  JMP          -> 2131
+  f1     904  POP          
+  f1     905  JMP          -> 2409
+  f1     906  OP_401       
+  f1     907  SETVAR       0, 1
+  f1     908  NEWTABLE     5, 1
+  f1     909  JMP          -> 370
+  f1     910  ADD          12, 1000003, 31, 17
+  f1     911  JMP          -> 1988
+  f1     912  GETSLOT      7673, 55, 'Inner', 24, -1
+  f1     913  JMP          -> 89
+  f1     914  LOADK        1
+  f1     915  CALL         4, 0
+  f1     916  OP_101       'X', 72, -1
+  f1     917  JMP          -> 1635
+  f1     918  MUL          77, 485912, 1000003, 1000003
+  f1     919  JMP          -> 2361
+  f1     920  GETVAR       487, 30, 416495
+  f1     921  INDEX        416495
+  f1     922  CALL         3, 0
+  f1     923  JMP          -> 100, 'Enum'
+  f1     924  OP_289       1, 42, 'rawequal'
+  f1     925  JMP          -> 876
+  f1     926  LOADK        593
+  f1     927  CALL         6, 0
+  f1     928  OP_90        'game'
+  f1     929  SETVAR       0, 1
+  f1     930  CJMP         -> 1057, 9
+  f1     932  ADD          1000003, 53, -3
+  f1     933  JMP          -> 188
+  f1     934  CALL         4, 0
+  f1     935  OP_2         7, -2, 'Name'
+  f1     936  OP_99        3
+  f1     937  JMP          -> 803, 4764
+  f1     938  ADD          672086, 31, 63
+  f1     939  INDEX        672086
+  f1     940  SETINDEX     1, 0
+  f1     941  JMP          -> 1683, 1
+  f1     942  SETINDEX     1, 0
+  f1     943  POP          2309, 1
+  f1     944  JMP          -> 1844
+  f1     945  CALL         3, 1
+  f1     946  LOADK        6265, 4218979524621543, 1
+  f1     947  JMP          -> 2187
+  f1     948  CALL         6, 0
+  f1     949  ADD          65599, 20, 17, 30
+  f1     950  JMP          -> 2129
+  f1     951  SETVAR       0, 0
+  f1     952  OP_94        32
+  f1     953  OP_195       
+  f1     954  JMP          -> 1963
+  f1     955  OP_359       684659
+  f1     956  INDEX        684659
+  f1     957  GETSLOT      67
+  f1     958  CJMP         -> 1976
+  f1     960  CJMP         -> 358
+  f1     961  JMP          -> 725
+  f1     962  LOADK        4451, 2312249508214172, 1
+  f1     963  CALL         4, 0
+  f1     964  JMP          -> 2152
+  f1     965  CALL         4, 0
+  f1     966  OP_2         73, -2, 'ClassName'
+  f1     967  OP_99        3
+  f1     968  JMP          -> 2203, 'typeof'
+  f1     969  SETINDEX     65599, 373208, 30
+  f1     970  INDEX        373208
+  f1     971  ADD          31, 63, 17, 20
+  f1     972  JMP          -> 1891
+  f1     973  OP_384       656729, 1
+  f1     974  INDEX        656729
+  f1     975  SETINDEX     1, 0
+  f1     976  LOADK        1
+  f1     977  JMP          -> 50
+  f1     978  OP_312       2, 2857865377330594, 3144, 1, -1, 'X'
+  f1     979  JMP          -> 1584
+  f1     980  ADD          1000003, 70, 17, 63
+  f1     981  JMP          -> 508
+  f1     982  POP          1000003, 565607
+  f1     983  JMP          -> 2377
+  f1     984  OP_99        3
+  f1     985  OP_95        1, 93
+  f1     986  OP_350       'byte', 1, 1
+  f1     987  JMP          -> 58
+  f1     988  SETINDEX     790811, 'new'
+  f1     989  INDEX        790811
+  f1     990  INDEX        427163
+  f1     991  CALL         1, -1
+  f1     992  JMP          -> 66
+  f1     993  CALL         1, 0
+  f1     994  SETINDEX     114833, 30, 65599, 20, 17
+  f1     995  INDEX        114833
+  f1     996  JMP          -> 2432
+  f1     997  SETINDEX     1, 0
+  f1     998  INDEX        2369, 1
+  f1     999  JMP          -> 851
+  f1    1000  CALL         6, 0
+  f1    1001  SETINDEX     519863, 30, 65599, 20, 17
+  f1    1002  INDEX        519863
+  f1    1003  JMP          -> 1361, 31, 63
+  f1    1004  OP_371       641372
+  f1    1005  INDEX        641372
+  f1    1006  INDEX        203674702214373, 'Value'
+  f1    1007  JMP          -> 397
+  f1    1008  JMP          -> 709, 1
+  f1    1009  INDEX        'EasingDirection', 'Enum', 'Out', 1
+  f1    1010  JMP          -> 285
+  f1    1011  NEWTABLE     5, 1, 23
+  f1    1012  JMP          -> 827
+  f1    1013  OP_58        59, -2
+  f1    1014  OP_99        3
+  f1    1015  OP_95        1, 59
+  f1    1016  JMP          -> 224
+  f1    1017  LOADK        0, 2855
+  f1    1018  CALL         4, 0
+  f1    1019  CJMP         -> 885, -1
+  f1    1020  NEWTABLE     13, -195524, 56, 620691, 822855
+  f1    1021  JMP          -> 1858
+  f1    1022  POP          1000003, 269951
+  f1    1023  JMP          -> 171
+  f1    1024  SETINDEX     1, 0
+  f1    1025  LOADK        1
+  f1    1026  SETINDEX     1, 0
+  f1    1027  JMP          -> 1906
+  f1    1028  LOADK        2
+  f1    1029  CALL         1, -1
+  f1    1030  CALL         2, -1
+  f1    1031  OP_350       'byte', 1, 1
+  f1    1032  JMP          -> 94
+  f1    1033  OP_401       
+  f1    1034  SETVAR       0, 1
+  f1    1035  OP_94        32
+  f1    1036  JMP          -> 165
+  f1    1037  OP_320       950039, 1000003
+  f1    1038  INDEX        950039
+  f1    1039  SETVAR       0, 1
+  f1    1040  JMP          -> 2109, 53
+  f1    1041  GETSLOT      17
+  f1    1042  CJMP         -> 392
+  f1    1044  GETSLOT      89, 'floor', 'math', 1, 'max', 'math', 89
+  f1    1045  JMP          -> 1251
+  f1    1046  LOADK        1, 6708
+  f1    1047  CALL         4, 0
+  f1    1048  OP_117       'typeof', -1
+  f1    1049  JMP          -> 1105
+  f1    1050  CALL         3, -1
+  f1    1051  SETVAR       0, 1
+  f1    1052  OP_262       'new', 'Color3', 0, 0
+  f1    1053  JMP          -> 106
+  f1    1054  SETVAR       0, 1
+  f1    1055  OP_164       83, -1, 0
+  f1    1056  JMP          -> 784
+  f1    1057  LOADK        'ClassName'
+  f1    1058  SETVAR       0, 1
+  f1    1059  JMP          -> 1833, 'type'
+  f1    1060  OP_95        993, -3
+  f1    1061  CALL         3, 0
+  f1    1062  JMP          -> 1694, 'game'
+  f1    1063  SETINDEX     570155, 1
+  f1    1064  INDEX        570155
+  f1    1065  OP_350       'byte', 1, 1
+  f1    1066  OP_176       'math', 'max', 54
+  f1    1067  JMP          -> 651
+  f1    1068  POP          3282, 'Z'
+  f1    1069  JMP          -> 843
+  f1    1070  INDEX        6773, 4201879001220151, 'ClassName'
+  f1    1071  JMP          -> 2216
+  f1    1072  SETINDEX     218201, 30
+  f1    1073  INDEX        218201
+  f1    1074  GETVAR       2, 70, 63
+  f1    1075  JMP          -> 1968
+  f1    1076  LOADK        30, 3605, 3
+  f1    1077  CALL         3, 0
+  f1    1078  JMP          -> 1705
+  f1    1079  CALL         4, 0
+  f1    1080  OP_108       -1, 73, 'typeof'
+  f1    1081  CALL         1, 1
+  f1    1082  JMP          -> 1137
+  f1    1083  ADD          840414, 30, 30, -353681, 63, -840414, 30
+  f1    1084  JMP          -> 1861
+  f1    1085  LOADK        2
+  f1    1086  CALL         1, -1
+  f1    1087  CALL         2, -1
+  f1    1088  JMP          -> 221
+  f1    1089  POP          1000003, 53, -3
+  f1    1090  JMP          -> 1150
+  f1    1091  OP_350       'FromValue', 1, -1
+  f1    1092  SETVAR       0, 1
+  f1    1093  OP_162       716810, 'EnumType', 37
+  f1    1094  INDEX        716810
+  f1    1095  JMP          -> 735
+  f1    1096  LOADK        'Really black'
+  f1    1097  CALL         1, -1
+  f1    1098  SETVAR       0, 1
+  f1    1099  CJMP         -> 2458, -1
+  f1    1100  LOADK        70, 1000003, 121838, 658552, 63
+  f1    1101  INDEX        121838
+  f1    1102  SETINDEX     162341, 17
+  f1    1103  INDEX        162341
+  f1    1104  JMP          -> 2466
+  f1    1105  GETSLOT      69
+  f1    1106  CALL         1, 1
+  f1    1107  LOADK        2982, 1, 322455486110894, 405359
+  f1    1108  INDEX        405359
+  f1    1109  JMP          -> 1925
+  f1    1110  OP_201       
+  f1    1111  SETINDEX     1, 0
+  f1    1112  LOADK        1
+  f1    1113  JMP          -> 1195
+  f1    1114  CALL         6, 0
+  f1    1115  ADD          65599, 20, 17, 30
+  f1    1116  JMP          -> 1703
+  f1    1117  POP          31, 1000003, 12
+  f1    1118  JMP          -> 2248
+  f1    1119  CALL         1, 1
+  f1    1120  LOADK        577, 709651290168717, 1
+  f1    1121  CALL         4, 0
+  f1    1122  JMP          -> 702
+  f1    1123  CALL         3, -1
+  f1    1124  SETVAR       0, 1
+  f1    1125  OP_117       'typeof', -1
+  f1    1126  JMP          -> 2105
+  f1    1127  EQ           -1, 'B', 4, 1291386168682184
+  f1    1128  JMP          -> 2511
+  f1    1129  CALL         3, -1
+  f1    1130  SETVAR       2, 1
+  f1    1131  OP_70        -6, 'Size'
+  f1    1132  SETVAR       0, 1
+  f1    1133  JMP          -> 2251
+  f1    1134  SETVAR       0, 1
+  f1    1135  OP_76        0, 7712, -1, 61
+  f1    1136  JMP          -> 1616
+  f1    1137  LOADK        4759, 1054576948921868, 1
+  f1    1138  CALL         4, 0
+  f1    1139  JMP          -> 1595
+  f1    1140  OP_94        71
+  f1    1141  OP_99        3
+  f1    1142  OP_95        1, 71
+  f1    1143  JMP          -> 36
+  f1    1144  LOADK        1, 964
+  f1    1145  CALL         4, 0
+  f1    1146  CJMP         -> 1162, -2
+  f1    1147  INDEX        11
+  f1    1148  CALL         1, 0
+  f1    1149  JMP          -> 1453, 65599, 30
+  f1    1150  SETINDEX     78551, 273408
+  f1    1151  INDEX        78551
+  f1    1152  MUL          30, 63, 819706
+  f1    1153  JMP          -> 1681
+  f1    1154  LOADK        202, 8, 3883
+  f1    1155  CALL         6, 0
+  f1    1156  JMP          -> 1531
+  f1    1157  LOADK        'ClassName'
+  f1    1158  OP_99        3
+  f1    1159  JMP          -> 2387, 4018
+  f1    1160  ADD          'Offset', 21, 32
+  f1    1161  JMP          -> 1214
+  f1    1162  INDEX        '4rI3AaoQ85', 10, 91
+  f1    1163  JMP          -> 304
+  f1    1164  INDEX        'Y', 2879876683380144, 31
+  f1    1165  JMP          -> 1875
+  f1    1166  MUL          4, 32, 'G'
+  f1    1167  JMP          -> 1570
+  f1    1168  OP_350       'Cross', 1, -1
+  f1    1169  SETVAR       0, 1
+  f1    1170  OP_297       38, 38, 'Dot'
+  f1    1171  JMP          -> 2056
+  f1    1172  CALL         4, 0
+  f1    1173  OP_342       2871072268334508, 'X', 31, -1
+  f1    1174  JMP          -> 1970
+  f1    1175  GETSLOT      22
+  f1    1176  OP_99        3
+  f1    1177  LOADK        2
+  f1    1178  CALL         1, -1
+  f1    1179  JMP          -> 2350
+  f1    1180  GETSLOT      22
+  f1    1181  OP_99        3
+  f1    1182  OP_95        1, 22
+  f1    1183  OP_350       'byte', 1, 1
+  f1    1184  JMP          -> 1526
+  f1    1185  SETVAR       0, 1
+  f1    1186  OP_402       68, 'typeof'
+  f1    1187  CALL         1, -1
+  f1    1188  SETVAR       0, 1
+  f1    1189  JMP          -> 1750
+  f1    1190  MUL          792248, 369958, 31, 63
+  f1    1191  INDEX        792248
+  f1    1192  JMP          -> 1307
+  f1    1193  ADD          12, 53, 1000003, -3, 31
+  f1    1194  JMP          -> 841
+  f1    1195  SETINDEX     1, 0
+  f1    1196  LOADK        1
+  f1    1197  SETVAR       0, 1
+  f1    1198  JMP          -> 918, 1000003, 30
+  f1    1199  JMP          -> 942, 0
+  f1    1200  ADD          521300, 1000003
+  f1    1201  INDEX        521300
+  f1    1202  SETINDEX     1, 0
+  f1    1203  JMP          -> 533
+  f1    1204  INDEX        'Name', 37
+  f1    1205  CALL         2, 1
+  f1    1206  JMP          -> 255
+  f1    1207  LOADK        926330, 1812386200, 30, 4
+  f1    1208  INDEX        926330
+  f1    1209  CALL         3, 0
+  f1    1210  JMP          -> 1072
+  f1    1211  LOADK        172, 16, 7867
+  f1    1212  CALL         6, 0
+  f1    1213  JMP          -> 1013
+  f1    1214  SETINDEX     1, 0
+  f1    1215  INDEX        6907, 1
+  f1    1216  JMP          -> 2271
+  f1    1217  LOADK        649
+  f1    1218  CALL         6, 0
+  f1    1219  OP_236       -2
+  f1    1220  JMP          -> 797
+  f1    1221  ADD          
+  f1    1222  SETINDEX     1, 0
+  f1    1223  JMP          -> 1426, 1
+  f1    1224  CALL         4, 0
+  f1    1225  OP_101       2012573742349900, 59, -1
+  f1    1226  JMP          -> 2449
+  f1    1227  LOADK        7134, 3824205092218669, 100913
+  f1    1228  INDEX        100913
+  f1    1229  LOADK        1
+  f1    1230  CALL         4, 0
+  f1    1231  JMP          -> 1779
+  f1    1232  LOADK        4023
+  f1    1233  CALL         6, 0
+  f1    1234  NEWTABLE     20, 65599, 17, 30
+  f1    1235  JMP          -> 425
+  f1    1236  OP_350       'byte', 1, 1
+  f1    1237  ADD          'math', 78, 'max', 1
+  f1    1238  JMP          -> 2239
+  f1    1239  LOADK        830, 1054576948921868, 1
+  f1    1240  CALL         4, 0
+  f1    1241  CJMP         -> 1731, -1
+  f1    1242  LOADK        'Lighting'
+  f1    1243  CALL         2, -1
+  f1    1244  SETVAR       0, 1
+  f1    1245  CJMP         -> 1847, -1
+  f1    1246  CJMP         -> 1966
+  f1    1248  OP_58        81, -2
+  f1    1249  OP_99        3
+  f1    1250  CJMP         -> 714, 81
+  f1    1251  OP_99        3
+  f1    1252  SETINDEX     518516, 2
+  f1    1253  INDEX        518516
+  f1    1254  OP_334       
+  f1    1255  CALL         1, -1
+  f1    1256  JMP          -> 1610
+  f1    1257  MUL          721031
+  f1    1258  INDEX        721031
+  f1    1259  OP_424       53, -3
+  f1    1260  JMP          -> 551
+  f1    1261  CALL         2, -1
+  f1    1262  SETVAR       0, 1
+  f1    1263  OP_108       -1, 2, 'typeof'
+  f1    1264  JMP          -> 326
+  f1    1265  GETVAR       3966, 30, 3, 53
+  f1    1266  JMP          -> 497
+  f1    1270  CALL         3, -1
+  f1    1271  SETVAR       0, 1
+  f1    1272  OP_58        50, 38
+  f1    1273  JMP          -> 1168
+  f1    1274  SETINDEX     'Vector3', 612095, 'new'
+  f1    1275  INDEX        612095
+  f1    1276  LOADK        0, 16, 0
+  f1    1277  CALL         3, -1
+  f1    1278  JMP          -> 2114
+  f1    1279  LOADK        162, 3440, 3628, 21, 32
+  f1    1280  JMP          -> 482
+  f1    1281  MUL          138632
+  f1    1282  INDEX        138632
+  f1    1283  MUL          1000003, 12, 31
+  f1    1284  JMP          -> 739
+  f1    1285  SETVAR       0, 1
+  f1    1286  OP_90        'pcall'
+  f1    1287  CALL         7
+  f1    1288  CALL         1, -1
+  f1    1289  SETVAR       0, 1
+  f1    1290  JMP          -> 176
+  f1    1291  JMP          -> 1246, 11
+  f1    1292  LOADK        128
+  f1    1293  CALL         3, -1
+  f1    1294  SETVAR       0, 1
+  f1    1295  OP_117       'typeof', -1
+  f1    1296  JMP          -> 670
+  f1    1297  OP_95        'Folder', 16
+  f1    1298  CALL         2, -1
+  f1    1299  SETVAR       0, 1
+  f1    1300  CJMP         -> 1854, 16
+  f1    1301  OP_23        4201879001220151, 2545, 81, 1
+  f1    1302  JMP          -> 1224
+  f1    1303  GETSLOT      22
+  f1    1304  OP_99        3
+  f1    1305  OP_350       'byte', 1, 1
+  f1    1306  JMP          -> 2211
+  f1    1307  OP_320       596738, 1000003
+  f1    1308  INDEX        596738
+  f1    1309  SETVAR       0, 1
+  f1    1310  GETVAR       3, 53
+  f1    1311  JMP          -> 1820
+  f1    1312  GETVAR       1492, 30
+  f1    1313  CALL         3, 0
+  f1    1314  OP_247       961265, 'Instance', 'new', 'Model'
+  f1    1315  INDEX        961265
+  f1    1316  JMP          -> 433
+  f1    1317  LOADK        1000003
+  f1    1318  SETINDEX     1, 0
+  f1    1319  JMP          -> 906, 1
+  f1    1320  ADD          269036, 32577
+  f1    1321  JMP          -> 1317
+  f1    1322  LOADK        5617, 3442829613117176, 1
+  f1    1323  CALL         4, 0
+  f1    1324  CJMP         -> 1394, -1
+  f1    1325  GETSLOT      57
+  f1    1326  CJMP         -> 607
+  f1    1328  GETSLOT      83
+  f1    1329  CJMP         -> 2173
+  f1    1331  GETVAR       6, 53, 95345
+  f1    1332  INDEX        95345
+  f1    1333  JMP          -> 1060
+  f1    1334  ADD          'Name', 92
+  f1    1335  OP_99        3
+  f1    1336  OP_156       
+  f1    1337  SETINDEX     1, 0
+  f1    1338  JMP          -> 2078
+  f1    1339  ADD          493521, 13
+  f1    1340  JMP          -> 1523
+  f1    1341  ADD          30, 17, 20, 31, -3, 131
+  f1    1342  JMP          -> 1441
+  f1    1343  MUL          774861, 30, -176765
+  f1    1344  JMP          -> 336
+  f1    1345  CALL         3, -1
+  f1    1346  SETINDEX     2, 1
+  f1    1347  CALL         1, -1
+  f1    1348  SETVAR       0, 1
+  f1    1349  JMP          -> 60
+  f1    1350  OP_371       229427
+  f1    1351  INDEX        229427
+  f1    1352  SETINDEX     269930, 16
+  f1    1353  INDEX        269930
+  f1    1354  OP_211       'RepeatCount', -4
+  f1    1355  JMP          -> 664
+  f1    1356  SETINDEX     431942, 96321
+  f1    1357  INDEX        431942
+  f1    1358  POP          1000003
+  f1    1359  SETVAR       0, 1
+  f1    1360  JMP          -> 232
+  f1    1361  OP_359       674960
+  f1    1362  INDEX        674960
+  f1    1363  POP          1000003, 84002
+  f1    1364  JMP          -> 2235
+  f1    1365  LOADK        199, 32, 958481
+  f1    1366  INDEX        958481
+  f1    1367  LOADK        7025
+  f1    1368  CALL         6, 0
+  f1    1369  JMP          -> 572
+  f1    1370  OP_318       'NextInteger', -1, 'type', 46
+  f1    1371  JMP          -> 352
+  f1    1372  CJMP         -> 942
+  f1    1373  JMP          -> 1199
+  f1    1374  CALL         1, 1
+  f1    1375  LOADK        1520, 1815155065086790, 1
+  f1    1376  CALL         4, 0
+  f1    1377  JMP          -> 912
+  f1    1378  OP_401       
+  f1    1379  CALL         1, -1
+  f1    1380  SETVAR       0, 1
+  f1    1381  CJMP         -> 2435, -1
+  f1    1382  OP_131       1, 2389, 0, 18
+  f1    1383  CALL         4, 0
+  f1    1384  JMP          -> 1941
+  f1    1385  LOADK        1281, 1845051554133923, 1
+  f1    1386  CALL         4, 0
+  f1    1387  JMP          -> 219
+  f1    1388  LOADK        1, 1644
+  f1    1389  CALL         4, 0
+  f1    1390  CJMP         -> 676, -1
+  f1    1391  OP_229       578597, 'Name', 76, -1
+  f1    1392  INDEX        578597
+  f1    1393  JMP          -> 1747
+  f1    1394  OP_402       25, 'typeof'
+  f1    1395  CALL         1, 1
+  f1    1396  LOADK        6714, 3442829613117176, 862118
+  f1    1397  INDEX        862118
+  f1    1398  JMP          -> 2220
+  f1    1399  OP_350       'byte', 1, 1
+  f1    1400  OP_103       80, 80
+  f1    1401  JMP          -> 2147
+  f1    1402  GETSLOT      92
+  f1    1403  OP_350       'Destroy', 0, 0
+  f1    1404  MUL          267146, 17, 65599, 20, 30
+  f1    1405  INDEX        267146
+  f1    1406  JMP          -> 1637
+  f1    1407  GETVAR       6, 53, 429158
+  f1    1408  INDEX        429158
+  f1    1409  OP_95        7361, -3
+  f1    1410  CALL         3, 0
+  f1    1411  JMP          -> 1798
+  f1    1412  CALL         3, 0
+  f1    1413  MUL          1000003, 712679, 12, 30, 17
+  f1    1414  INDEX        712679
+  f1    1415  JMP          -> 581, 193
+  f1    1416  LOADK        3286, 736384222583439, 1
+  f1    1417  CALL         4, 0
+  f1    1418  JMP          -> 2463
+  f1    1419  LOADK        453, 208
+  f1    1420  CALL         6, 0
+  f1    1421  JMP          -> 556, 65599, 30
+  f1    1422  INDEX        5228, 'X', 1, 3802193786169119
+  f1    1423  JMP          -> 340
+  f1    1424  ADD          73, 63, 30, 919712
+  f1    1425  JMP          -> 1796
+  f1    1426  ADD          
+  f1    1427  JMP          -> 1630
+  f1    1428  ADD          1000003, 1612736, 130280
+  f1    1429  INDEX        130280
+  f1    1430  JMP          -> 1331
+  f1    1431  OP_18        'floor', 1, 'max', 'math', 'math', 81
+  f1    1432  OP_99        3
+  f1    1433  JMP          -> 1085
+  f1    1434  OP_139       -608906, 1000003, 575813
+  f1    1435  INDEX        575813
+  f1    1436  JMP          -> 980
+  f1    1437  MUL          1000003, 508854, 715671, 70
+  f1    1438  JMP          -> 1837
+  f1    1439  ADD          65599, 20, 30, 17
+  f1    1440  JMP          -> 1912
+  f1    1441  ADD          558600
+  f1    1442  JMP          -> 1561
+  f1    1443  LOADK        89, 70, 154
+  f1    1444  CALL         4, -1
+  f1    1445  JMP          -> 478
+  f1    1446  SETINDEX     507380, 1000003
+  f1    1447  INDEX        507380
+  f1    1448  OP_201       
+  f1    1449  SETVAR       0, 1
+  f1    1450  JMP          -> 343, 53
+  f1    1451  ADD          20, 16
+  f1    1452  JMP          -> 1871
+  f1    1453  MUL          17, 31, 20, 74420, 129301, 63
+  f1    1454  INDEX        74420
+  f1    1455  JMP          -> 401
+  f1    1456  OP_103       59, 59
+  f1    1457  OP_99        3
+  f1    1458  JMP          -> 1888
+  f1    1459  MUL          70, 63, 1000003, 85786
+  f1    1460  JMP          -> 1577
+  f1    1461  CJMP         -> 775
+  f1    1463  OP_162       722468, 'GetFullName', 11
+  f1    1464  INDEX        722468
+  f1    1465  CJMP         -> 2082, 11
+  f1    1466  LOADK        1000003
+  f1    1467  SETVAR       0, 1
+  f1    1468  GETVAR       3, 53
+  f1    1469  JMP          -> 920
+  f1    1470  OP_216       127496, -3, 53
+  f1    1471  INDEX        127496
+  f1    1472  LOADK        1000003
+  f1    1473  JMP          -> 1100
+  f1    1474  ADD          193, 1000003, 12, -919695, 30
+  f1    1475  JMP          -> 155
+  f1    1476  OP_393       573029, 32, 'R', 8
+  f1    1477  INDEX        573029
+  f1    1478  OP_97        8, 8, 'G'
+  f1    1479  JMP          -> 1826
+  f1    1481  CALL         6, 0
+  f1    1482  ADD          20, 65599, 31, 30, 17, 63
+  f1    1483  JMP          -> 563
+  f1    1484  OP_250       140069, 3816
+  f1    1485  INDEX        140069
+  f1    1486  LOADK        8, 0, 146
+  f1    1487  JMP          -> 1232
+  f1    1488  OP_202       8, 2, 3414
+  f1    1489  JMP          -> 793
+  f1    1490  SETVAR       0, 1
+  f1    1491  OP_249       71, 43, 241
+  f1    1492  OP_350       'NextInteger', 2, -1
+  f1    1493  JMP          -> 1934
+  f1    1494  GETSLOT      -1, 'B', 8, 909626
+  f1    1495  INDEX        909626
+  f1    1496  JMP          -> 276
+  f1    1497  LOADK        'Folder'
+  f1    1498  CALL         1, -1
+  f1    1499  SETVAR       0, 1
+  f1    1500  CJMP         -> 787, -1
+  f1    1501  SETINDEX     193145, 17
+  f1    1502  INDEX        193145
+  f1    1503  JMP          -> 1752
+  f1    1504  LOADK        1, 4355, 314654
+  f1    1505  INDEX        314654
+  f1    1506  CALL         4, 0
+  f1    1507  CJMP         -> 55, -1
+  f1    1508  MOD          53, -3, 1000003
+  f1    1509  JMP          -> 2425
+  f1    1510  OP_28        554003, 56
+  f1    1511  JMP          -> 445
+  f1    1512  LOADK        1473, 814496556876102, 1
+  f1    1513  CALL         4, 0
+  f1    1514  CJMP         -> 2162, -1
+  f1    1515  ADD          'X', 2, 2, 'Y'
+  f1    1516  SETINDEX     1, 0
+  f1    1517  JMP          -> 131
+  f1    1518  GETSLOT      28
+  f1    1519  CALL         1, 1
+  f1    1520  LOADK        5373, 1, 3442829680226041, 489239
+  f1    1521  INDEX        489239
+  f1    1522  JMP          -> 760
+  f1    1523  LOADK        1000003
+  f1    1524  SETINDEX     1, 0
+  f1    1525  JMP          -> 1033, 1
+  f1    1526  ADD          'floor', 'math', 1, 'max', 'math', 22
+  f1    1527  JMP          -> 1175
+  f1    1528  CALL         3, 0
+  f1    1529  OP_8         'TweenInfo', 'Enum', 'EasingStyle', 'Back', 'new', 0.3125
+  f1    1530  JMP          -> 1009
+  f1    1531  NEWTABLE     20, 17, 65599, 30, 31, 63
+  f1    1532  JMP          -> 2232
+  f1    1534  GETSLOT      704327, 91, '4rI3AaoQ85', 3443101919458758
+  f1    1535  INDEX        704327
+  f1    1536  JMP          -> 1990
+  f1    1537  CALL         4, 0
+  f1    1538  OP_229       906842, 1, 71, -1
+  f1    1539  INDEX        906842
+  f1    1540  JMP          -> 1886
+  f1    1541  CALL         4, 0
+  f1    1542  OP_90        'pcall'
+  f1    1543  CALL         10
+  f1    1544  CALL         1, -1
+  f1    1545  JMP          -> 1791
+  f1    1546  LOADK        0, 2637
+  f1    1547  CALL         4, 0
+  f1    1548  OP_117       'type', -1
+  f1    1549  JMP          -> 1807
+  f1    1550  LOADK        2413
+  f1    1551  CALL         6, 0
+  f1    1552  MUL          17, 20, 65599, 30
+  f1    1553  JMP          -> 2137
+  f1    1554  SETVAR       2, 1
+  f1    1555  OP_249       'Name', 84, 'ZeekraguZQ0x'
+  f1    1556  SETVAR       2, 1
+  f1    1557  JMP          -> 667
+  f1    1558  OP_350       'byte', 1, 1
+  f1    1559  OP_368       25, 7861
+  f1    1560  JMP          -> 461
+  f1    1561  OP_250       121928, 1000003
+  f1    1562  INDEX        121928
+  f1    1563  MOD          
+  f1    1564  JMP          -> 1407
+  f1    1565  MUL          17, 1000003, 70, 63, -436269, 30
+  f1    1566  JMP          -> 1614
+  f1    1567  CALL         4, 0
+  f1    1568  OP_101       1, 71, -1
+  f1    1569  JMP          -> 1004
+  f1    1570  ADD          4, 8
+  f1    1571  JMP          -> 1781
+  f1    1572  ADD          17, 53495, 1000003, 70, 63
+  f1    1573  INDEX        53495
+  f1    1574  JMP          -> 447
+  f1    1575  GETSLOT      'ClassName', 1419511193443644, 2176, 1, -1, 39
+  f1    1576  JMP          -> 766
+  f1    1577  LOADK        539531, 31, 1000003, 12, 17
+  f1    1578  INDEX        539531
+  f1    1579  JMP          -> 1257
+  f1    1580  OP_201       
+  f1    1581  SETVAR       0, 1
+  f1    1582  GETVAR       3, 53
+  f1    1583  JMP          -> 2312
+  f1    1584  CALL         4, 0
+  f1    1585  OP_260       1018, -1, 1199006866584968, 'Y', 2
+  f1    1586  JMP          -> 437
+  f1    1587  ADD          31, 63, 409437
+  f1    1588  JMP          -> 2208
+  f1    1589  EQ           'FromName', -1, 69, 69
+  f1    1590  JMP          -> 1204
+  f1    1591  ADD          70, 1000003, 17, 63
+  f1    1592  JMP          -> 726
+  f1    1593  OP_28        'R', 4
+  f1    1594  JMP          -> 1166
+  f1    1595  OP_260       905, -1, 3260074923048023, 'ClassName', 73
+  f1    1596  JMP          -> 2519
+  f1    1597  INDEX        200150
+  f1    1598  INDEX        200150
+  f1    1599  LOADK        1000003
+  f1    1600  JMP          -> 269
+  f1    1601  LOADK        0, 977
+  f1    1602  CALL         4, 0
+  f1    1603  OP_117       'typeof', -1
+  f1    1604  JMP          -> 2273
+  f1    1605  CALL         6, 0
+  f1    1606  ADD          20, 65599, 31, 30, 17, 63
+  f1    1607  JMP          -> 204
+  f1    1608  GETVAR       53, 1000003
+  f1    1609  JMP          -> 46
+  f1    1610  CALL         2, -1
+  f1    1611  OP_350       'byte', 1, 1
+  f1    1612  OP_59        89
+  f1    1613  JMP          -> 812
+  f1    1614  ADD          31, 12, 1000003
+  f1    1615  JMP          -> 1089
+  f1    1616  SETINDEX     496244, 0
+  f1    1617  INDEX        496244
+  f1    1618  CALL         4, 0
+  f1    1619  OP_95        'IsA', 19
+  f1    1620  JMP          -> 2315
+  f1    1621  CALL         4, 0
+  f1    1622  OP_58        14, -2
+  f1    1623  OP_99        3
+  f1    1624  JMP          -> 1850
+  f1    1625  CALL         4, 0
+  f1    1626  OP_342       1452095922402143, 'R', 8, -1
+  f1    1627  JMP          -> 1504
+  f1    1628  ADD          -761977, -355379, 63
+  f1    1629  JMP          -> 1428
+  f1    1630  NEWTABLE     63, 1000003
+  f1    1631  JMP          -> 2254
+  f1    1632  LOADK        142, 16, 259
+  f1    1633  CALL         6, 0
+  f1    1634  JMP          -> 299
+  f1    1635  INDEX        3291, 3797792048408356, 1
+  f1    1636  JMP          -> 386
+  f1    1637  POP          349685, 31, 63
+  f1    1638  JMP          -> 769
+  f1    1639  SETVAR       0, 1
+  f1    1640  INDEX        'FindFirstChildOfClass', 16
+  f1    1641  JMP          -> 1297
+  f1    1642  POP          1000003, 570166
+  f1    1643  SETVAR       0, 1
+  f1    1644  JMP          -> 148
+  f1    1645  OP_95        'RunService', 19
+  f1    1646  CALL         2, -1
+  f1    1647  SETVAR       0, 1
+  f1    1648  JMP          -> 2201
+  f1    1649  SETINDEX     804911, 1
+  f1    1650  INDEX        804911
+  f1    1651  CALL         4, 0
+  f1    1652  OP_58        6, -1
+  f1    1653  JMP          -> 1070
+  f1    1654  SETINDEX     7424, 3516
+  f1    1655  INDEX        7424
+  f1    1656  LOADK        1
+  f1    1657  CALL         4, 0
+  f1    1658  CJMP         -> 464, -2
+  f1    1659  LOADK        159, 8, 3402
+  f1    1660  CALL         6, 0
+  f1    1661  JMP          -> 1439
+  f1    1662  LOADK        1000003
+  f1    1663  SETVAR       0, 1
+  f1    1664  JMP          -> 882, 53
+  f1    1665  GETSLOT      14
+  f1    1666  OP_99        3
+  f1    1667  OP_350       'byte', 1, 1
+  f1    1668  JMP          -> 1957
+  f1    1669  MOD          -56149, 1000003
+  f1    1670  JMP          -> 902
+  f1    1671  SETINDEX     60500, 'Folder'
+  f1    1672  INDEX        60500
+  f1    1673  CALL         2, -1
+  f1    1674  SETVAR       0, 1
+  f1    1675  OP_58        74, -1
+  f1    1676  JMP          -> 1823
+  f1    1677  OP_320       344021, 1000003
+  f1    1678  INDEX        344021
+  f1    1679  LOADK        605472
+  f1    1680  JMP          -> 2393
+  f1    1681  POP          17, 1000003, 70
+  f1    1682  JMP          -> 1117
+  f1    1683  POP          47239
+  f1    1684  JMP          -> 1466
+  f1    1686  SETINDEX     992069, 7073
+  f1    1687  INDEX        992069
+  f1    1688  CALL         6, 0
+  f1    1689  ADD          65599, 20, 17, 30
+  f1    1690  JMP          -> 206
+  f1    1691  GETSLOT      74
+  f1    1692  CJMP         -> 1372
+  f1    1694  LOADK        'Workspace'
+  f1    1695  OP_350       'GetService', 1, -1
+  f1    1696  SETVAR       0, 1
+  f1    1697  CJMP         -> 282, -1
+  f1    1698  SETVAR       0, 1
+  f1    1699  GETSLOT      13, 177537, 56, 503289, 230666
+  f1    1700  JMP          -> 44
+  f1    1701  GETSLOT      0, -1, 76, 'Parent', 4875
+  f1    1702  JMP          -> 1541
+  f1    1703  ADD          1000003, 233285, 31, 63
+  f1    1704  JMP          -> 2256
+  f1    1705  OP_262       'new', 'NumberRange', 51, 93
+  f1    1706  CALL         2, -1
+  f1    1707  SETVAR       0, 1
+  f1    1708  JMP          -> 319
+  f1    1709  LOADK        7267
+  f1    1710  CALL         6, 0
+  f1    1711  SETINDEX     65599, 612185, 30
+  f1    1712  INDEX        612185
+  f1    1713  JMP          -> 1587, 17, 20
+  f1    1714  CALL         1, -1
+  f1    1715  SETVAR       0, 1
+  f1    1716  OP_249       '4rI3AaoQ85', 49, 579
+  f1    1717  JMP          -> 1756
+  f1    1718  SETINDEX     976712, 2165959146712536
+  f1    1719  INDEX        976712
+  f1    1720  LOADK        1, 2193
+  f1    1721  CALL         4, 0
+  f1    1722  JMP          -> 705
+  f1    1723  CALL         1, -1
+  f1    1724  CALL         2, -1
+  f1    1725  OP_350       'byte', 1, 1
+  f1    1726  OP_59        93
+  f1    1727  JMP          -> 457
+  f1    1728  INDEX        30, 503249, 53, 3
+  f1    1729  INDEX        503249
+  f1    1730  JMP          -> 890, 4221
+  f1    1731  OP_127       1, 2509, 1875755228503392, 'ClassName', -6
+  f1    1732  CALL         4, 0
+  f1    1733  JMP          -> 407
+  f1    1734  LOADK        1
+  f1    1735  CALL         4, 0
+  f1    1736  OP_2         28, -1, 'X'
+  f1    1737  JMP          -> 542
+  f1    1738  ADD          'Y', 25
+  f1    1739  JMP          -> 1024
+  f1    1740  CALL         1, -1
+  f1    1741  CALL         2, -1
+  f1    1742  OP_350       'byte', 1, 1
+  f1    1743  JMP          -> 2474
+  f1    1744  CALL         4, 0
+  f1    1745  GETSLOT      -2
+  f1    1746  JMP          -> 1328
+  f1    1747  LOADK        2347, 1875755228503392, 1
+  f1    1748  CALL         4, 0
+  f1    1749  CJMP         -> 854, -1
+  f1    1750  OP_254       54, -1, 881856275996166, 314
+  f1    1751  JMP          -> 71
+  f1    1752  CJMP         -> 200
+  f1    1754  ADD          'Y', 25, 'X', 62
+  f1    1755  JMP          -> 1738
+  f1    1756  OP_350       'SetAttribute', 2, 0
+  f1    1757  OP_297       49, 49, 'GetAttributes'
+  f1    1758  CALL         1, -1
+  f1    1759  SETVAR       0, 1
+  f1    1760  JMP          -> 772
+  f1    1761  LOADK        0
+  f1    1762  CALL         4, 0
+  f1    1763  OP_108       -1, 1, 'rawequal'
+  f1    1764  JMP          -> 414
+  f1    1765  CALL         1, 1
+  f1    1766  OP_249       4903, 7, 0
+  f1    1767  JMP          -> 934
+  f1    1768  ADD          94250, 30, -522890, 30, 453680, 30
+  f1    1769  JMP          -> 366
+  f1    1770  LOADK        1
+  f1    1771  CALL         4, 0
+  f1    1772  OP_2         4, -1, 'G'
+  f1    1773  JMP          -> 1883
+  f1    1774  POP          1000003
+  f1    1775  SETVAR       0, 1
+  f1    1776  JMP          -> 1265
+  f1    1777  INDEX        6289, 'Time', 1, 1837035770488421
+  f1    1778  JMP          -> 565
+  f1    1779  OP_312       25, 3828607970830137, 1200, 1, -1, 'X'
+  f1    1780  JMP          -> 2438
+  f1    1781  POP          16, 'B'
+  f1    1782  JMP          -> 609
+  f1    1783  ADD          553541, 609160
+  f1    1784  INDEX        553541
+  f1    1785  JMP          -> 1902, 1000003
+  f1    1787  LOADK        796559, 31
+  f1    1788  INDEX        796559
+  f1    1789  OP_118       53, -3
+  f1    1790  JMP          -> 1434
+  f1    1791  SETVAR       0, 1
+  f1    1792  OP_90        'pcall'
+  f1    1793  CALL         11
+  f1    1794  CALL         1, -1
+  f1    1795  JMP          -> 1054
+  f1    1796  ADD          321665, -72925
+  f1    1797  JMP          -> 692
+  f1    1798  OP_332       0.09375, 0.5, 0.625, 'Color3', 'new'
+  f1    1799  JMP          -> 1123
+  f1    1800  ADD          768629, 32, 7437, 'Z', 72
+  f1    1801  INDEX        768629
+  f1    1802  JMP          -> 1365
+  f1    1803  MUL          1000003, 45757, 97, 70
+  f1    1804  JMP          -> 246
+  f1    1805  ADD          1000003, 19303, 31, 63
+  f1    1806  JMP          -> 583
+  f1    1807  GETSLOT      -5
+  f1    1808  CALL         1, 1
+  f1    1809  LOADK        2811, 957939909767423, 1
+  f1    1810  JMP          -> 2175
+  f1    1811  OP_201       
+  f1    1812  SETVAR       0, 1
+  f1    1813  GETVAR       3, 53, 30
+  f1    1814  JMP          -> 729
+  f1    1815  ADD          5, 329, 84, 8
+  f1    1816  JMP          -> 1952
+  f1    1817  JMP          -> 615, 0
+  f1    1818  INDEX        'Y', 28, 1845051487025058, 7545
+  f1    1819  JMP          -> 2191
+  f1    1820  GETVAR       3814, 30
+  f1    1821  CALL         3, 0
+  f1    1822  JMP          -> 1928, 'game'
+  f1    1823  EQ           0, 0, 6809
+  f1    1824  CALL         4, 0
+  f1    1825  JMP          -> 2533
+  f1    1826  MUL          793775
+  f1    1827  INDEX        793775
+  f1    1828  OP_95        'B', 8
+  f1    1829  JMP          -> 2489
+  f1    1830  LOADK        1, 4474
+  f1    1831  CALL         4, 0
+  f1    1832  CJMP         -> 208, -1
+  f1    1833  GETSLOT      9
+  f1    1834  CALL         1, -1
+  f1    1835  SETVAR       0, 1
+  f1    1836  JMP          -> 847, 'typeof'
+  f1    1837  MUL          -97254, 63, 960786
+  f1    1838  JMP          -> 904
+  f1    1839  NEWTABLE     1000003, 3, 47
+  f1    1840  JMP          -> 1110
+  f1    1841  ADD          97, 70, 1000003
+  f1    1842  JMP          -> 84
+  f1    1844  LOADK        211376, 4971, 21, 8, 7
+  f1    1845  INDEX        211376
+  f1    1846  JMP          -> 1000
+  f1    1847  GETSLOT      'Lighting', 6, 'game'
+  f1    1848  OP_350       'GetService', 1, 1
+  f1    1849  JMP          -> 1601
+  f1    1850  OP_95        1, 14
+  f1    1851  OP_350       'byte', 1, 1
+  f1    1852  OP_59        14
+  f1    1853  JMP          -> 312
+  f1    1854  LOADK        'Instance'
+  f1    1855  OP_350       'FindFirstChildWhichIsA', 1, -1
+  f1    1856  SETVAR       0, 1
+  f1    1857  CJMP         -> 924, -1
+  f1    1858  ADD          21434
+  f1    1859  INDEX        21434
+  f1    1860  JMP          -> 2139, 1000003
+  f1    1861  MOD          17, 223949, 70, 1000003
+  f1    1862  INDEX        223949
+  f1    1863  JMP          -> 741
+  f1    1864  LOADK        0
+  f1    1865  CALL         4, 0
+  f1    1866  OP_117       'rawequal', -1
+  f1    1867  JMP          -> 346
+  f1    1868  OP_402       37, 'typeof'
+  f1    1869  CALL         1, 1
+  f1    1870  JMP          -> 1046, 4353904192889163
+  f1    1871  SETINDEX     750488, 7771
+  f1    1872  INDEX        750488
+  f1    1873  LOADK        16, 2, 56
+  f1    1874  JMP          -> 1709
+  f1    1875  LOADK        1, 4956
+  f1    1876  CALL         4, 0
+  f1    1877  CJMP         -> 789, -1
+  f1    1878  OP_371       155516
+  f1    1879  INDEX        155516
+  f1    1880  LOADK        5773, 1999602483037140, 1
+  f1    1881  CALL         4, 0
+  f1    1882  JMP          -> 1391
+  f1    1883  LOADK        7067, 116946329100847, 1
+  f1    1884  CALL         4, 0
+  f1    1885  JMP          -> 1127
+  f1    1886  OP_271       1, 4943, 1845051487025058, 'Time'
+  f1    1887  JMP          -> 1567
+  f1    1888  OP_350       'byte', 1, 1
+  f1    1889  OP_368       13, 6
+  f1    1890  JMP          -> 2412
+  f1    1891  LOADK        518368, 168089, 1000003
+  f1    1892  INDEX        168089
+  f1    1893  SETVAR       0, 1
+  f1    1894  JMP          -> 545
+  f1    1895  INDEX        'Scale', 763362632410884, 21
+  f1    1896  JMP          -> 2357
+  f1    1897  LOADK        30, 7361, 3
+  f1    1898  CALL         3, 0
+  f1    1899  JMP          -> 1803, 1000003, 12
+  f1    1900  INDEX        2, 6762, 16
+  f1    1901  JMP          -> 250
+  f1    1902  OP_201       
+  f1    1903  SETVAR       0, 1
+  f1    1904  GETVAR       3, 53
+  f1    1905  JMP          -> 511
+  f1    1906  INDEX        16, 3782, 1
+  f1    1907  JMP          -> 1632
+  f1    1908  GETSLOT      16
+  f1    1909  SETVAR       2, 1
+  f1    1910  OP_297       16, 16, 'GetChildren'
+  f1    1911  JMP          -> 2278
+  f1    1912  SETINDEX     31, 545189, 63
+  f1    1913  INDEX        545189
+  f1    1914  SETINDEX     1, 0
+  f1    1915  LOADK        1
+  f1    1916  JMP          -> 982
+  f1    1917  LOADK        32, 12, 234, 5736
+  f1    1918  JMP          -> 418
+  f1    1919  MUL          131, 1000003, 70, 990722, -3
+  f1    1920  INDEX        990722
+  f1    1921  SETINDEX     31223, 735311
+  f1    1922  INDEX        31223
+  f1    1923  MUL          
+  f1    1924  JMP          -> 1474
+  f1    1925  CALL         4, 0
+  f1    1926  OP_318       'Name', -1, 'type', 37
+  f1    1927  JMP          -> 594
+  f1    1928  LOADK        'Lighting'
+  f1    1929  OP_350       'GetService', 1, -1
+  f1    1930  SETVAR       0, 1
+  f1    1931  OP_70        75, 'ClassName'
+  f1    1932  SETVAR       0, 1
+  f1    1933  JMP          -> 633
+  f1    1934  SETVAR       0, 1
+  f1    1935  OP_108       -1, 46, 'typeof'
+  f1    1936  CALL         1, 1
+  f1    1937  JMP          -> 197
+  f1    1938  GETSLOT      44
+  f1    1939  CJMP         -> 960
+  f1    1941  GETSLOT      84299, 64, -1
+  f1    1942  INDEX        84299
+  f1    1943  EQ           4616, 1
+  f1    1944  JMP          -> 112
+  f1    1945  EQ           0, 0, 3965
+  f1    1946  CALL         4, 0
+  f1    1947  JMP          -> 2403
+  f1    1948  SETINDEX     529832, 30, 65599, 20, 17
+  f1    1949  INDEX        529832
+  f1    1950  MUL          31, 63
+  f1    1951  JMP          -> 1356
+  f1    1952  SETINDEX     691844, 6060
+  f1    1953  INDEX        691844
+  f1    1954  CALL         6, 0
+  f1    1955  MUL          17, 20, 65599, 30
+  f1    1956  JMP          -> 2267
+  f1    1957  LOADK        8, 7, 18, 1698
+  f1    1958  JMP          -> 314
+  f1    1959  GETSLOT      72
+  f1    1960  CALL         1, 1
+  f1    1961  LOADK        1089, 3442829680226041
+  f1    1962  JMP          -> 914
+  f1    1963  LOADK        '264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb'
+  f1    1964  CJMP         -> 709
+  f1    1965  JMP          -> 1008
+  f1    1966  OP_202       16, 15, 518
+  f1    1967  JMP          -> 2184
+  f1    1968  GETVAR       2, 12, 77, 1
+  f1    1969  JMP          -> 14
+  f1    1970  LOADK        1, 3183
+  f1    1971  CALL         4, 0
+  f1    1972  CJMP         -> 1164, -1
+  f1    1973  ADD          190451, 16, 5, 4057
+  f1    1974  INDEX        190451
+  f1    1975  JMP          -> 1550, 24
+  f1    1976  CJMP         -> 680
+  f1    1977  JMP          -> 2061
+  f1    1978  SETINDEX     392966, 3
+  f1    1979  INDEX        392966
+  f1    1980  GETVAR       5382, 30, 473972
+  f1    1981  INDEX        473972
+  f1    1982  CALL         3, 0
+  f1    1983  JMP          'new', 'BrickColor', 150462218
+  f1    1984  MUL          635984
+  f1    1985  INDEX        635984
+  f1    1986  ADD          1, 71
+  f1    1987  JMP          -> 660
+  f1    1988  POP          53, -3
+  f1    1989  JMP          -> 1677
+  f1    1990  LOADK        1, 1167
+  f1    1991  CALL         4, 0
+  f1    1992  CJMP         -> 2309, -1
+  f1    1993  JMP          -> 1041, 0
+  f1    1994  CALL         1, -1
+  f1    1995  SETVAR       0, 1
+  f1    1996  OP_27        'Folder', 'new', 'Instance'
+  f1    1997  JMP          -> 2302
+  f1    1998  GETSLOT      648557, 31, 'Y'
+  f1    1999  INDEX        648557
+  f1    2000  CJMP         -> 1068, 31
+  f1    2001  SETINDEX     1000003
+  f1    2002  JMP          -> 951
+  f1    2003  POP          194970
+  f1    2004  JMP          -> 1662
+  f1    2005  OP_99        3
+  f1    2006  GETSLOT      84
+  f1    2007  OP_350       'GetFullName', 0, 1
+  f1    2008  OP_99        3
+  f1    2009  JMP          -> 1488
+  f1    2010  POP          'Name', 76
+  f1    2011  OP_99        3
+  f1    2012  JMP          -> 1334
+  f1    2013  LOADK        175, 32, 2518, 0
+  f1    2014  JMP          -> 948
+  f1    2015  SETINDEX     -462714, 823142, 30
+  f1    2016  INDEX        823142
+  f1    2017  MUL          818044, 30, 534538, 30, 869073
+  f1    2018  JMP          -> 190
+  f1    2019  GETVAR       2405, 30
+  f1    2020  CALL         3, 0
+  f1    2021  JMP          -> 598, 'game'
+  f1    2022  OP_80        17, 0, 1885, 0, -1
+  f1    2023  JMP          -> 2125
+  f1    2024  CALL         4, 0
+  f1    2025  GETSLOT      1684, 34, 82, -1
+  f1    2026  JMP          -> 869
+  f1    2027  SETVAR       0, 1
+  f1    2028  CALL         5
+  f1    2029  SETVAR       0, 1
+  f1    2030  OP_27        'Folder', 'new', 'Instance'
+  f1    2031  JMP          -> 1714
+  f1    2032  CJMP         -> 955
+  f1    2034  OP_99        3
+  f1    2035  LOADK        1
+  f1    2036  CJMP         -> 752
+  f1    2038  OP_332       1, 0.5, 0, 'NumberSequenceKeypoint', 'new'
+  f1    2039  JMP          -> 1345
+  f1    2040  NEWTABLE     17, 20
+  f1    2041  SETINDEX     1, 0
+  f1    2042  SETINDEX     564767, 1
+  f1    2043  INDEX        564767
+  f1    2044  JMP          -> 938
+  f1    2045  ADD          45
+  f1    2046  CJMP         -> 2076
+  f1    2048  CALL         4, 0
+  f1    2049  GETSLOT      -2, 86, 86, 'Min'
+  f1    2050  JMP          -> 116
+  f1    2051  SETINDEX     1, 0
+  f1    2052  OP_384       172310, 1
+  f1    2053  INDEX        172310
+  f1    2054  SETINDEX     1, 0
+  f1    2055  JMP          -> 2506, 1
+  f1    2056  GETSLOT      50
+  f1    2057  CALL         2, -1
+  f1    2058  SETVAR       0, 1
+  f1    2059  OP_117       'typeof', -1
+  f1    2060  JMP          -> 1518
+  f1    2061  JMP          -> 680, 11
+  f1    2062  OP_99        3
+  f1    2063  LOADK        2
+  f1    2064  CALL         1, -1
+  f1    2065  JMP          -> 449
+  f1    2066  OP_18        'floor', 1, 'max', 'math', 'math', 80
+  f1    2067  OP_99        3
+  f1    2068  JMP          -> 2525
+  f1    2069  OP_127       1, 7071, 3806596530562857, 'Offset', 21
+  f1    2070  CALL         4, 0
+  f1    2071  JMP          -> 27
+  f1    2072  GETVAR       6297, 30
+  f1    2073  CALL         3, 0
+  f1    2074  OP_27        'Folder', 'new', 'Instance'
+  f1    2075  JMP          -> 1994
+  f1    2076  CJMP         -> 2478
+  f1    2077  JMP          -> 192
+  f1    2078  LOADK        1
+  f1    2079  SETINDEX     1, 0
+  f1    2080  LOADK        1
+  f1    2081  JMP          -> 9
+  f1    2082  CALL         1, 1
+  f1    2083  SETINDEX     954440, 3621486329413540
+  f1    2084  INDEX        954440
+  f1    2085  LOADK        1, 1744
+  f1    2086  CALL         4, 0
+  f1    2087  JMP          -> 64
+  f1    2088  ADD          15, 58
+  f1    2089  CJMP         -> 1246
+  f1    2090  JMP          -> 1291
+  f1    2091  OP_320       359468, 1000003
+  f1    2092  INDEX        359468
+  f1    2093  SETVAR       0, 1
+  f1    2094  JMP          -> 2366, 53
+  f1    2095  CALL         4, 0
+  f1    2096  GETSLOT      805001, 0, 2872, 16, 'Parent', 15, -1
+  f1    2097  INDEX        805001
+  f1    2098  CALL         4, 0
+  f1    2099  JMP          -> 118
+  f1    2100  ADD          53, 31, -3
+  f1    2101  JMP          -> 126
+  f1    2102  OP_108       -1, 40, 'typeof'
+  f1    2103  CALL         1, 1
+  f1    2104  JMP          -> 1388, 1054576948921868
+  f1    2105  GETSLOT      8
+  f1    2106  CALL         1, 1
+  f1    2107  LOADK        5860, 814496556876102, 1
+  f1    2108  JMP          -> 1625
+  f1    2109  LOADK        30, 5342, 3
+  f1    2110  CALL         3, 0
+  f1    2111  JMP          -> 1274
+  f1    2112  POP          53, -3
+  f1    2113  JMP          -> 642
+  f1    2114  SETVAR       0, 1
+  f1    2115  OP_332       0, 20, 0, 'Vector3', 'new'
+  f1    2116  JMP          -> 1270
+  f1    2117  LOADK        723232, 384614, 1
+  f1    2118  INDEX        384614
+  f1    2119  JMP          -> 2091
+  f1    2120  OP_90        'pcall'
+  f1    2121  CALL         6
+  f1    2122  CALL         1, -1
+  f1    2123  SETVAR       0, 1
+  f1    2124  JMP          -> 1575
+  f1    2125  CALL         4, 0
+  f1    2126  OP_39        'IsA', 19, 789644
+  f1    2127  INDEX        789644
+  f1    2128  JMP          -> 1645
+  f1    2129  ADD          1000003, 314377, 31, 63
+  f1    2130  JMP          -> 1580
+  f1    2131  ADD          12, 17, 1000003
+  f1    2132  JMP          -> 1787
+  f1    2133  SETVAR       0, 1
+  f1    2134  OP_95        'Players', 19
+  f1    2135  OP_350       'IsA', 1, -1
+  f1    2136  JMP          -> 1134
+  f1    2137  POP          522054, 31, 63
+  f1    2138  JMP          -> 404
+  f1    2139  OP_279       802217
+  f1    2140  INDEX        802217
+  f1    2141  SETINDEX     1, 0
+  f1    2142  SETINDEX     883223, 1
+  f1    2143  INDEX        883223
+  f1    2144  OP_401       
+  f1    2145  SETVAR       0, 1
+  f1    2146  JMP          -> 160
+  f1    2147  OP_99        3
+  f1    2148  OP_350       'byte', 1, 1
+  f1    2149  OP_156       
+  f1    2150  SETINDEX     1, 0
+  f1    2151  JMP          -> 973
+  f1    2152  EQ           28, -2, 'Z', 51
+  f1    2153  JMP          -> 1451
+  f1    2154  OP_350       'sub', 2, 1
+  f1    2155  LOADK        313, 4218979524621543, 1
+  f1    2156  CALL         4, 0
+  f1    2157  JMP          -> 213
+  f1    2158  JMP          -> 1461, 5
+  f1    2159  SETINDEX     774287, 7
+  f1    2160  INDEX        774287
+  f1    2161  JMP          -> 258
+  f1    2162  INDEX        'R', 4, 635318572577616, 1
+  f1    2163  JMP          -> 1770
+  f1    2164  CALL         4, 0
+  f1    2165  OP_2         40, -2, 'ClassName'
+  f1    2166  OP_99        3
+  f1    2167  JMP          -> 1279
+  f1    2168  ADD          
+  f1    2169  JMP          -> 1221
+  f1    2170  LOADK        1000003
+  f1    2171  SETVAR       0, 1
+  f1    2172  JMP          -> 1897, 53
+  f1    2173  CJMP         -> 1325
+  f1    2174  JMP          -> 284
+  f1    2175  CALL         4, 0
+  f1    2176  OP_58        -5, -1
+  f1    2177  OP_99        3
+  f1    2178  JMP          -> 698
+  f1    2179  LOADK        2331
+  f1    2180  CALL         3, 0
+  f1    2181  SETINDEX     'game', 70379, 'FindService'
+  f1    2182  INDEX        70379
+  f1    2183  JMP          -> 1242, 'game'
+  f1    2184  LOADK        3322, 36
+  f1    2185  CALL         6, 0
+  f1    2186  CJMP         'Destroy', 164967971, 16
+  f1    2187  CALL         4, 0
+  f1    2188  OP_229       515912, 14, -5, -1
+  f1    2189  INDEX        515912
+  f1    2190  JMP          -> 2154, 14
+  f1    2191  LOADK        1
+  f1    2192  CALL         4, 0
+  f1    2193  OP_2         28, -1, 'Z'
+  f1    2194  JMP          -> 962
+  f1    2195  CJMP         -> 615
+  f1    2196  JMP          -> 1817
+  f1    2197  OP_401       
+  f1    2198  CALL         1, 1
+  f1    2199  LOADK        8106, 4353904192889163
+  f1    2200  JMP          -> 820
+  f1    2201  OP_80        45, 0, 5760, 0, -1
+  f1    2202  JMP          -> 210
+  f1    2203  OP_86        'workspace', 'Changed'
+  f1    2204  CALL         1, 1
+  f1    2205  OP_99        3
+  f1    2206  OP_181       6041
+  f1    2207  JMP          -> 2013
+  f1    2208  POP          1000003
+  f1    2209  SETVAR       0, 1
+  f1    2210  JMP          -> 1728
+  f1    2211  LOADK        32, 6, 50, 1308
+  f1    2212  JMP          -> 1217
+  f1    2213  LOADK        1, 285
+  f1    2214  CALL         4, 0
+  f1    2215  CJMP         -> 1534, -1
+  f1    2216  LOADK        1
+  f1    2217  CALL         4, 0
+  f1    2218  OP_58        6, -2
+  f1    2219  JMP          -> 1157
+  f1    2220  LOADK        1
+  f1    2221  CALL         4, 0
+  f1    2222  OP_58        62, -1
+  f1    2223  JMP          -> 1422
+  f1    2224  OP_384       662567, 1
+  f1    2225  INDEX        662567
+  f1    2226  LOADK        31, 998, 32
+  f1    2227  JMP          -> 514
+  f1    2228  LOADK        1, 6609
+  f1    2229  CALL         4, 0
+  f1    2230  OP_117       'type', -1
+  f1    2231  JMP          -> 2454
+  f1    2232  ADD          1000003, 144724, 270110
+  f1    2233  INDEX        270110
+  f1    2234  JMP          -> 2051
+  f1    2235  SETVAR       0, 1
+  f1    2236  GETVAR       866, 30, 3, 53
+  f1    2237  JMP          -> 22
+  f1    2239  OP_69        78, 'floor', 'math'
+  f1    2240  OP_99        3
+  f1    2241  LOADK        2
+  f1    2242  JMP          -> 1740
+  f1    2244  CALL         1, -1
+  f1    2245  SETVAR       0, 1
+  f1    2246  OP_95        'Parent', 15
+  f1    2247  JMP          -> 1908
+  f1    2248  NEWTABLE     53, -3
+  f1    2249  SETINDEX     1, 0
+  f1    2250  JMP          -> 1669, 1
+  f1    2251  OP_108       -1, -6, 'typeof'
+  f1    2252  CALL         1, 1
+  f1    2253  JMP          -> 1239
+  f1    2254  POP          17, 1000003, 70
+  f1    2255  JMP          -> 1193
+  f1    2256  OP_201       
+  f1    2257  SETVAR       0, 1
+  f1    2258  GETVAR       3, 53
+  f1    2259  JMP          -> 2019
+  f1    2260  GETVAR       5831, 30
+  f1    2261  CALL         3, 0
+  f1    2262  SETINDEX     'Rect', 133244, 'new'
+  f1    2263  INDEX        133244
+  f1    2264  SETINDEX     173747, 21
+  f1    2265  INDEX        173747
+  f1    2266  JMP          -> 1443
+  f1    2267  OP_359       254753
+  f1    2268  INDEX        254753
+  f1    2269  POP          362683, 31, 63
+  f1    2270  JMP          -> 1446
+  f1    2271  LOADK        246, 8, 610, 8
+  f1    2272  JMP          -> 749
+  f1    2273  GETSLOT      6
+  f1    2274  CALL         1, 1
+  f1    2275  LOADK        2968, 1054576948921868, 821795
+  f1    2276  INDEX        821795
+  f1    2277  JMP          -> 1649
+  f1    2278  CALL         1, -1
+  f1    2279  SETVAR       0, 1
+  f1    2280  OP_95        'Folder', 16
+  f1    2281  OP_350       'FindFirstChild', 1, -1
+  f1    2282  JMP          -> 1639
+  f1    2283  LOADK        5883, 4485169106164928, 1
+  f1    2284  CALL         4, 0
+  f1    2285  CJMP         -> 1895, -1
+  f1    2286  LOADK        1
+  f1    2287  CALL         4, 0
+  f1    2288  GETSLOT      -5, -2
+  f1    2289  JMP          -> 2415
+  f1    2290  OP_99        3
+  f1    2291  POP          'X', 72
+  f1    2292  JMP          -> 468
+  f1    2293  OP_131       0, 7483, 0, 57
+  f1    2294  JMP          -> 1744
+  f1    2295  OP_143       117887, 'EasingDirection', 'Enum'
+  f1    2296  INDEX        117887
+  f1    2297  OP_371       158390
+  f1    2298  INDEX        158390
+  f1    2299  JMP          -> 1017, 'Out'
+  f1    2300  OP_259       'new', 'new', 'NumberSequence', 'NumberSequenceKeypoint', 0
+  f1    2301  JMP          -> 2485
+  f1    2302  CALL         1, -1
+  f1    2303  SETVAR       0, 1
+  f1    2304  OP_249       'Name', 11, '8CeGNFoPEPfT'
+  f1    2305  JMP          -> 1554
+  f1    2306  LOADK        2617, 3852814519752322, 1
+  f1    2307  CALL         4, 0
+  f1    2308  CJMP         -> 1868, -1
+  f1    2309  OP_402       49, 'typeof'
+  f1    2310  CALL         1, 1
+  f1    2311  JMP          -> 1144, 1054576948921868
+  f1    2312  GETVAR       3241, 30
+  f1    2313  CALL         3, 0
+  f1    2314  JMP          -> 988, 'Random'
+  f1    2315  OP_371       373478
+  f1    2316  INDEX        373478
+  f1    2317  OP_95        'ServiceProvider', 19
+  f1    2318  CALL         2, -1
+  f1    2319  SETVAR       0, 1
+  f1    2320  JMP          -> 2022
+  f1    2321  LOADK        2418
+  f1    2322  CALL         6, 0
+  f1    2323  GETSLOT      76
+  f1    2324  OP_350       'Destroy', 0, 0
+  f1    2325  JMP          -> 1402
+  f1    2326  LOADK        1
+  f1    2327  CALL         4, 0
+  f1    2328  OP_2         31, -2, 'X'
+  f1    2329  JMP          -> 1998
+  f1    2330  GETVAR       199, 30
+  f1    2331  CALL         3, 0
+  f1    2332  JMP          'new', 'Instance', 158254916
+  f1    2333  SETINDEX     224039, 281
+  f1    2334  INDEX        224039
+  f1    2335  LOADK        0
+  f1    2336  CALL         4, 0
+  f1    2337  OP_50        'rawequal', -1, 386051
+  f1    2338  INDEX        386051
+  f1    2339  JMP          -> 260
+  f1    2340  LOADK        24, 24
+  f1    2341  CALL         3, 1
+  f1    2342  LOADK        1601, 4218979524621543
+  f1    2343  JMP          -> 2286
+  f1    2344  SETINDEX     1, 0
+  f1    2345  SETINDEX     750578, 1
+  f1    2346  INDEX        750578
+  f1    2347  OP_401       
+  f1    2348  SETVAR       0, 1
+  f1    2349  JMP          -> 1020
+  f1    2350  CALL         2, -1
+  f1    2351  OP_350       'byte', 1, 1
+  f1    2352  OP_359       993596
+  f1    2353  INDEX        993596
+  f1    2354  CJMP         -> 1303, 22
+  f1    2355  ADD          63246, 170857
+  f1    2356  JMP          -> 1608
+  f1    2357  LOADK        1, 1609, 398624
+  f1    2358  INDEX        398624
+  f1    2359  CALL         4, 0
+  f1    2360  CJMP         -> 2069, -1
+  f1    2361  OP_201       
+  f1    2362  SETINDEX     1, 0
+  f1    2363  OP_384       682145, 1
+  f1    2364  INDEX        682145
+  f1    2365  JMP          -> 833
+  f1    2366  LOADK        30, 7456, 3
+  f1    2367  CALL         3, 0
+  f1    2368  JMP          -> 2441
+  f1    2369  SETINDEX     1, 0
+  f1    2370  SETINDEX     6167, 1
+  f1    2371  INDEX        6167
+  f1    2372  OP_401       
+  f1    2373  SETVAR       0, 1
+  f1    2374  JMP          -> 1839
+  f1    2375  ADD          4, 3278, 120, 16
+  f1    2376  JMP          -> 1686
+  f1    2377  OP_201       
+  f1    2378  SETVAR       0, 1
+  f1    2379  GETVAR       3, 53
+  f1    2380  JMP          -> 2260
+  f1    2384  LOADK        59, 'floor', 'math', 1
+  f1    2385  OP_99        3
+  f1    2386  JMP          -> 2469, 2
+  f1    2387  LOADK        94, 16, 6987, 1
+  f1    2388  CALL         6, 0
+  f1    2389  JMP          -> 969
+  f1    2390  EQ           94, 15
+  f1    2391  CJMP         -> 258
+  f1    2392  JMP          -> 2159
+  f1    2393  ADD          1000003, 70, 63
+  f1    2394  JMP          -> 2452
+  f1    2395  LOADK        1
+  f1    2396  CALL         4, 0
+  f1    2397  OP_58        11, -2
+  f1    2398  OP_350       'GetFullName', 0, 1
+  f1    2399  JMP          -> 2005
+  f1    2400  LOADK        2, 950309, 'Time'
+  f1    2401  INDEX        950309
+  f1    2402  JMP          -> 1385
+  f1    2403  GETSLOT      41, 4424972333835058, 7537, 1, -1
+  f1    2404  JMP          -> 143
+  f1    2405  LOADK        1
+  f1    2406  CALL         4, 0
+  f1    2407  OP_101       'Max', 86, -1
+  f1    2408  JMP          -> 538
+  f1    2409  ADD          
+  f1    2410  SETINDEX     1, 0
+  f1    2411  JMP          -> 1597, 1
+  f1    2412  LOADK        1, 16, 6960
+  f1    2413  CALL         6, 0
+  f1    2414  CJMP         -> 293, -2
+  f1    2415  OP_99        3
+  f1    2416  OP_310       39, 'ClassName'
+  f1    2417  OP_99        3
+  f1    2418  OP_156       
+  f1    2419  SETINDEX     1, 0
+  f1    2420  JMP          -> 2224
+  f1    2421  SETINDEX     246401, 452505
+  f1    2422  INDEX        246401
+  f1    2423  POP          1000003
+  f1    2424  JMP          -> 489
+  f1    2425  LOADK        -127601, 529922, 933131
+  f1    2426  INDEX        529922
+  f1    2427  JMP          -> 1320
+  f1    2428  GETSLOT      16
+  f1    2429  CALL         1, 0
+  f1    2430  OP_2         15, -1, 'Parent'
+  f1    2431  JMP          -> 181
+  f1    2432  NEWTABLE     31, 63
+  f1    2433  SETINDEX     1, 0
+  f1    2434  JMP          -> 2003, 1
+  f1    2435  OP_402       90, 'type'
+  f1    2436  CALL         1, 1
+  f1    2437  JMP          -> 301, 1815155065086790
+  f1    2438  CALL         4, 0
+  f1    2439  EQ           25, -1, 'Y'
+  f1    2440  JMP          -> 722
+  f1    2441  OP_332       0.15625, 0.625, 0.5625, 'Color3', 'new'
+  f1    2442  JMP          -> 1050
+  f1    2443  GETSLOT      84
+  f1    2444  CALL         1, 1
+  f1    2445  LOADK        1116, 158707369878602
+  f1    2446  JMP          -> 2395
+  f1    2447  ADD          32, 'Value'
+  f1    2448  JMP          -> 997
+  f1    2449  LOADK        1, 2036
+  f1    2450  CALL         4, 0
+  f1    2451  CJMP         -> 895, -1
+  f1    2452  ADD          12, 1000003, 31, 17
+  f1    2453  JMP          -> 932
+  f1    2454  OP_70        7, 'Number'
+  f1    2455  CALL         1, 1
+  f1    2456  LOADK        1986, 2017703278521275, 1
+  f1    2457  JMP          -> 648
+  f1    2458  OP_402       7, 'typeof'
+  f1    2459  CALL         1, 1
+  f1    2460  SETINDEX     960098, 2115026742524974
+  f1    2461  INDEX        960098
+  f1    2462  JMP          -> 18, 4073
+  f1    2463  OP_260       445, -1, 3815400610064168, 'Min', 86
+  f1    2464  JMP          -> 2405
+  f1    2465  JMP          -> 2032, 7
+  f1    2466  ADD          31, 12, 1000003
+  f1    2467  JMP          -> 2112
+  f1    2468  JMP          -> 2010, 17
+  f1    2469  OP_334       
+  f1    2470  CALL         1, -1
+  f1    2471  CALL         2, -1
+  f1    2472  OP_350       'byte', 1, 1
+  f1    2473  JMP          -> 1456
+  f1    2474  OP_58        78, 78
+  f1    2475  OP_99        3
+  f1    2476  OP_350       'byte', 1, 1
+  f1    2477  JMP          -> 102
+  f1    2478  SETINDEX     1, 0
+  f1    2479  SETINDEX     94178, 1
+  f1    2480  INDEX        94178
+  f1    2481  OP_371       134681
+  f1    2482  INDEX        134681
+  f1    2483  ADD          
+  f1    2484  JMP          -> 1691
+  f1    2485  LOADK        0.8125, 0.65625
+  f1    2486  CALL         3, 1
+  f1    2487  SETINDEX     1, 0
+  f1    2488  JMP          -> 2038
+  f1    2489  ADD          8
+  f1    2490  JMP          -> 1917
+  f1    2491  ADD          2, 71
+  f1    2492  JMP          -> 2447
+  f1    2493  LOADK        2783
+  f1    2494  CALL         3, 0
+  f1    2495  OP_27        0, 'PartType', 'Enum'
+  f1    2496  JMP          -> 1091
+  f1    2497  SETINDEX     106751, 1
+  f1    2498  INDEX        106751
+  f1    2499  LOADK        163, 16, 7919
+  f1    2500  JMP          -> 1481
+  f1    2501  SETINDEX     309266, 19
+  f1    2502  INDEX        309266
+  f1    2503  CALL         3, 1
+  f1    2504  LOADK        6039, 4218979524621543
+  f1    2505  JMP          -> 135
+  f1    2506  OP_401       
+  f1    2507  SETVAR       0, 1
+  f1    2508  SETINDEX     592787, 53
+  f1    2509  INDEX        592787
+  f1    2510  JMP          -> 1312, 3
+  f1    2511  LOADK        1, 8143
+  f1    2512  CALL         4, 0
+  f1    2513  CJMP         -> 1593, -2
+  f1    2514  OP_316       241, 46, 'NextInteger', 46, 71
+  f1    2515  CALL         3, -1
+  f1    2516  JMP          -> 1490
+  f1    2517  INDEX        2549858307548908, 1, 'Envelope'
+  f1    2518  JMP          -> 193
+  f1    2519  LOADK        1
+  f1    2520  CALL         4, 0
+  f1    2521  GETSLOT      'Changed', 'workspace', 'typeof', -1
+  f1    2522  JMP          -> 470
+  f1    2523  ADD          -705562
+  f1    2524  JMP          -> 1591
+  f1    2525  LOADK        2
+  f1    2526  CALL         1, -1
+  f1    2527  CALL         2, -1
+  f1    2528  JMP          -> 1399
+  f1    2529  LOADK        0, 7288
+  f1    2530  CALL         4, 0
+  f1    2531  OP_2         -4, -1, 'EasingDirection'
+  f1    2532  JMP          -> 2295
+  f1    2533  OP_58        61, -2
+  f1    2534  CJMP         -> 487
+  f2       1  OP_149       523776, 1
+  f2       2  INDEX        523776
+  f2       3  SETINDEX     564279, 48271
+  f2       4  INDEX        564279
+  f2       5  MUL          604782
+  f2       6  INDEX        604782
+  f2       7  OP_149       645285, 2
+  f2       8  INDEX        645285
+  f2       9  SETINDEX     685788, 131
+  f2      10  INDEX        685788
+  f2      11  MUL          726291
+  f2      12  INDEX        726291
+  f2      13  OP_359       766794
+  f2      14  INDEX        766794
+  f2      15  OP_149       807297, 3
+  f2      16  INDEX        807297
+  f2      17  SETINDEX     847800, 7919
+  f2      18  INDEX        847800
+  f2      19  MUL          888303
+  f2      20  INDEX        888303
+  f2      21  OP_359       928806
+  f2      22  INDEX        928806
+  f2      23  OP_149       969309, 4
+  f2      24  INDEX        969309
+  f2      25  SETINDEX     9810, 1000003
+  f2      26  INDEX        9810
+  f2      27  OP_279       50313
+  f2      28  INDEX        50313
+  f2      29  OP_250       131319, 104729
+  f2      30  INDEX        131319
+  f2      31  OP_359       171822
+  f2      32  INDEX        171822
+  f2      33  SETINDEX     212325, 2147483647
+  f2      34  INDEX        212325
+  f2      35  OP_279       252828
+  f2      36  INDEX        252828
+  f2      37  SETVAR       0, 1
+  f2      38  OP_149       333834, 2
+  f2      39  INDEX        333834
+  f2      40  OP_149       374337, 1
+  f2      41  INDEX        374337
+  f2      42  SETINDEX     414840, 193
+  f2      43  INDEX        414840
+  f2      44  MUL          455343
+  f2      45  INDEX        455343
+  f2      46  OP_359       495846
+  f2      47  INDEX        495846
+  f2      48  SETINDEX     536349, 40503
+  f2      49  INDEX        536349
+  f2      50  OP_359       576852
+  f2      51  INDEX        576852
+  f2      52  SETINDEX     617355, 1000003
+  f2      53  INDEX        617355
+  f2      54  OP_279       657858
+  f2      55  INDEX        657858
+  f2      56  SETVAR       0, 1
+  f2      57  OP_149       738864, 3
+  f2      58  INDEX        738864
+  f2      59  OP_149       779367, 1
+  f2      60  INDEX        779367
+  f2      61  SETINDEX     819870, 313
+  f2      62  INDEX        819870
+  f2      63  MUL          860373
+  f2      64  INDEX        860373
+  f2      65  OP_359       900876
+  f2      66  INDEX        900876
+  f2      67  SETINDEX     941379, 65537
+  f2      68  INDEX        941379
+  f2      69  OP_359       981882
+  f2      70  INDEX        981882
+  f2      71  SETINDEX     22383, 1000003
+  f2      72  INDEX        22383
+  f2      73  OP_279       62886
+  f2      74  INDEX        62886
+  f2      75  SETVAR       0, 1
+  f2      76  OP_149       143892, 4
+  f2      77  INDEX        143892
+  f2      78  OP_149       184395, 1
+  f2      79  INDEX        184395
+  f2      80  SETINDEX     224898, 17
+  f2      81  INDEX        224898
+  f2      82  MUL          265401
+  f2      83  INDEX        265401
+  f2      84  OP_359       305904
+  f2      85  INDEX        305904
+  f2      86  SETINDEX     346407, 131071
+  f2      87  INDEX        346407
+  f2      88  OP_359       386910
+  f2      89  INDEX        386910
+  f2      90  OP_320       467916, 2147483647
+  f2      91  INDEX        467916
+  f2      92  SETVAR       0, 1
+  f2      93  OP_149       548922, 5
+  f2      94  INDEX        548922
+  f2      95  OP_149       589425, 1
+  f2      96  INDEX        589425
+  f2      97  SETINDEX     629928, 31
+  f2      98  INDEX        629928
+  f2      99  MUL          670431
+  f2     100  INDEX        670431
+  f2     101  OP_359       710934
+  f2     102  INDEX        710934
+  f2     103  SETINDEX     751437, 524287
+  f2     104  INDEX        751437
+  f2     105  OP_359       791940
+  f2     106  INDEX        791940
+  f2     107  SETINDEX     832443, 2147483647
+  f2     108  INDEX        832443
+  f2     109  OP_201       
+  f2     110  SETVAR       0, 1
+  f2     111  OP_149       953952, 6
+  f2     112  INDEX        953952
+  f2     113  OP_427       34956, 1
+  f2     114  INDEX        34956
+  f2     115  SETINDEX     75459, 73
+  f2     116  INDEX        75459
+  f2     117  MUL          115962
+  f2     118  INDEX        115962
+  f2     119  SETINDEX     1, 0
+  f2     120  OP_384       237471, 1
+  f2     121  INDEX        237471
+  f2     122  OP_359       277974
+  f2     123  INDEX        277974
+  f2     124  SETINDEX     318477, 8191
+  f2     125  INDEX        318477
+  f2     126  OP_359       358980
+  f2     127  INDEX        358980
+  f2     128  SETINDEX     399483, 2147483647
+  f2     129  INDEX        399483
+  f2     130  OP_279       439986
+  f2     131  INDEX        439986
+  f2     132  SETVAR       0, 1
+  f2     133  OP_427       561495, 7
+  f2     134  INDEX        561495
+  f2     135  OP_66        683004, 1, 97
+  f2     136  INDEX        683004
+  f2     137  OP_250       764010, 257
+  f2     138  INDEX        764010
+  f2     139  OP_359       804513
+  f2     140  INDEX        804513
+  f2     141  SETINDEX     845016, 1000033
+  f2     142  INDEX        845016
+  f2     143  OP_279       885519
+  f2     144  INDEX        885519
+  f2     145  SETINDEX     1, 0
+  f2     146  SETINDEX     966525, 1
+  f2     147  INDEX        966525
+  f2     148  OP_371       7026
+  f2     149  INDEX        7026
+  f2     150  SETVAR       0, 1
+  f2     151  OP_374       0
+  f3       1  OP_158       331683, 'type'
+  f3       2  INDEX        331683
+  f3       3  SETINDEX     372186, 7
+  f3       4  INDEX        372186
+  f3       5  CALL         1, -1
+  f3       6  SETVAR       0, 1
+  f3       7  JMP          -> 15
+  f3       8  SETINDEX     534198, 9
+  f3       9  INDEX        534198
+  f3      10  OP_387       12
+  f3      11  CALL         0, 0
+  f3      12  JMP          -> 59
+  f3      15  SETVAR       0, 0
+  f3      16  GETSLOT      -2
+  f3      17  SETVAR       0, 1
+  f3      18  OP_203       8
+  f3      19  OP_195       
+  f3      20  LOADK        '90acbd0a49843186a7e7ed827cba07b0ce31720d48faaba5117c2f3c7dfa035c'
+  f3      21  EQ           
+  f3      22  CJMP         -> 53
+  f3      23  OP_203       8
+  f3      24  OP_387       11
+  f3      25  CALL         0, 0
+  f3      26  JMP          -> 59
+  f3      27  MUL          4, 67108864
+  f3      28  SETINDEX     303753, 2
+  f3      29  INDEX        303753
+  f3      30  OP_156       
+  f3      31  OP_374       1
+  f3      32  OP_86        'string', 'byte'
+  f3      33  OP_203       5
+  f3      34  OP_203       9
+  f3      35  CALL         2, -1
+  f3      36  SETVAR       0, 1
+  f3      37  MUL          4, 65599
+  f3      38  GETSLOT      -1
+  f3      39  OP_156       
+  f3      40  LOADK        67108864
+  f3      41  OP_201       
+  f3      42  SETVAR       0, 1
+  f3      43  MUL          2, 262147
+  f3      44  GETSLOT      -1
+  f3      45  OP_156       
+  f3      46  OP_203       9
+  f3      47  OP_156       
+  f3      48  LOADK        67108864
+  f3      49  OP_201       
+  f3      50  SETVAR       0, 1
+  f3      51  OP_266       9, 1
+  f3      52  JMP          -> 68
+  f3      53  GETSLOT      -2
+  f3      54  SETVAR       0, 1
+  f3      55  OP_203       9
+  f3      56  OP_195       
+  f3      57  LOADK        '3121609a684026364f33af3329bd607f05e545fe643d2548cb87c50b7872496b'
+  f3      58  JMP          -> 65
+  f3      59  LOADK        1
+  f3      60  OP_203       5
+  f3      61  OP_99        3
+  f3      62  LOADK        1
+  f3      63  SETVAR       0, 3
+  f3      64  JMP          -> 68
+  f3      65  EQ           
+  f3      66  CJMP         -> 13
+  f3      67  JMP          -> 8
+  f3      68  OP_397       -> 27, 8, 1, 1884386483
+  f3      69  JMP          -> 32
+  f4       1  OP_414       1, 700471, 2
+  f4       2  INDEX        700471
+  f4       3  OP_343       3
+  f4       4  SETVAR       0, 3
+  f4       5  OP_330       -6, 131, 48271, -5, 902986
+  f4       6  INDEX        902986
+  f4       7  OP_216       983992, -2, 17
+  f4       8  INDEX        983992
+  f4       9  OP_149       24493, 4
+  f4      10  INDEX        24493
+  f4      11  SETINDEX     64996, 257
+  f4      12  INDEX        64996
+  f4      13  MUL          105499
+  f4      14  INDEX        105499
+  f4      15  OP_359       146002
+  f4      16  INDEX        146002
+  f4      17  OP_159       227008, 5, 7919
+  f4      18  INDEX        227008
+  f4      19  MUL          267511
+  f4      20  INDEX        267511
+  f4      21  OP_359       308014
+  f4      22  INDEX        308014
+  f4      23  OP_216       389020, -1, 40503
+  f4      24  INDEX        389020
+  f4      25  OP_171       470026, -3
+  f4      26  INDEX        470026
+  f4      27  SETINDEX     510529, 2147483647
+  f4      28  INDEX        510529
+  f4      29  OP_279       551032
+  f4      30  INDEX        551032
+  f4      31  SETVAR       0, 1
+  f4      32  OP_220       65599, -5, -4, 193
+  f4      33  OP_31        794050, -2, 31
+  f4      34  INDEX        794050
+  f4      35  OP_149       834553, 6
+  f4      36  INDEX        834553
+  f4      37  SETINDEX     875056, 313
+  f4      38  INDEX        875056
+  f4      39  MUL          915559
+  f4      40  INDEX        915559
+  f4      41  OP_359       956062
+  f4      42  INDEX        956062
+  f4      43  OP_149       996565, 5
+  f4      44  INDEX        996565
+  f4      45  SETINDEX     37066, 17
+  f4      46  INDEX        37066
+  f4      47  MUL          77569
+  f4      48  INDEX        77569
+  f4      49  OP_359       118072
+  f4      50  INDEX        118072
+  f4      51  OP_216       199078, -1, 104729
+  f4      52  INDEX        199078
+  f4      53  OP_216       280084, -3, 73
+  f4      54  INDEX        280084
+  f4      55  SETINDEX     320587, 2147483647
+  f4      56  INDEX        320587
+  f4      57  OP_279       361090
+  f4      58  INDEX        361090
+  f4      59  SETVAR       0, 1
+  f4      60  OP_398       31337, -6, 97, 563605, -4
+  f4      61  INDEX        563605
+  f4      62  OP_216       644611, -2, 257
+  f4      63  INDEX        644611
+  f4      64  OP_159       725617, 4, 19
+  f4      65  INDEX        725617
+  f4      66  MUL          766120
+  f4      67  INDEX        766120
+  f4      68  OP_359       806623
+  f4      69  INDEX        806623
+  f4      70  OP_149       847126, 6
+  f4      71  INDEX        847126
+  f4      72  SETINDEX     887629, 23
+  f4      73  INDEX        887629
+  f4      74  MUL          928132
+  f4      75  INDEX        928132
+  f4      76  OP_359       968635
+  f4      77  INDEX        968635
+  f4      78  OP_216       49639, -1, 65537
+  f4      79  INDEX        49639
+  f4      80  OP_216       130645, -3, 131
+  f4      81  INDEX        130645
+  f4      82  SETINDEX     171148, 2147483647
+  f4      83  INDEX        171148
+  f4      84  OP_279       211651
+  f4      85  INDEX        211651
+  f4      86  SETINDEX     1, 0
+  f4      87  SETINDEX     292657, 1
+  f4      88  INDEX        292657
+  f4      89  OP_371       333160
+  f4      90  INDEX        333160
+  f4      91  SETVAR       0, 1
+  f4      92  OP_374       0
+  f5       1  GETSLOT      4
+  f5       2  SETVAR       0, 1
+  f5       3  GETSLOT      -1
+  f5       4  OP_195       
+  f5       5  SETINDEX     332407, '946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14'
+  f5       6  INDEX        332407
+  f5       7  OP_163       372910
+  f5       8  INDEX        372910
+  f5       9  CJMP         -> 21
+  f5      10  JMP          -> 30
+  f5      11  OP_36        31, 5
+  f5      12  JMP          -> 16
+  f5      13  OP_343       2
+  f5      14  CALL         0, 0
+  f5      15  JMP          -> 19
+  f5      16  SETINDEX     1, 0
+  f5      17  OP_304       1000003, 1
+  f5      18  JMP          -> 23
+  f5      19  OP_198       65599, 3
+  f5      20  JMP          -> 26
+  f5      21  OP_420       -> 19, 0, 3, 5
+  f5      22  JMP          -> 13
+  f5      23  SETVAR       0, 1
+  f5      24  OP_306       -2, 6, 1, 3
+  f5      25  JMP          -> 34
+  f5      26  OP_116       709507, 4, 97, -2
+  f5      27  INDEX        709507
+  f5      28  LOADK        17
+  f5      29  JMP          -> 11
+  f5      30  GETSLOT      -1
+  f5      31  OP_387       8
+  f5      32  CALL         0, 0
+  f5      33  JMP          -> 19
+  f5      34  CALL         3, 0
+  f5      35  SETINDEX     74032, 3
+  f5      36  INDEX        74032
+  f5      37  OP_374       1
+  f6       1  SETINDEX     'UDim2', 80420, 'new'
+  f6       2  INDEX        80420
+  f6       3  SETINDEX     120923, 0
+  f6       4  INDEX        120923
+  f6       5  OP_238       -5, -6, 997, 201929
+  f6       6  INDEX        201929
+  f6       7  OP_279       242432
+  f6       8  INDEX        242432
+  f6       9  OP_421       -4, 7, 2
+  f6      10  CALL         4, -1
+  f6      11  SETVAR       0, 1
+  f6      12  OP_222       'Offset', 485450, -1, 'X'
+  f6      13  INDEX        485450
+  f6      14  OP_222       'Scale', 566456, -1, 'Y'
+  f6      15  INDEX        566456
+  f6      16  OP_10        647462, -4
+  f6      17  INDEX        647462
+  f6      18  OP_359       687965
+  f6      19  INDEX        687965
+  f6      20  OP_222       'Offset', 768971, -1, 'Y'
+  f6      21  INDEX        768971
+  f6      22  OP_359       809474
+  f6      23  INDEX        809474
+  f6      24  SETVAR       0, 1
+  f6      25  OP_149       890480, 1
+  f6      26  INDEX        890480
+  f6      27  SETINDEX     930983, 131
+  f6      28  INDEX        930983
+  f6      29  MUL          971486
+  f6      30  INDEX        971486
+  f6      31  OP_171       52490, -2
+  f6      32  INDEX        52490
+  f6      33  OP_171       133496, -3
+  f6      34  INDEX        133496
+  f6      35  SETINDEX     173999, 1000003
+  f6      36  INDEX        173999
+  f6      37  OP_279       214502
+  f6      38  INDEX        214502
+  f6      39  SETVAR       0, 1
+  f6      40  OP_199       257, 2, 376514
+  f6      41  INDEX        376514
+  f6      42  MUL          417017
+  f6      43  INDEX        417017
+  f6      44  SETINDEX     1, 0
+  f6      45  SETINDEX     498023, 1
+  f6      46  INDEX        498023
+  f6      47  OP_371       538526
+  f6      48  INDEX        538526
+  f6      49  NEWTABLE     73, -2
+  f6      50  SETINDEX     1, 0
+  f6      51  LOADK        781544, 1
+  f6      52  INDEX        781544
+  f6      53  OP_149       822047, 1
+  f6      54  INDEX        822047
+  f6      55  OP_359       862550
+  f6      56  INDEX        862550
+  f6      57  OP_171       943556, -3
+  f6      58  INDEX        943556
+  f6      59  SETINDEX     984059, 1000033
+  f6      60  INDEX        984059
+  f6      61  OP_279       24560
+  f6      62  INDEX        24560
+  f6      63  SETVAR       0, 1
+  f6      64  OP_149       105566, 3
+  f6      65  INDEX        105566
+  f6      66  SETINDEX     146069, 2
+  f6      67  INDEX        146069
+  f6      68  OP_58        -3, -2
+  f6      69  CALL         3, 0
+  f6      70  OP_374       0
+  f7       1  OP_414       1, 771787, 2
+  f7       2  INDEX        771787
+  f7       3  CALL         1, 1
+  f7       4  OP_149       852793, 3
+  f7       5  INDEX        852793
+  f7       6  OP_390       893296
+  f7       7  INDEX        893296
+  f7       8  CJMP         -> 13
+  f7       9  OP_149       974302, 4
+  f7      10  INDEX        974302
+  f7      11  CALL         0, 0
+  f7      12  JMP          -> 13
+  f7      13  OP_374       0
+  f8       1  OP_149       974965, 1
+  f8       2  INDEX        974965
+  f8       3  SETVAR       0, 1
+  f8       4  GETSLOT      -1
+  f8       5  OP_195       
+  f8       6  SETINDEX     136975, '264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb'
+  f8       7  INDEX        136975
+  f8       8  JMP          -> 22
+  f8       9  GETSLOT      -1
+  f8      10  OP_387       10
+  f8      11  CALL         0, 0
+  f8      12  JMP          -> 16
+  f8      13  OP_428       1, '%.17g', 'format', 'string'
+  f8      14  CALL         2, 1
+  f8      15  JMP          -> 24
+  f8      16  LOADK        const[2]
+  f8      17  SETVAR       0, 1
+  f8      18  SETINDEX     663514, const[3]
+  f8      19  INDEX        663514
+  f8      20  SETVAR       0, 1
+  f8      21  JMP          -> 13
+  f8      22  OP_182       -> 16
+  f8      23  JMP          -> 9
+  f8      24  SETINDEX     906532, 'e([+-])0+(%d+)'
+  f8      25  INDEX        906532
+  f8      26  SETINDEX     947035, 'e%1%2'
+  f8      27  INDEX        947035
+  f8      28  OP_350       'gsub', 2, -1
+  f8      29  SETVAR       0, 1
+  f8      30  OP_374       0
+  f9       1  SETINDEX     157183, const[1]
+  f9       2  INDEX        157183
+  f9       3  SETVAR       0, 1
+  f9       4  SETINDEX     238189, const[2]
+  f9       5  INDEX        238189
+  f9       6  SETVAR       0, 1
+  f9       7  OP_149       319195, 4
+  f9       8  INDEX        319195
+  f9       9  SETVAR       0, 1
+  f9      10  OP_374       0
+  f10      1  SETINDEX     201322, const[1]
+  f10      2  INDEX        201322
+  f10      3  SETVAR       0, 1
+  f10      4  OP_374       0
+  f11      1  OP_149       331925, 1
+  f11      2  INDEX        331925
+  f11      3  SETINDEX     372428, 'GenerateGUID'
+  f11      4  INDEX        372428
+  f11      5  OP_371       412931
+  f11      6  INDEX        412931
+  f11      7  OP_149       453434, 1
+  f11      8  INDEX        453434
+  f11      9  OP_303       493937, 0
+  f11     10  INDEX        493937
+  f11     11  CALL         2, -1
+  f11     12  OP_374       1
+  f12      1  OP_303       218378, 1
+  f12      2  INDEX        218378
+  f12      3  SETVAR       0, 1
+  f12      4  OP_374       0
+  f13      1  SETINDEX     117399, 'vHmNZ0P7SZR9h'
+  f13      2  INDEX        117399
+  f13      3  SETINDEX     157902, 0
+  f13      4  INDEX        157902
+  f13      5  OP_63        2
+  f14      1  OP_427       541278, 1
+  f14      2  INDEX        541278
+  f14      3  OP_278       581781, 'Inner'
+  f14      4  OP_265       581781
+  f14      5  SETINDEX     622284, 0
+  f14      6  INDEX        622284
+  f14      7  OP_63        2
+  f15      1  SETINDEX     'Instance', 540628, 'new'
+  f15      2  INDEX        540628
+  f15      3  SETINDEX     581131, 'qOyUT0qI5OURkfR1n0h0'
+  f15      4  INDEX        581131
+  f15      5  CALL         1, 0
+  f17      1  OP_13        1000003, -2
+  f17      2  SETINDEX     1, 0
+  f17      3  OP_384       348220, 1
+  f17      4  INDEX        348220
+  f17      5  SETVAR       0, 1
+  f17      6  OP_245       -1, 1000003, 510232, -1
+  f17      7  INDEX        510232
+  f17      8  OP_279       550735
+  f17      9  INDEX        550735
+  f17     10  SETINDEX     1, 0
+  f17     11  OP_384       672244, 1
+  f17     12  INDEX        672244
+  f17     13  SETVAR       0, 1
+  f17     14  OP_326       874759, 1000003, -2, -1
+  f17     15  INDEX        874759
+  f17     16  SETINDEX     1, 0
+  f17     17  SETINDEX     955765, 1
+  f17     18  INDEX        955765
+  f17     19  OP_371       996268
+  f17     20  INDEX        996268
+  f17     21  SETVAR       0, 1
+  f17     22  OP_339       -1, -1, 1000003, 198781
+  f17     23  INDEX        198781
+  f17     24  OP_279       239284
+  f17     25  INDEX        239284
+  f17     26  SETINDEX     1, 0
+  f17     27  SETINDEX     320290, 1
+  f17     28  INDEX        320290
+  f17     29  OP_371       360793
+  f17     30  INDEX        360793
+  f17     31  SETINDEX     1, 0
+  f17     32  SETINDEX     441799, 1
+  f17     33  INDEX        441799
+  f17     34  OP_371       482302
+  f17     35  INDEX        482302
+  f17     36  SETVAR       0, 1
+  f17     37  MUL          1000003, -2, 603811, -1
+  f17     38  INDEX        603811
+  f17     39  OP_279       644314
+  f17     40  INDEX        644314
+  f17     41  SETVAR       0, 1
+  f17     42  MUL          1000003, -1, 765823, -1
+  f17     43  INDEX        765823
+  f17     44  OP_279       806326
+  f17     45  INDEX        806326
+  f17     46  SETVAR       0, 1
+  f17     47  MUL          1000003, -2, 927835, -1
+  f17     48  INDEX        927835
+  f17     49  OP_279       968338
+  f17     50  INDEX        968338
+  f17     51  SETVAR       0, 1
+  f17     52  OP_48        -1, -1, 1000003, 130348
+  f17     53  INDEX        130348
+  f17     54  SETVAR       0, 1
+  f17     55  MUL          1000003, -1, 251857, -1
+  f17     56  INDEX        251857
+  f17     57  OP_279       292360
+  f17     58  INDEX        292360
+  f17     59  SETVAR       0, 1
+  f17     60  MUL          1000003, -2, 413869, -1
+  f17     61  INDEX        413869
+  f17     62  OP_279       454372
+  f17     63  INDEX        454372
+  f17     64  SETVAR       0, 1
+  f17     65  OP_48        -1, -1, 1000003, 616384
+  f17     66  INDEX        616384
+  f17     67  SETVAR       0, 1
+  f17     68  MUL          1000003, -1, 737893, -1
+  f17     69  INDEX        737893
+  f17     70  OP_279       778396
+  f17     71  INDEX        778396
+  f17     72  SETVAR       0, 1
+  f17     73  MUL          1000003, -1, 899905, -1
+  f17     74  INDEX        899905
+  f17     75  OP_279       940408
+  f17     76  INDEX        940408
+  f17     77  SETVAR       0, 1
+  f17     78  MUL          1000003, -1, 61915, -1
+  f17     79  INDEX        61915
+  f17     80  OP_279       102418
+  f17     81  INDEX        102418
+  f17     82  SETVAR       0, 1
+  f17     83  MUL          1000003, -1, 223927, -1
+  f17     84  INDEX        223927
+  f17     85  OP_279       264430
+  f17     86  INDEX        264430
+  f17     87  SETVAR       0, 1
+  f17     88  MUL          1000003, -2, 385939, -1
+  f17     89  INDEX        385939
+  f17     90  OP_279       426442
+  f17     91  INDEX        426442
+  f17     92  SETVAR       0, 1
+  f17     93  MUL          1000003, -1, 547951, -1
+  f17     94  INDEX        547951
+  f17     95  OP_279       588454
+  f17     96  INDEX        588454
+  f17     97  SETVAR       0, 1
+  f17     98  MUL          1000003, -1, 709963, -1
+  f17     99  INDEX        709963
+  f17    100  OP_201       
+  f17    101  SETVAR       0, 1
+  f17    102  OP_48        -1, -1, 1000003, 912478
+  f17    103  INDEX        912478
+  f17    104  SETVAR       0, 1
+  f17    105  OP_188       -2, -1
+  f17    106  SETINDEX     1, 0
+  f17    107  SETINDEX     114991, 1
+  f17    108  INDEX        114991
+  f17    109  OP_371       155494
+  f17    110  INDEX        155494
+  f17    111  SETINDEX     195997, 1000003
+  f17    112  INDEX        195997
+  f17    113  OP_279       236500
+  f17    114  INDEX        236500
+  f17    115  SETVAR       0, 1
+  f17    116  OP_245       -1, 1000003, 398512, -1
+  f17    117  INDEX        398512
+  f17    118  OP_279       439015
+  f17    119  INDEX        439015
+  f17    120  SETINDEX     1, 0
+  f17    121  SETINDEX     520021, 1
+  f17    122  INDEX        520021
+  f17    123  OP_401       
+  f17    124  SETVAR       0, 1
+  f17    125  OP_245       -1, 1000003, 722536, -1
+  f17    126  INDEX        722536
+  f17    127  OP_279       763039
+  f17    128  INDEX        763039
+  f17    129  SETINDEX     1, 0
+  f17    130  SETINDEX     844045, 1
+  f17    131  INDEX        844045
+  f17    132  OP_371       884548
+  f17    133  INDEX        884548
+  f17    134  SETVAR       0, 1
+  f17    135  OP_245       -1, 1000003, 46558, -1
+  f17    136  INDEX        46558
+  f17    137  OP_279       87061
+  f17    138  INDEX        87061
+  f17    139  SETINDEX     1, 0
+  f17    140  SETINDEX     168067, 1
+  f17    141  INDEX        168067
+  f17    142  OP_371       208570
+  f17    143  INDEX        208570
+  f17    144  SETVAR       0, 1
+  f17    145  OP_326       411085, 1000003, -1, -1
+  f17    146  INDEX        411085
+  f17    147  SETINDEX     1, 0
+  f17    148  SETINDEX     492091, 1
+  f17    149  INDEX        492091
+  f17    150  OP_401       
+  f17    151  SETVAR       0, 1
+  f17    152  OP_242       
+  f17    153  MUL          1000003, -1, 735109, -1
+  f17    154  INDEX        735109
+  f17    155  OP_279       775612
+  f17    156  INDEX        775612
+  f17    157  SETINDEX     1, 0
+  f17    158  SETINDEX     856618, 1
+  f17    159  INDEX        856618
+  f17    160  OP_371       897121
+  f17    161  INDEX        897121
+  f17    162  SETINDEX     1, 0
+  f17    163  SETINDEX     978127, 1
+  f17    164  INDEX        978127
+  f17    165  OP_371       18628
+  f17    166  INDEX        18628
+  f17    167  SETVAR       0, 1
+  f17    168  MUL          1000003, -2, 140137, -1
+  f17    169  INDEX        140137
+  f17    170  OP_279       180640
+  f17    171  INDEX        180640
+  f17    172  SETVAR       0, 1
+  f17    173  MUL          1000003, -1, 302149, -1
+  f17    174  INDEX        302149
+  f17    175  OP_279       342652
+  f17    176  INDEX        342652
+  f17    177  SETVAR       0, 1
+  f17    178  GETSLOT      -1
+  f17    179  OP_374       1
+
+UNREACHABLE (14 instruction(s))
+----------------------------------------------------------
+  f1    2536  UNKNOWN(6668605) 
+  f2     152  UNKNOWN(6668605) 
+  f3      70  UNKNOWN(6668605) 
+  f4      93  UNKNOWN(6668605) 
+  f5      38  UNKNOWN(6668605) 
+  f6      71  UNKNOWN(6668605) 
+  f7      14  UNKNOWN(6668605) 
+  f8      31  UNKNOWN(6668605) 
+  f9      11  UNKNOWN(6668605) 
+  f10      5  UNKNOWN(6668605) 
+  f11     13  UNKNOWN(6668605) 
+  f12      5  UNKNOWN(6668605) 
+  f15      7  UNKNOWN(6668605) 
+  f17    180  UNKNOWN(6668605) 

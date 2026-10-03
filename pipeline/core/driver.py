@@ -47,6 +47,7 @@ import probes         # noqa: E402
 import protodecode     # noqa: E402
 import protolift       # noqa: E402
 import gate            # noqa: E402
+import render          # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -423,6 +424,8 @@ class Analysis:
         self.flow_text = ""
         self.vocab_text = ""
         self.gate_text = ""
+        self.listing_text = ""
+        self.split_text = ""
         raw = getattr(self.capture, "raw", "") or ""
         if "---PROTOS---" not in raw:
             self.program_text = protodecode.report(protodecode.Program())
@@ -473,6 +476,30 @@ class Analysis:
             self.program_flow = (fns, dec, jumpers, consts)
             self.vocab_text = protolift.vocabulary(
                 {p: fns[p] for p in dist}, dec)
+            # THE PROGRAM AS TEXT, both parts. The names come from the
+            # interpreter's own handlers, so an operation is what the handler
+            # does rather than what its number suggests.
+            names = {}
+            for op, m in (self.models or {}).items():
+                nm = getattr(m, "operation", None)
+                if nm:
+                    names[op] = nm
+            # BY COUNTER AND OPCODE, not by counter. Every function starts at
+            # 1, so a counter on its own marks the same instruction in all of
+            # them: it reported three thousand executed instructions out of
+            # three thousand, from a trace with a fraction of that in it.
+            ran = set()
+            for rec in (getattr(self.capture, "rows", None) or []):
+                if not isinstance(rec, dict):
+                    continue
+                pc, op = rec.get("pc"), rec.get("opcode")
+                if isinstance(pc, int) and isinstance(op, int):
+                    ran.add((pc, op))
+            these = {p: fns[p] for p in dist}
+            self.listing_text = render.listing(these, dec, jumpers, consts,
+                                               names, ran)
+            self.split_text = render.split(these, dec, jumpers, consts,
+                                           names, ran)
             return protolift.report({p: fns[p] for p in dist}, dec, jumpers,
                                     consts, flow, ck, ag, unk, fell)
         except Exception as exc:
@@ -792,6 +819,8 @@ class Analysis:
             "WHERE_IT_GOES.txt": getattr(self, "flow_text", ""),
             "WHAT_IT_SAYS.txt": getattr(self, "vocab_text", ""),
             "THE_GATE.txt": getattr(self, "gate_text", ""),
+            "PROGRAM_LISTING.txt": getattr(self, "listing_text", ""),
+            "THE_TWO_PARTS.txt": getattr(self, "split_text", ""),
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),
