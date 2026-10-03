@@ -34,7 +34,9 @@ ONE_WAY = "one way only while that value holds"
 NOT_REACHED = "not reached on this path"
 UNRESOLVED = "condition unresolved"
 
-ORDER = [ENVIRONMENT, ONE_WAY, NOT_REACHED, UNRESOLVED]
+NAMED_VARS = "tests a named variable"
+
+ORDER = [ENVIRONMENT, ONE_WAY, NOT_REACHED, NAMED_VARS, UNRESOLVED]
 
 
 def _ancestors(L, v, limit=400):
@@ -59,7 +61,8 @@ IN_A_REGISTER = ("this build's branch handler takes nothing off the stack: it "
                  "the program, a gap in this analysis")
 
 
-def classify(g, L, predicates, call_rows=(), fiction_row=None, models=None):
+def classify(g, L, predicates, call_rows=(), fiction_row=None, models=None,
+             cond_ops=None):
     """One verdict per branch with an untaken side, with the test that gave it."""
     per_pc = {}
     for st in L.steps:
@@ -109,6 +112,30 @@ def classify(g, L, predicates, call_rows=(), fiction_row=None, models=None):
             # that pops nothing cannot have tested a stack value, so saying
             # only "unresolved" hides a reason that is already in hand.
             m = (models or {}).get(br.get("op"))
+            # The handler may name the values it tests outright: `a =
+            # BOX[row[4]][1]; b = BOX[row[5]][1]; if (a ~= b) == ...`. Then the
+            # condition is not unknowable at all - it is two of the program's
+            # own variables, and which two is in the instruction's operands.
+            got = (cond_ops or {}).get(br.get("op"))
+            if not conds and got and got[0]:
+                st0 = steps[0] if steps else None
+                which = []
+                for i in got[0]:
+                    k = i - 2            # row[2] is the first operand
+                    if st0 is not None and 0 <= k < len(st0.operands):
+                        which.append(str(st0.operands[k]))
+                if which:
+                    out[pc] = {
+                        "verdict": NAMED_VARS, "evidence": OBSERVED,
+                        "why": ("its handler tests the program's own "
+                                "variable(s) %s, named by this instruction's "
+                                "operands rather than taken off the stack. "
+                                "Which way it went is decided by what last "
+                                "wrote %s"
+                                % (", ".join("#" + w for w in which),
+                                   "them" if len(which) > 1 else "it")),
+                        "untaken": br["untaken"]}
+                    continue
             if not conds and m is not None and m.pops == 0:
                 why = IN_A_REGISTER
             out[pc] = {"verdict": UNRESOLVED, "evidence": UNKNOWN,
@@ -155,6 +182,9 @@ def report(verdicts, g):
           "    not by itself a sign of obfuscation.",
           "  " + NOT_REACHED + ": the condition is real. Another",
           "    run with other inputs would go there.",
+          "  " + NAMED_VARS + ": the handler names the values it",
+          "    tests. The side not taken is decided by what last wrote",
+          "    those variables, which is where to look next.",
           "  " + UNRESOLVED + ": not decided and not reached - not",
           "    known. More tracing is what closes it.",
           ""]

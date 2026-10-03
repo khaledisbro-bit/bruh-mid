@@ -832,6 +832,47 @@ def apply(models, src, steps):
     return vm, named, why
 
 
+def condition_reads(body, vm):
+    """Which of an instruction's operands select the values its branch tests.
+
+    A branch in this family does not always take its condition off the stack.
+    The common shape names the values outright:
+
+        local a = BOX[row[4]][1]; local b = BOX[row[5]][1]
+        if (a ~= b) == (row[3] == 1) then pc = ... end
+
+    Operands 4 and 5 select the two variables, and operand 3 says which way the
+    test goes. Read off the handler, that is a branch whose condition is known
+    by name - and without it every untaken side of this build reads as
+    "unresolved", because nothing the branch tested was ever on the stack.
+
+    Returns (operand indices read, the operand that inverts the test or None).
+    """
+    if not vm.row:
+        return [], None
+    reads = []
+    for m in re.finditer(r"\[%s\[(\d+)\]\](?:\[1\])?" % re.escape(vm.row),
+                         body):
+        i = int(m.group(1))
+        if i not in reads:
+            reads.append(i)
+    # the operand the jump itself uses as its destination is not a condition
+    dest = None
+    m = re.search(r"%s\s*=\s*\w+\(%s\[(\d+)\]" % (re.escape(vm.pc or "\0"),
+                                                      re.escape(vm.row)), body)
+    if m:
+        dest = int(m.group(1))
+        reads = [i for i in reads if i != dest]
+    # an operand compared against a constant is the sense of the test, not a
+    # value it reads: `(a ~= b) == (row[3] == 1)`
+    sense = None
+    m = re.search(r"%s\[(\d+)\]\s*==\s*-?\d" % re.escape(vm.row), body)
+    if m:
+        sense = int(m.group(1))
+        reads = [i for i in reads if i != sense]
+    return reads, sense
+
+
 def variables(src, vm, models, steps):
     """Which opcodes read and write the program's variables.
 

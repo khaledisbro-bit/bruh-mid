@@ -277,11 +277,26 @@ class Analysis:
         # makes, not the program, and it has to be separated from the rest or
         # the report claims a property of the program that belongs to this
         # machine.
+        # Which operands a branch handler reads its condition from, where the
+        # handler names them. Without this every untaken side of a build that
+        # tests registers reads as unresolved.
+        cond_ops = {}
+        if vm_source and self.vm is not None and self.vm.ok:
+            try:
+                hs = vmsrc.handlers(vm_source, self.vm)
+                for op, bodies in hs.items():
+                    for body in bodies:
+                        reads, sense = vmsrc.condition_reads(body, self.vm)
+                        if reads:
+                            cond_ops[op] = (reads, sense)
+                            break
+            except Exception:
+                cond_ops = {}
         self.branch_why = branches.classify(
             self.cfg, self.lift, self.predicates,
             call_rows=[r.get("row") for r in (capture.calls or [])],
             fiction_row=getattr(capture, "fiction_at_row", None),
-            models=self.models)
+            models=self.models, cond_ops=cond_ops)
         # Which instructions worked on a value the stand-in answered for. The
         # same walk the branch classifier uses: back through the value graph to
         # the row where the environment answered, so the mark is carried by
