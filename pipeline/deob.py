@@ -131,7 +131,8 @@ def make_harness(src, outdir, template="universal.lua", safe=False, chunk=1,
     return path
 
 
-def _replay(localvm, luau, out_dir):
+def _replay(localvm, luau, out_dir, script="behaviour_check.lua",
+            where="replay"):
     """Run the generated behaviour harness under the stand-in and return what it
     printed, or None.
 
@@ -140,10 +141,10 @@ def _replay(localvm, luau, out_dir):
     Overwriting that would destroy the one file that reproduces the capture.
     """
     import os as _os
-    script = _os.path.join(out_dir, "behaviour_check.lua")
+    script = _os.path.join(out_dir, script)
     if not _os.path.isfile(script):
         return None
-    where = _os.path.join(out_dir, "replay")
+    where = _os.path.join(out_dir, where)
     _os.makedirs(where, exist_ok=True)
     try:
         rec = localvm.run(luau, script, cwd=where)
@@ -595,10 +596,87 @@ def main():
                 else:
                     print("              the reconstruction could not be run "
                           "here; behaviour_check.lua is beside the report")
+        # THE REMOVAL, TESTED. The report also writes the same program with
+        # everything unproven taken out. Whether that was safe is not something
+        # to assert: both are run, and if the smaller one makes the same calls
+        # in the same order, the lines taken out had no effect anything could
+        # see. If it does not, the removal was wrong and this says so.
+        clean_note = None
+        if behaviour:
+            import localvm as _lv2
+            _hint2 = getattr(a, "luau", None) or (
+                None if getattr(a, "offline", None) is True
+                else getattr(a, "offline", None))
+            _luau2, _ = _lv2.find(_hint2)
+            if _luau2:
+                clean_out = _replay(_lv2, _luau2, a.out,
+                                    script="behaviour_check_clean.lua",
+                                    where="replay_clean")
+                if clean_out:
+                    from core import verify as _v2
+                    full = _v2.parse_block(behaviour)
+                    lean = _v2.parse_block(clean_out)
+                    same = (full.get("calls") == lean.get("calls"))
+                    clean_note = (
+                        "the smaller program makes the same %d call(s) in the "
+                        "same order, so the lines taken out of it had no "
+                        "effect anything could see"
+                        % len(lean.get("calls") or ())
+                        if same else
+                        "THE REMOVAL CHANGED THE PROGRAM: the smaller program "
+                        "makes %d call(s) where the whole one makes %d. The "
+                        "lines taken out were not all unobservable, and the "
+                        "whole rendering is the one to read"
+                        % (len(lean.get("calls") or ()),
+                           len(full.get("calls") or ())))
+                    print("              " + clean_note)
+                    # The verdict goes INSIDE the file. Someone opening the
+                    # smaller rendering on its own must not have to find this
+                    # report to learn whether taking those lines out was safe.
+                    cpath = os.path.join(a.out, "RECONSTRUCTED_clean.lua")
+                    if os.path.isfile(cpath):
+                        with open(cpath, encoding="utf-8") as f:
+                            cbody = f.read()
+                        banner = ("-- CHECKED: this file was run and makes the "
+                                  "same calls, in the same order, as the whole\n"
+                                  "-- rendering. The lines taken out had no "
+                                  "effect anything could see.\n"
+                                  if same else
+                                  "-- DO NOT READ THIS AS THE PROGRAM. It was "
+                                  "run and it does NOT do what the whole\n"
+                                  "-- rendering does: some of the lines taken "
+                                  "out of it mattered after all.\n"
+                                  "-- RECONSTRUCTED.lua is the one to read.\n")
+                        with open(cpath, "w", encoding="utf-8") as f:
+                            f.write(banner + cbody)
+                # And the host-actions file, checked the same way: it is run,
+                # and what it does is compared with what the program did. A
+                # file that says "this is what the program did" has to be able
+                # to show it.
+                act_out = _replay(_lv2, _luau2, a.out,
+                                  script="behaviour_check_actions.lua",
+                                  where="replay_actions")
+                if act_out:
+                    from core import verify as _v3
+                    act = _v3.parse_block(act_out)
+                    want = _v3.parse_block(behaviour)
+                    n_act = len(act.get("calls") or ())
+                    actions_note = (
+                        "ACTIONS.lua performs %d call(s); the program made %d, "
+                        "and the whole rendering makes %d"
+                        % (n_act, len(cap.calls or ()),
+                           len(want.get("calls") or ())))
+                    if act.get("error"):
+                        actions_note += " - it stopped on: %s" % act["error"]
+                    print("              " + actions_note)
+                    clean_note = (clean_note or "") + "\n  " + actions_note
         if behaviour:
             from core import verify as vmod
             text, matched, missing, extra = vmod.compare_behaviour(
                 cap.calls, behaviour)
+            if clean_note:
+                text += ("\n\nTHE SMALLER PROGRAM\n"
+                         + "-" * 46 + "\n  " + clean_note + "\n")
             path = os.path.join(a.out, "BEHAVIOUR_COMPARISON.txt")
             open(path, "w").write(text + "\n")
             # The verification report is written before this check can run - it

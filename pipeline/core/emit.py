@@ -706,12 +706,20 @@ end
         return "true"
 
     # -- output --------------------------------------------------------------
-    def runnable_text(self):
+    def runnable_text(self, only_proven=False):
         """The reconstruction as a script that loads and runs.
 
         Only the statements are kept - a comment about a branch nobody entered
         cannot be executed - and the names the analysis introduced are declared,
-        so the file stands on its own."""
+        so the file stands on its own.
+
+        With `only_proven`, the lines this analysis could not stand behind are
+        left out: an instruction shown to have no effect, and one whose value
+        nothing on this path consumed. That is a smaller program and a claim
+        about it, so the claim is tested rather than asserted - the two files
+        are run and their calls compared, and if they differ the removal was
+        wrong and the report says so.
+        """
         names = sorted(set(self.R.env_names.values()))
         out = [self.PRELUDE]
         if names:
@@ -728,6 +736,8 @@ end
         for ln in self.lines:
             body = ln.text.strip()
             if body.startswith("--") or not body:
+                continue
+            if only_proven and ln.evidence in (DECOY, UNKNOWN):
                 continue
             if ln.indent == 0 and body.startswith("return "):
                 if tail is None:

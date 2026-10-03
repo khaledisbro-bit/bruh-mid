@@ -150,6 +150,13 @@ def classify(L, g, calls, slots, amap, env_ops=(), models=None,
     unexplored_from = {b["pc"] for b in g.branches if b["untaken"]}
     reachable_unknown = bool(g.unexplored)
 
+    # Variables the program writes and never reads, anywhere in this capture.
+    never_read = set()
+    if slots is not None and getattr(slots, "active", lambda: False)():
+        read = set(slots.reads.values())
+        written = set(slots.writes.values())
+        never_read = {w for w in written if w not in read}
+
     out = {}
     for st in L.steps:
         if st.key() in out:
@@ -246,6 +253,29 @@ def classify(L, g, calls, slots, amap, env_ops=(), models=None,
         # interpreter's own handler shows calling what it was given - which is
         # as observable as anything in this capture gets.
         m = (models or {}).get(st.op)
+        # A WRITE NOTHING READS. A store is an effect on the machine, and in a
+        # register build it is most of what the program does - so "its handler
+        # performs a store" made every one of them observable, including the
+        # ones writing variables the program never looks at again.
+        #
+        # Which variable each store writes is known where the handlers were
+        # read, and so is every variable the program reads. A store to a
+        # variable that is read NOWHERE in this capture cannot be seen by
+        # anything that ran: take the instruction out and every call, every
+        # argument and every value that was observed is the same. That is a
+        # proof about this path, which is what a capture is evidence about, and
+        # it is the one proof of deadness a build like this one allows.
+        if m is not None and m.operation in ("SETVAR", "SETSLOT") \
+                and slots is not None and never_read:
+            wrote = slots.writes.get(st.row)
+            if wrote is not None and wrote in never_read:
+                out[st.key()] = Verdict(
+                    st.key(), DECOY,
+                    "it writes variable %s, and nothing in this capture ever "
+                    "reads that variable - not this instruction's own value, "
+                    "not any later one. Removing it changes no call, no "
+                    "argument and no value that was observed" % wrote)
+                continue
         if m is not None and m.operation in _EFFECT_OPS:
             out[st.key()] = Verdict(
                 st.key(), OBSERVED,

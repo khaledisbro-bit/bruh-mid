@@ -27,6 +27,7 @@ if HERE not in sys.path:
 import cfgx            # noqa: E402
 import dataflow        # noqa: E402
 import decoy           # noqa: E402
+import actions         # noqa: E402
 import antitamper      # noqa: E402
 import branches        # noqa: E402
 import disagree        # noqa: E402
@@ -306,6 +307,11 @@ class Analysis:
             counters=self.counters)
         self.runner.run()
         self.runnable = self.runner.runnable_text()
+        # The same program with everything this analysis cannot stand behind
+        # taken out: the instructions shown to have no effect, and the ones
+        # whose value nothing on this path consumed. Removing them is a claim,
+        # and the claim is tested by running both and comparing their calls.
+        self.cleaned = self.runner.runnable_text(only_proven=True)
         # Names derived from the values the variables hold. Applied to BOTH
         # renderings with the same substitution, so the readable one and the one
         # the behaviour comparison actually executes stay the same program - a
@@ -313,6 +319,11 @@ class Analysis:
         # measure the rename.
         self.source, self.names = naming.rename(self.source)
         self.runnable, _ = naming.rename(self.runnable)
+        self.cleaned, _ = naming.rename(self.cleaned)
+        # The same run said another way: what the program did to its host, in
+        # order, as Luau that runs. The full rendering is the machine; this is
+        # the effects, which for a script of this kind is what a reader wants.
+        self.actions_text, self.actions_n = actions.build(capture.calls)
         # Where the reading and the machine differ, traced back through the
         # graph. This runs before the verification summary so the summary can
         # say how many of the differences are about the program and how many
@@ -628,6 +639,11 @@ class Analysis:
                 self.lift, self.models, self.differences, self.capture.rows),
             "behaviour_check.lua": verify.behaviour_harness(self.runnable),
             "RECONSTRUCTED_runnable.lua": self.runnable,
+            "RECONSTRUCTED_clean.lua": self.cleaned,
+            "ACTIONS.lua": self.actions_text,
+            "behaviour_check_actions.lua": verify.behaviour_harness(
+                self.actions_text),
+            "behaviour_check_clean.lua": verify.behaviour_harness(self.cleaned),
         }
         for name, body in files.items():
             with open(os.path.join(outdir, name), "w", encoding="utf-8") as f:
@@ -937,6 +953,9 @@ def selftest():
     _exposure._selftest()
     _metatab._selftest()
     _dispatch._selftest()
+    import actions as _ac
+    if _ac._selftest():
+        ok = False
     import antitamper as _at
     if _at._selftest():
         ok = False
