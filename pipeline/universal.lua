@@ -254,6 +254,14 @@ env = setmetatable({}, { __index = function(_, k)
     end
     return sv
 end })
+-- `type` AS THE HOST ANSWERS IT, for the payload and nothing else. In Roblox an
+-- Instance and a datatype are userdata; here they are tables, because a table is
+-- all this can build. A build that asks reads the difference in one call. The
+-- stand-in publishes the host-faithful answer under its own name rather than
+-- replacing the global, so this harness and the stand-in itself keep seeing Lua's
+-- own kinds - replacing it for everybody stopped parenting from working, because
+-- the code that links a child to its parent asks whether the parent is a table.
+if VMSMART_HOST_TYPE ~= nil then env.type = VMSMART_HOST_TYPE end
 env.debug = DBG
 env.os = setmetatable({ clock = vclock, time = vtime },
                       { __index = realenv.os })
@@ -1340,7 +1348,54 @@ end
 -- Written down here so fidelity is measurable rather than guessed at: run this
 -- same harness in a real client and run it here, and the number that differs is
 -- the thing to fix.
+-- Every property the program read off a host object, and what it got. A value
+-- answered out of this environment's own table is answered silently, so a wrong
+-- one leaves no trace - and these builds fold what they read into the key their
+-- payload is decrypted with, so a reader needs to see each one.
+local reads, readN = {}, 0
+local readSeen = {}
+VMSMART_READ = function(what, value)
+    readN = readN + 1
+    if readN > 20000 then return end
+    local t = type(value)
+    local shown
+    if t == "string" then
+        shown = string.format("%q", #value < 48 and value
+                              or (string.sub(value, 1, 48) .. "..."))
+    elseif t == "number" or t == "boolean" then
+        shown = tostring(value)
+    else
+        shown = t .. (typeof ~= nil and ("/" .. tostring(typeof(value))) or "")
+    end
+    local line = what .. " -> " .. shown
+    if readSeen[line] then
+        readSeen[line] = readSeen[line] + 1
+        return
+    end
+    readSeen[line] = 1
+    reads[#reads + 1] = line
+end
+
 local keyLog = {}
+-- AND WHETHER THE DECRYPTION PRODUCED A PROGRAM. Between the key and the call
+-- comes the decryption and the deserialising, and when the key is wrong the
+-- deserialiser raises in the middle of them. So this not being recorded is the
+-- answer as much as its contents are.
+HID.__GATE = function(prog)
+    local what = type(prog)
+    if what == "table" then
+        local n = 0
+        for _ in pairs(prog) do n = n + 1 end
+        local rows = rawget(prog, 2)
+        local nrows = 0
+        if type(rows) == "table" then
+            for _ in pairs(rows) do nrows = nrows + 1 end
+        end
+        what = "table with " .. tostring(n) .. " field(s), "
+               .. tostring(nrows) .. " instruction(s)"
+    end
+    keyLog[#keyLog + 1] = "gate: the payload decrypted to " .. what
+end
 HID.__KEY = function(key, ...)
     local parts = {}
     if type(key) == "table" then
@@ -2437,7 +2492,19 @@ local function gave(line, v)
     if id then behavior[line] = behavior[line] .. "  @gave=#" .. tostring(id) end
     return v
 end
-env.Instance = setmetatable({}, { __index=function(_,k) if k=="new" then return function(c,...) behavior[#behavior+1]="Instance.new: "..tostring(c)..atRow(); return gave(#behavior, RI.new(c,...)) end end return RI[k] end })
+-- ONE `Instance.new`, not a new one per read. In the host, `Instance.new` is the
+-- same function every time you read it, so `rawequal(Instance.new, Instance.new)`
+-- is true. Building the logging wrapper inside __index made that false, and a
+-- build that compares two reads of the same host function sees a stand-in in one
+-- comparison. This one compares functions: `rawequal` is in its constant table.
+local instanceNew = function(c, ...)
+    behavior[#behavior+1] = "Instance.new: " .. tostring(c) .. atRow()
+    return gave(#behavior, RI.new(c, ...))
+end
+env.Instance = setmetatable({}, { __index = function(_, k)
+    if k == "new" then return instanceNew end
+    return RI[k]
+end })
 
 -- Server-only services throw on a client executor and stop the trace. Proxy
 -- `game` so GetService returns LOGGING PROXIES: every method call and its
@@ -2486,10 +2553,13 @@ do
       MessagingService = "MessagingService",
       MarketplaceService = "MarketplaceService",
     }
+    -- and the same `GetService`, for the same reason
+    local getServiceFn = nil
     env.game = setmetatable({}, {
       __index = function(_, k)
         if k == "GetService" or k == "FindService" or k == "service" then
-          return function(_, name)
+          if getServiceFn then return getServiceFn end
+          getServiceFn = function(_, name)
             if serverStubs[name] then
               behavior[#behavior + 1] = "GetService: " .. tostring(name)
                                         .. "  -> logging proxy (server-only)"
@@ -2524,6 +2594,7 @@ do
             return gave(#behavior,
                         (ok and svc ~= nil) and svc or logProxy(name))
           end
+          return getServiceFn
         end
         local v = realGame[k]
         if type(v) == "function" then return function(_, ...) return v(realGame, ...) end end
@@ -2774,7 +2845,13 @@ local function runPayload()
         -- hundred places. A traceback is taken while the stack is still
         -- standing, which is the only moment it exists.
         local trace = nil
-        local ok, r = xpcall(f, function(e)
+        -- NOT ON THE MAIN THREAD. In Roblox a script body runs on a thread the
+        -- engine made for it, so `coroutine.running()` reports a coroutine and
+        -- "is main" is false. Calling the payload straight from here ran it on
+        -- the main thread, where that answer is the other way round - and this
+        -- build reads `coroutine.running`, which is in its own constant table.
+        -- The traceback is still taken inside, where the stack is.
+        local handler = function(e)
             local tb = nil
             if debug and debug.traceback then
                 local okk, t = pcall(debug.traceback, tostring(e), 2)
@@ -2782,7 +2859,23 @@ local function runPayload()
             end
             trace = tb
             return e
-        end)
+        end
+        local ok, r
+        if coroutine and coroutine.create and coroutine.resume then
+            local co = coroutine.create(function(...)
+                return xpcall(f, handler, ...)
+            end)
+            local alive, a, b = coroutine.resume(co)
+            if alive then
+                ok, r = a, b
+            else
+                -- the coroutine itself failed to run, which is this harness's
+                -- problem and not the program's
+                ok, r = false, a
+            end
+        else
+            ok, r = xpcall(f, handler)
+        end
         rec.trace = trace
         rec.ok = ok
         -- Only a run that finished HAS a return value. On a failed run the
@@ -3389,6 +3482,27 @@ if #slices > 0 then
         say("swap:" .. sliceSwapUsed)
     end
     for i = 1, #keyLog do say(keyLog[i]) end
+end
+-- Outside the slice section on purpose: a count of zero is a finding about this
+-- harness, not about the program, and burying it inside a section that only
+-- exists when something else happened is how it went unnoticed.
+-- The class names this environment refused to create, as the host refuses them.
+-- Written down because the list it judges by is partial: a real class missing
+-- from it would be refused here and created there, and that is a difference a
+-- reader has to be able to see.
+if VMSMART_REFUSED_CLASSES ~= nil then
+    local names = {}
+    for n in pairs(VMSMART_REFUSED_CLASSES) do names[#names + 1] = n end
+    table.sort(names)
+    if #names > 0 then
+        say("---REFUSEDCLASSES---")
+        for i = 1, #names do say(names[i]) end
+    end
+end
+say("---READS---")
+say("reads_total: " .. tostring(readN))
+for i = 1, math.min(#reads, 900) do
+    say(reads[i] .. "  x" .. tostring(readSeen[reads[i]] or 1))
 end
 if #hashes > 0 then
     say("---HASHES---")

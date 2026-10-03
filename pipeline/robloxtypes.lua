@@ -35,29 +35,135 @@ local floor, sqrt, huge = math.floor, math.sqrt, math.huge
 -- vector is itself a vector, so building it eagerly builds its own unit, and
 -- that recursion overflowed the stack 20,000 frames deep. Computed on demand it
 -- stops at the first one nobody asks about.
+-- THE REAL `type`. The stand-in replaces the global one so that an Instance and
+-- a datatype answer "userdata", which is what the host answers and what a build
+-- that asks has to see. Every check in THIS file is about Lua's own kinds - is
+-- this argument a table I built, is that one a plain number - so it has to keep
+-- asking the old question. Leaving them on the replaced global made
+-- `UDim2.new(UDim, UDim)` stop recognising its arguments and every datatype
+-- operator stop recognising its operands.
+local rawtype = VMSMART_REAL_TYPE or type
+
+-- WHERE A DATATYPE'S COMPONENTS LIVE.
+--
+-- Not in the value itself. In the host these are userdata and every component
+-- read goes through the engine. Copying them into the table was close enough to
+-- work and far enough to hide: a read served out of the table never reaches
+-- __index, so it could not be recorded, and a component with a wrong value was
+-- invisible. These builds fold the components they read into the key their
+-- payload is decrypted with, so each read has to be visible.
+VMSMART_FIELDS = VMSMART_FIELDS or {}
+
+-- The separators and the shapes the host prints these with. Public behaviour,
+-- checkable by printing one: a space for the sequence types, a comma and a space
+-- for the vectors and colours, and a shape of its own for the two that are not a
+-- flat list of numbers.
+local TOSTRING_SEP = {
+    NumberRange = " ",
+    NumberSequenceKeypoint = " ",
+    ColorSequenceKeypoint = " ",
+    NumberSequence = " ",
+    ColorSequence = " ",
+}
+local TOSTRING_SHAPE = {
+    -- a UDim2 is two UDims, each in braces
+    UDim2 = function(fields)
+        local x, y = fields.X, fields.Y
+        return "{" .. tostring(x) .. "}, {" .. tostring(y) .. "}"
+    end,
+    -- a Rect is its two corners' components, flat
+    Rect = function(fields)
+        local mn, mx = fields.Min, fields.Max
+        return tostring(mn) .. ", " .. tostring(mx)
+    end,
+    -- a BrickColor prints its name and nothing else
+    BrickColor = function(fields) return tostring(fields.Name) end,
+    -- a sequence prints every keypoint in order, space separated
+    NumberSequence = function(fields)
+        local ks = fields.Keypoints or {}
+        local parts = {}
+        for i = 1, #ks do parts[#parts + 1] = tostring(ks[i]) end
+        return table.concat(parts, " ")
+    end,
+    ColorSequence = function(fields)
+        local ks = fields.Keypoints or {}
+        local parts = {}
+        for i = 1, #ks do parts[#parts + 1] = tostring(ks[i]) end
+        return table.concat(parts, " ")
+    end,
+}
+
 local function make(typeName, fields, methods, lazy, ops)
     local v = {}
-    for k, x in pairs(fields) do v[k] = x end
+    local wrapped = nil
+    VMSMART_FIELDS[v] = fields
     local meta = {
         __index = function(t, k)
+            local own = fields[k]
+            if own ~= nil then
+                if VMSMART_READ then
+                    VMSMART_READ(typeName .. "." .. tostring(k), own)
+                end
+                return own
+            end
             local l = lazy and lazy[k]
             if l then
                 local value = l()
-                rawset(t, k, value)
+                fields[k] = value
+                if VMSMART_READ then
+                    VMSMART_READ(typeName .. "." .. tostring(k) .. " (computed)",
+                                 value)
+                end
                 return value
             end
             local m = methods and methods[k]
-            if m then return m end
+            if m then
+                -- A METHOD IS A HOST COMPUTATION, and those are the answers this
+                -- file can be wrong about: a component read back is whatever the
+                -- program passed in, but Cross, Dot and Lerp are arithmetic the
+                -- host does. So the call and what it produced are recorded the
+                -- same way a component read is.
+                if VMSMART_READ == nil then return m end
+                -- THE SAME FUNCTION EVERY TIME. In the host, reading a method
+                -- twice gives the same function, and `rawequal(a.Lerp, a.Lerp)`
+                -- is true. A wrapper built per read makes that false, which is a
+                -- difference a build can read with one comparison - and this one
+                -- compares functions.
+                wrapped = wrapped or {}
+                if wrapped[k] then return wrapped[k] end
+                local w = function(...)
+                    local r = m(...)
+                    VMSMART_READ(typeName .. ":" .. tostring(k) .. "()", r)
+                    return r
+                end
+                wrapped[k] = w
+                return w
+            end
             -- not part of this type: recorded, not invented
             return VMSMART_STUB(VMSMART_HOST_FIELDS_ASKED,
                                 typeName .. "." .. tostring(k))
         end,
-        __tostring = function()
+        -- HOW THE HOST PRINTS IT.
+        --
+        -- Not one format. Roblox prints a Vector3 as "1, 2, 3" and a
+        -- NumberRange as "1 2" - a space, no comma - and a UDim2 as
+        -- "{0, 1}, {0, 2}", braces and all. A BrickColor prints its name and a
+        -- TweenInfo prints nothing but its type. Joining every type's components
+        -- with ", " is right for about half of them.
+        --
+        -- It matters here because this build formats what the host gives it and
+        -- folds the text: `string.format("%.17g", ...)` is one of its own
+        -- functions. A separator in the wrong place changes every number after
+        -- it.
+        __tostring = function(t)
+            local sep = TOSTRING_SEP[typeName] or ", "
+            local shape = TOSTRING_SHAPE[typeName]
+            if shape then return shape(fields, t) end
             local parts = {}
             for _, k in ipairs(fields.__order or {}) do
                 parts[#parts + 1] = tostring(fields[k])
             end
-            return #parts > 0 and table.concat(parts, ", ") or typeName
+            return #parts > 0 and table.concat(parts, sep) or typeName
         end,
         __eq = function(a, b) return tostring(a) == tostring(b) end,
     }
@@ -78,7 +184,7 @@ local function num(x) return tonumber(x) or 0 end
 -- as well - which made ColorSequence.new(colour, colour) treat its first colour
 -- as a list of keypoints.
 local function isArray(v)
-    return type(v) == "table" and VMSMART_TAGGED[v] == nil and rawget(v, 1) ~= nil
+    return rawtype(v) == "table" and VMSMART_TAGGED[v] == nil and rawget(v, 1) ~= nil
 end
 
 local T = {}
@@ -107,7 +213,7 @@ end
 
 T.UDim2 = function(xs, xo, ys, yo)
     -- UDim2.new(UDim, UDim) is also documented
-    if type(xs) == "table" and VMSMART_TAGGED[xs] == "UDim" then
+    if rawtype(xs) == "table" and VMSMART_TAGGED[xs] == "UDim" then
         local a, b = xs, xo
         return make("UDim2", { X = a, Y = b, Width = a, Height = b,
                                __order = { "X", "Y" } })
@@ -157,9 +263,9 @@ T.Vector2 = function(x, y)
         __sub = function(a, b) return T.Vector2(num(a.X) - num(b.X),
                                                 num(a.Y) - num(b.Y)) end,
         __mul = function(a, b)
-            if type(b) == "number" then return T.Vector2(num(a.X) * b,
+            if rawtype(b) == "number" then return T.Vector2(num(a.X) * b,
                                                          num(a.Y) * b) end
-            if type(a) == "number" then return T.Vector2(a * num(b.X),
+            if rawtype(a) == "number" then return T.Vector2(a * num(b.X),
                                                          a * num(b.Y)) end
             return T.Vector2(num(a.X) * num(b.X), num(a.Y) * num(b.Y))
         end,
@@ -199,17 +305,17 @@ T.Vector3 = function(x, y, z)
                              num(a.Z) - num(b.Z))
         end,
         __mul = function(a, b)
-            if type(b) == "number" then
+            if rawtype(b) == "number" then
                 return T.Vector3(num(a.X) * b, num(a.Y) * b, num(a.Z) * b)
             end
-            if type(a) == "number" then
+            if rawtype(a) == "number" then
                 return T.Vector3(a * num(b.X), a * num(b.Y), a * num(b.Z))
             end
             return T.Vector3(num(a.X) * num(b.X), num(a.Y) * num(b.Y),
                              num(a.Z) * num(b.Z))
         end,
         __div = function(a, b)
-            if type(b) == "number" then
+            if rawtype(b) == "number" then
                 return T.Vector3(num(a.X) / b, num(a.Y) / b, num(a.Z) / b)
             end
             return T.Vector3(num(a.X) / num(b.X), num(a.Y) / num(b.Y),
@@ -239,7 +345,7 @@ end
 
 T.CFrame = function(a, b, c)
     local pos
-    if type(a) == "table" and VMSMART_TAGGED[a] == "Vector3" then
+    if rawtype(a) == "table" and VMSMART_TAGGED[a] == "Vector3" then
         pos = a
     else
         pos = T.Vector3(a, b, c)
@@ -293,7 +399,7 @@ end
 
 T.Rect = function(a, b, c, d)
     local min, max
-    if type(a) == "table" then min, max = a, b
+    if rawtype(a) == "table" then min, max = a, b
     else min, max = T.Vector2(a, b), T.Vector2(c, d) end  -- Rect.new takes either
     return make("Rect", { Min = min, Max = max,
                           Width = num(max.X) - num(min.X),
@@ -318,7 +424,7 @@ T.Faces = function(...)
     local set, fields = {}, {}
     for i = 1, select("#", ...) do
         local v = select(i, ...)
-        local name = type(v) == "table" and tostring(v.Name) or tostring(v)
+        local name = rawtype(v) == "table" and tostring(v.Name) or tostring(v)
         set[name] = true
     end
     for _, name in ipairs(FACE_NAMES) do fields[name] = set[name] or false end
@@ -329,7 +435,7 @@ T.Axes = function(...)
     local set, fields = {}, {}
     for i = 1, select("#", ...) do
         local v = select(i, ...)
-        local name = type(v) == "table" and tostring(v.Name) or tostring(v)
+        local name = rawtype(v) == "table" and tostring(v.Name) or tostring(v)
         set[name] = true
     end
     for _, name in ipairs({ "X", "Y", "Z" }) do fields[name] = set[name] or false end
@@ -386,7 +492,7 @@ T.OverlapParams = T.RaycastParams
 -- real one will not match here.
 T.BrickColor = function(a, b, c)
     local name
-    if type(a) == "string" then name = a
+    if rawtype(a) == "string" then name = a
     elseif b ~= nil then name = "Color3"
     else name = "BrickColor " .. tostring(a) end
     VMSMART_TYPES_STUBBED["BrickColor.Number"] = true

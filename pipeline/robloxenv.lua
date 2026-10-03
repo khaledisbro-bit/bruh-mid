@@ -60,6 +60,18 @@ end
 -- So the first one is remembered and the rest are counted. Listing them all
 -- flooded the capture with thousands of paths and said nothing the count does
 -- not.
+-- THE REAL `type`, taken once and used by everything in this file.
+--
+-- The global `type` is replaced further down: in the host an Instance and a
+-- datatype are userdata, and a build that asks gets "table" here unless this
+-- environment answers the way the host does. That replacement is right for the
+-- PAYLOAD and wrong for this file, which builds those objects out of tables and
+-- has to keep recognising them as tables. Getting that wrong broke parenting -
+-- `type(parent) == "table"` stopped being true, so nothing was ever linked to
+-- anything, GetChildren came back empty, and every number the payload folded
+-- from that was wrong.
+local rawtype = type
+
 VMSMART_ARITH_COUNT = 0
 VMSMART_ARITH_FIRST = nil
 
@@ -67,7 +79,7 @@ VMSMART_ARITH_FIRST = nil
 -- number, so the first-arithmetic report named a number and left the gap it came
 -- from unidentified.
 function VMSMART_WHICH(v)
-    if type(v) == "table" then
+    if rawtype(v) == "table" then
         local p = VMSMART_STUB_PATH and VMSMART_STUB_PATH[v]
         if p then return p end
         local t = VMSMART_TAGGED and VMSMART_TAGGED[v]
@@ -104,7 +116,7 @@ VMSMART_ARITH_SINK = {}
 VMSMART_CALLS = {}
 
 local function previewArg(v)
-    local t = type(v)
+    local t = rawtype(v)
     if t == "string" then
         if #v > 40 then return string.format("%q", v:sub(1, 40) .. "...") end
         return string.format("%q", v)
@@ -112,7 +124,24 @@ local function previewArg(v)
     if t == "number" or t == "boolean" or t == "nil" then return tostring(v) end
     if t == "table" then
         local tag = VMSMART_TAGGED and VMSMART_TAGGED[v]
-        if tag then return tag end
+        if tag then
+            -- the components too: "Vector3" says which kind of value it was and
+            -- nothing about which value, and these builds fold the components
+            local parts = {}
+            local store = VMSMART_FIELDS and VMSMART_FIELDS[v]
+            for _, f in ipairs({ "X", "Y", "Z", "R", "G", "B", "Min", "Max",
+                                 "Scale", "Offset", "Name", "Number", "Value",
+                                 "Time", "Envelope" }) do
+                local x = store and store[f]
+                if rawtype(x) == "number" or rawtype(x) == "string" then
+                    parts[#parts + 1] = f .. "=" .. tostring(x)
+                end
+            end
+            if #parts > 0 then
+                return tag .. "(" .. table.concat(parts, ",") .. ")"
+            end
+            return tag
+        end
         local p = VMSMART_STUB_PATH and VMSMART_STUB_PATH[v]
         if p then return p end
         return "table"
@@ -311,6 +340,11 @@ if spawn == nil then spawn = function(fn, ...) return task.spawn(fn, ...) end en
 -- actually has; anything not named here is its own class and an Instance,
 -- which is what the host says too.
 VMSMART_PARENTS = {
+    -- The data model's own class. It was missing, so `game:IsA("ServiceProvider")`
+    -- fell through to the rule for a class this file does not model and answered
+    -- false, where the host answers true - and a build that asks whether the
+    -- thing it was handed really is the service provider reads that.
+    DataModel = {"ServiceProvider", "Instance"},
     Part = {"FormFactorPart", "BasePart", "PVInstance", "Instance"},
     MeshPart = {"TriangleMeshPart", "BasePart", "PVInstance", "Instance"},
     WedgePart = {"FormFactorPart", "BasePart", "PVInstance", "Instance"},
@@ -465,6 +499,25 @@ if Instance == nil then
     -- nil - Parent is, until something sets it - and nil is an answer. Anything
     -- NOT in here is a property this file does not model, and that is what the
     -- stub is for.
+    -- WHERE AN INSTANCE'S PROPERTIES LIVE.
+    --
+    -- Not in the instance table. In the host an Instance is userdata: it has no
+    -- raw fields, every read goes through the engine, and `rawget` on one is not
+    -- a thing you can do. Keeping them in the table here was close enough to work
+    -- and far enough to hide: a read that this file answers out of its own table
+    -- never reaches __index, so it could not be recorded, and a wrong value was
+    -- invisible. These builds fold what they read into a number, so every read
+    -- has to be visible.
+    VMSMART_PROPS = VMSMART_PROPS or {}
+    local function propsOf(v)
+        if rawtype(v) ~= "table" then return nil end
+        return VMSMART_PROPS[v]
+    end
+    local function propOf(v, k)
+        local t = propsOf(v)
+        if t == nil then return nil end
+        return t[k]
+    end
     local declared = { ClassName = true, Name = true, Parent = true,
                        Archivable = true, RobloxLocked = true }
     local function newInstance(class)
@@ -473,8 +526,8 @@ if Instance == nil then
         local signals = {}
         local self
         local function link(parent)
-            if parent ~= nil and type(parent) == "table" then
-                local add = rawget(parent, "VMSMART_ADD_CHILD")
+            if parent ~= nil and rawtype(parent) == "table" then
+                local add = parent.VMSMART_ADD_CHILD
                 if add then add(self) end
             end
         end
@@ -482,27 +535,107 @@ if Instance == nil then
         -- being wrapped one by one: whatever this instance answers with, if it is
         -- a function, the call through it is recorded. One place to get right,
         -- and it covers the methods added later too.
+        -- ONE FUNCTION PER NAME, kept. In the host, reading a method twice
+        -- gives the same function and `rawequal(p.Destroy, p.Destroy)` is true.
+        -- Building the recording wrapper on every read made that false, and a
+        -- build that compares what the host handed it twice reads the
+        -- difference immediately. This one compares functions - `rawequal` is
+        -- in its own constant table.
+        local wrappedMethods = {}
         local function answer(k, v)
-            if type(v) ~= "function" then return v end
-            return recorded(class .. ":" .. tostring(k), v)
+            if rawtype(v) ~= "function" then return v end
+            local have = wrappedMethods[k]
+            if have then return have end
+            local w = recorded(class .. ":" .. tostring(k), v)
+            wrappedMethods[k] = w
+            return w
         end
-        self = setmetatable({ ClassName = class, Name = class, Parent = nil,
-                              Archivable = true, RobloxLocked = false },
-            { __index = function(_, k) return answer(k, (function()
+        local props = { ClassName = class, Name = class, Parent = nil,
+                        Archivable = true, RobloxLocked = false }
+        self = setmetatable({},
+            { __index = function(_, k)
+                  -- EVERY PROPERTY READ, not only the ones with no answer. A
+                  -- value this file answers from its own table is answered
+                  -- silently, so a wrong one is invisible: the stand-in looks
+                  -- complete and the capture says nothing. These builds fold
+                  -- what they read into a number, so a reader has to be able to
+                  -- see what was read and what it got back.
+                  do
+                      local own = props[k]
+                      if own ~= nil then
+                          if VMSMART_READ then
+                              VMSMART_READ(class .. "." .. tostring(k), own)
+                          end
+                          return own
+                      end
+                  end
+                  return answer(k, (function()
                   if k == "GetChildren" or k == "GetDescendants" then
                       return function()
+                          -- INSERTION ORDER, like the host. Children were kept
+                          -- in a table keyed by name, so this walked them in
+                          -- whatever order a hash table yields - a different
+                          -- order each run and a different order from the
+                          -- host's - and two children with the same name, which
+                          -- the host allows, collapsed into one.
                           local list = {}
-                          for _, v in pairs(children) do list[#list + 1] = v end
+                          for i = 1, #children do list[i] = children[i] end
+                          if k == "GetDescendants" then
+                              local i = 1
+                              while i <= #list do
+                                  local node = list[i]
+                                  local sub = VMSMART_CHILDREN
+                                               and VMSMART_CHILDREN[node]
+                                  if sub then
+                                      for j = 1, #sub do
+                                          list[#list + 1] = sub[j]
+                                      end
+                                  end
+                                  i = i + 1
+                              end
+                          end
                           return list
                       end
-                  elseif k == "FindFirstChild" or k == "WaitForChild"
-                         or k == "FindFirstChildOfClass"
-                         or k == "FindFirstChildWhichIsA" then
-                      return function(_, n) return children[tostring(n)] end
+                  elseif k == "FindFirstChild" or k == "WaitForChild" then
+                      -- the FIRST child with that name, which is what the host
+                      -- answers when there are several
+                      return function(_, n)
+                          n = tostring(n)
+                          for i = 1, #children do
+                              if tostring(propOf(children[i], "Name")) == n then
+                                  return children[i]
+                              end
+                          end
+                          return nil
+                      end
+                  elseif k == "FindFirstChildOfClass" then
+                      -- by CLASS, exactly, not by name: answering by name meant
+                      -- this said yes to a Folder called "Part"
+                      return function(_, n)
+                          n = tostring(n)
+                          for i = 1, #children do
+                              if tostring(propOf(children[i], "ClassName")) == n
+                                      then return children[i] end
+                          end
+                          return nil
+                      end
+                  elseif k == "FindFirstChildWhichIsA" then
+                      -- by the class TREE, so a Part answers to BasePart and to
+                      -- Instance, which is the question a build asks to find out
+                      -- whether it is talking to a real host
+                      return function(_, n)
+                          n = tostring(n)
+                          for i = 1, #children do
+                              local c = tostring(propOf(children[i],
+                                                        "ClassName"))
+                              if VMSMART_ISA(c, n) then return children[i] end
+                          end
+                          return nil
+                      end
                   elseif k == "Destroy" or k == "Remove" then
                       return function()
-                          local p = rawget(self, "Parent")
-                          if p ~= nil and type(p) == "table" then
+                          local p = props.Parent
+                          if p ~= nil and rawtype(p) == "table" then
                               local drop = rawget(p, "VMSMART_DROP_CHILD")
                               if drop then drop(self) end
                           end
@@ -547,39 +680,53 @@ if Instance == nil then
                   elseif k == "GetFullName" then
                       return function()
                           local parts, node = {}, self
-                          while node ~= nil and type(node) == "table" do
+                          while node ~= nil and rawtype(node) == "table" do
                               table.insert(parts, 1,
-                                           tostring(rawget(node, "Name")))
-                              node = rawget(node, "Parent")
+                                           tostring(propOf(node, "Name")))
+                              node = propOf(node, "Parent")
                           end
                           return table.concat(parts, ".")
                       end
                   elseif k == "IsDescendantOf" then
                       return function(_, other)
-                          local node = rawget(self, "Parent")
-                          while node ~= nil and type(node) == "table" do
+                          local node = props.Parent
+                          while node ~= nil and rawtype(node) == "table" do
                               if node == other then return true end
-                              node = rawget(node, "Parent")
+                              node = propOf(node, "Parent")
                           end
                           return false
                       end
                   elseif k == "ClearAllChildren" then
                       return function()
-                          for n in pairs(children) do children[n] = nil end
+                          for i = #children, 1, -1 do children[i] = nil end
                       end
                   elseif k == "VMSMART_ADD_CHILD" then
                       return function(child)
-                          children[tostring(rawget(child, "Name"))] = child
+                          for i = 1, #children do
+                              if children[i] == child then return end
+                          end
+                          children[#children + 1] = child
                       end
                   elseif k == "VMSMART_DROP_CHILD" then
                       return function(child)
-                          children[tostring(rawget(child, "Name"))] = nil
+                          for i = 1, #children do
+                              if children[i] == child then
+                                  table.remove(children, i)
+                                  return
+                              end
+                          end
                       end
                   end
                   -- a child of this instance, by its own name, which is how the
                   -- host answers it too
-                  local byName = children[tostring(k)]
-                  if byName ~= nil then return byName end
+                  do
+                      local n = tostring(k)
+                      for i = 1, #children do
+                          if tostring(propOf(children[i], "Name")) == n then
+                              return children[i]
+                          end
+                      end
+                  end
                   -- A PROPERTY WHOSE VALUE IS NIL IS STILL ANSWERED. `Parent` of
                   -- a fresh instance is nil in the host, and nil is the answer,
                   -- not a missing one. Falling through to a stub here handed the
@@ -599,30 +746,30 @@ if Instance == nil then
                   -- read as having no consequence.
                   VMSMART_RECORD_CALL(class .. ":set_" .. tostring(k), t, v)
                   if k == "Parent" then
-                      local old = rawget(t, "Parent")
-                      if old ~= nil and type(old) == "table" then
+                      local old = props.Parent
+                      if old ~= nil and rawtype(old) == "table" then
                           local drop = rawget(old, "VMSMART_DROP_CHILD")
                           if drop then drop(t) end
                       end
-                      rawset(t, "Parent", v)
+                      props.Parent = v
                       link(v)
                       return
                   end
                   if k == "Name" then
                       -- renaming moves it in its parent's index, as it does in
                       -- the host
-                      local p = rawget(t, "Parent")
-                      if p ~= nil and type(p) == "table" then
-                          local drop = rawget(p, "VMSMART_DROP_CHILD")
+                      local p = props.Parent
+                      if p ~= nil and rawtype(p) == "table" then
+                          local drop = p.VMSMART_DROP_CHILD
                           if drop then drop(t) end
                       end
-                      rawset(t, "Name", v)
+                      props.Name = v
                       if p ~= nil then link(p) end
                       return
                   end
-                  rawset(t, k, v)
+                  props[k] = v
               end,
-              __tostring = function() return tostring(rawget(self, "Name")) end })
+              __tostring = function() return tostring(props.Name) end })
         -- WHAT `typeof` CALLS IT. In the host, typeof of every Instance is the
         -- word "Instance" - not its class name - and `type` of one is
         -- "userdata". A stand-in that builds instances out of tables answers
@@ -632,9 +779,93 @@ if Instance == nil then
         -- filled empty. The run then stops taking the length of that slot.
         if VMSMART_IS_INSTANCE == nil then VMSMART_IS_INSTANCE = {} end
         VMSMART_IS_INSTANCE[self] = true
+        VMSMART_PROPS[self] = props
+        VMSMART_CHILDREN = VMSMART_CHILDREN or {}
+        VMSMART_CHILDREN[self] = children
         return self
     end
-    Instance = { new = function(class) return newInstance(tostring(class)) end }
+    -- THE CLASSES THE HOST CAN CREATE.
+    --
+    -- `Instance.new("qOyUT0qI5OURkfR1n0h0")` raises in Roblox, and so does
+    -- `Instance.new("part")`, because class names are case sensitive. This build
+    -- asks for both: those exact strings are in the constant tables of two of the
+    -- functions it carries. Creating something anyway is a plain statement that
+    -- nothing here is real, and the answer the build gets from that question goes
+    -- into the number it decrypts its program with.
+    --
+    -- The message is the host's, word for word, because a build that catches the
+    -- error can read it.
+    --
+    -- The list is what this file knows. A real class missing from it raises where
+    -- the host would not, so every refusal is recorded and the report names it -
+    -- the list grows from evidence, not from guessing.
+    local creatable = {}
+    for _, n in ipairs({
+        "Part", "WedgePart", "CornerWedgePart", "TrussPart", "MeshPart",
+        "UnionOperation", "NegateOperation", "IntersectOperation", "Seat",
+        "VehicleSeat", "SpawnLocation", "Terrain", "Model", "Folder",
+        "Configuration", "Tool", "HopperBin", "Accessory", "Shirt", "Pants",
+        "ShirtGraphic", "CharacterMesh", "SpecialMesh", "BlockMesh",
+        "CylinderMesh", "FileMesh", "Humanoid", "HumanoidDescription",
+        "Animation", "Animator", "AnimationController", "Attachment", "Bone",
+        "Motor6D", "Weld", "WeldConstraint", "Rotate", "Snap", "Glue",
+        "ManualWeld", "BallSocketConstraint", "HingeConstraint",
+        "PrismaticConstraint", "SpringConstraint", "RopeConstraint",
+        "RodConstraint", "CylindricalConstraint", "TorsionSpringConstraint",
+        "AlignPosition", "AlignOrientation", "LinearVelocity",
+        "AngularVelocity", "VectorForce", "Torque", "BodyPosition",
+        "BodyGyro", "BodyThrust", "BodyVelocity", "BodyAngularVelocity",
+        "Script", "LocalScript", "ModuleScript", "RemoteEvent",
+        "RemoteFunction", "BindableEvent", "BindableFunction",
+        "UnreliableRemoteEvent", "ScreenGui", "BillboardGui", "SurfaceGui",
+        "Frame", "ScrollingFrame", "CanvasGroup", "TextLabel", "TextButton",
+        "TextBox", "ImageLabel", "ImageButton", "ViewportFrame", "VideoFrame",
+        "UIListLayout", "UIGridLayout", "UITableLayout", "UIPageLayout",
+        "UIPadding", "UIScale", "UIAspectRatioConstraint",
+        "UISizeConstraint", "UITextSizeConstraint", "UICorner", "UIStroke",
+        "UIGradient", "UIDragDetector", "UIFlexItem",
+        "StringValue", "IntValue", "NumberValue", "BoolValue",
+        "ObjectValue", "Vector3Value", "CFrameValue", "Color3Value",
+        "BrickColorValue", "RayValue", "IntConstrainedValue",
+        "DoubleConstrainedValue", "Sound", "SoundGroup", "EqualizerSoundEffect",
+        "ReverbSoundEffect", "EchoSoundEffect", "PitchShiftSoundEffect",
+        "ChorusSoundEffect", "CompressorSoundEffect", "DistortionSoundEffect",
+        "FlangeSoundEffect", "TremoloSoundEffect",
+        "ParticleEmitter", "Smoke", "Fire", "Sparkles", "Explosion",
+        "Beam", "Trail", "Highlight", "SelectionBox", "SelectionSphere",
+        "SurfaceSelection", "BoxHandleAdornment", "SphereHandleAdornment",
+        "ConeHandleAdornment", "CylinderHandleAdornment",
+        "LineHandleAdornment", "ImageHandleAdornment", "Handles", "ArcHandles",
+        "PointLight", "SpotLight", "SurfaceLight", "Atmosphere", "Sky",
+        "BloomEffect", "BlurEffect", "ColorCorrectionEffect",
+        "DepthOfFieldEffect", "SunRaysEffect", "Clouds",
+        "Camera", "ClickDetector", "DragDetector", "ProximityPrompt",
+        "Decal", "Texture", "Dialog", "DialogChoice",
+        "ForceField", "NoCollisionConstraint", "Path2D",
+        "Team", "TextChatService", "TextChannel", "TextSource",
+        "RaycastParams", "OverlapParams", "PathfindingModifier",
+        "SurfaceAppearance", "MaterialVariant", "WrapTarget", "WrapLayer",
+        "EditableImage", "EditableMesh", "Studio", "AdGui", "AdPortal",
+        "Backpack", "StarterGear", "PlayerGui", "PlayerScripts",
+        "BubbleChatConfiguration", "BubbleChatMessageProperties",
+        "ChatInputBarConfiguration", "ChatWindowConfiguration",
+        "Attachment", "AudioEmitter", "AudioListener", "AudioPlayer",
+        "AudioDeviceInput", "AudioDeviceOutput", "AudioFader", "AudioAnalyzer",
+        "Wire", "AlignmentConstraint",
+    }) do creatable[n] = true end
+    VMSMART_CREATABLE = creatable
+    VMSMART_REFUSED_CLASSES = {}
+    Instance = { new = function(class, parent)
+        local name = tostring(class)
+        if not creatable[name] then
+            VMSMART_REFUSED_CLASSES[name] = true
+            -- the host's own words, so a build that catches this can read them
+            error("Unable to create an Instance of type \"" .. name .. "\"", 0)
+        end
+        local inst = newInstance(name)
+        if parent ~= nil then inst.Parent = parent end
+        return inst
+    end }
     -- the service factory below builds its containers with this, so a service
     -- holds children the same way an instance does
     VMSMART_NEW_INSTANCE = newInstance
@@ -832,7 +1063,13 @@ if Enum == nil then
     -- "userdata", and a build that asks reads the difference immediately. The
     -- real answer is given for everything this environment did not build, so a
     -- genuine table, string or number is still exactly what it is.
-    type = function(v)
+    -- NOT the global one. Replacing `type` for everybody broke this file and the
+    -- harness around it: both build host objects out of tables and both ask
+    -- whether something IS a table. So the host-faithful answer is published
+    -- under its own name and put into the PAYLOAD's environment only, where it
+    -- belongs - the program sees what the host would say, and the machinery
+    -- around it keeps seeing Lua.
+    VMSMART_HOST_TYPE = function(v)
         if realtype(v) == "table" then
             if (VMSMART_IS_INSTANCE and VMSMART_IS_INSTANCE[v])
                     or (VMSMART_TAGGED and VMSMART_TAGGED[v] ~= nil)
@@ -1230,7 +1467,7 @@ if game == nil then
                     -- own __index answers EVERYTHING with a stub and asking it
                     -- first meant the decompression this file can really do was
                     -- shadowed by a stub, and buffer.tostring got a table.
-                    local own = rawget(inst, k)
+                    local own = (VMSMART_PROPS[inst] or {})[k]
                     if own ~= nil then return own end
                     local cap = capability(name, k)
                     if cap ~= nil then return cap end

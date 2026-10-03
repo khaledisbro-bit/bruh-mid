@@ -370,7 +370,7 @@ def find_gate(src, maker_name):
                "host. It is written down at %d, as soon as it exists, because "
                "the decryption between there and the call is what raises when "
                "the key is wrong" % (m.start(), key, key, at))
-        sites.append((key, prog, at, _key_inputs(back, q)))
+        sites.append((key, prog, at, _key_inputs(back, q), m.start()))
     if not sites:
         return None, ("no place hands the maker a table built from a slice and "
                       "calls it, so this build has no gate of that shape")
@@ -413,10 +413,20 @@ def patch_gate(src, sites):
     Applied back to front so the offsets of the earlier ones stay valid.
     """
     edit = ""
-    for key, _prog, at, ins in sorted(sites, key=lambda s: -s[2]):
-        extra = ("," + ",".join(ins)) if ins else ""
-        edit = GATE_EDIT % (key, extra, key)
-        src = src[:at] + edit + src[at:]
+    # Both points, back to front so the earlier offsets stay valid: where the key
+    # exists, and where the decrypted program is about to be run. The second one
+    # is what says whether the decryption produced a program at all - when the key
+    # is wrong the deserialiser raises between the two and the second never runs,
+    # which is itself the answer.
+    marks = []
+    for key, prog, at, ins, call_at in sites:
+        marks.append((at, " if __KEY then __KEY(%s%s) end "
+                      "if VMSMART_PAYLOAD_KEY then %s=VMSMART_PAYLOAD_KEY end "
+                      % (key, ("," + ",".join(ins)) if ins else "", key)))
+        marks.append((call_at, " if __GATE then __GATE(%s) end " % prog))
+    for at, text in sorted(marks, key=lambda m: -m[0]):
+        edit = text
+        src = src[:at] + text + src[at:]
     return src, edit
 
 
