@@ -490,17 +490,134 @@ T.OverlapParams = T.RaycastParams
 -- so the name reads back faithfully, the number and the colour are derived, and
 -- both are recorded as derived. A build that checks a BrickColor number against a
 -- real one will not match here.
+-- THE HOST'S OWN PALETTE, for the colours it carries.
+--
+-- A BrickColor's Number and Colour are the host's data, not a derivation: the
+-- palette is published and fixed. Deriving them gave "Really black" the number
+-- 915 and the colour black, where the host says 1003 and 17/255 on each channel.
+-- Both are read by a build that walks the host's types.
+--
+-- Partial on purpose: these are the entries this file carries, and a name it
+-- does not know still gets a derived number and is still recorded as derived, so
+-- the report says which answers were made up.
+local BRICKCOLORS = {
+    { 1, "White", 242, 243, 243 },
+    { 2, "Grey", 161, 165, 162 },
+    { 3, "Light yellow", 249, 233, 153 },
+    { 5, "Brick yellow", 215, 197, 154 },
+    { 6, "Light green (Mint)", 194, 218, 184 },
+    { 9, "Light reddish violet", 232, 186, 200 },
+    { 11, "Pastel Blue", 128, 187, 219 },
+    { 12, "Light orange brown", 203, 132, 66 },
+    { 18, "Nougat", 204, 142, 105 },
+    { 21, "Bright red", 196, 40, 28 },
+    { 22, "Med. reddish violet", 196, 112, 160 },
+    { 23, "Bright blue", 13, 105, 172 },
+    { 24, "Bright yellow", 245, 205, 48 },
+    { 25, "Earth orange", 98, 71, 50 },
+    { 26, "Black", 27, 42, 53 },
+    { 27, "Dark grey", 109, 110, 108 },
+    { 28, "Dark green", 40, 127, 71 },
+    { 29, "Medium green", 161, 196, 140 },
+    { 36, "Lig. Yellowich orange", 243, 207, 155 },
+    { 37, "Bright green", 75, 151, 75 },
+    { 38, "Dark orange", 160, 95, 53 },
+    { 39, "Light bluish violet", 193, 202, 222 },
+    { 40, "Transparent", 236, 236, 236 },
+    { 41, "Tr. Red", 205, 84, 75 },
+    { 42, "Tr. Lg blue", 193, 223, 240 },
+    { 43, "Tr. Blue", 123, 182, 232 },
+    { 44, "Tr. Yellow", 245, 243, 145 },
+    { 45, "Light blue", 180, 210, 228 },
+    { 101, "Medium red", 218, 134, 122 },
+    { 102, "Medium blue", 110, 153, 202 },
+    { 104, "Bright violet", 107, 50, 124 },
+    { 105, "Br. yellowish orange", 226, 155, 64 },
+    { 106, "Bright orange", 218, 133, 65 },
+    { 107, "Bright bluish green", 0, 143, 156 },
+    { 119, "Br. yellowish green", 164, 189, 71 },
+    { 125, "Light orange", 234, 184, 146 },
+    { 151, "Sand green", 120, 144, 130 },
+    { 194, "Medium stone grey", 163, 162, 165 },
+    { 199, "Dark stone grey", 99, 95, 98 },
+    { 208, "Light stone grey", 229, 228, 223 },
+    { 217, "Brown", 124, 92, 70 },
+    { 226, "Cool yellow", 253, 234, 141 },
+    { 1001, "Institutional white", 248, 248, 248 },
+    { 1002, "Mid gray", 205, 205, 205 },
+    { 1003, "Really black", 17, 17, 17 },
+    { 1004, "Really red", 255, 0, 0 },
+    { 1005, "Deep orange", 255, 176, 0 },
+    { 1006, "Alder", 180, 128, 255 },
+    { 1007, "Dusty Rose", 163, 75, 75 },
+    { 1008, "Olive", 193, 190, 66 },
+    { 1009, "New Yeller", 255, 255, 0 },
+    { 1010, "Really blue", 0, 0, 255 },
+    { 1011, "Navy blue", 0, 32, 96 },
+    { 1012, "Deep blue", 33, 84, 185 },
+    { 1013, "Cyan", 4, 175, 236 },
+    { 1014, "CGA brown", 170, 85, 0 },
+    { 1015, "Magenta", 170, 0, 170 },
+    { 1016, "Pink", 255, 102, 204 },
+    { 1017, "Deep orange", 255, 175, 0 },
+    { 1018, "Teal", 18, 238, 212 },
+    { 1019, "Toothpaste", 0, 255, 255 },
+    { 1020, "Lime green", 0, 255, 0 },
+    { 1021, "Camo", 58, 125, 21 },
+    { 1022, "Grime", 127, 142, 100 },
+    { 1023, "Lavender", 140, 91, 159 },
+    { 1024, "Pastel light blue", 175, 221, 255 },
+    { 1025, "Pastel orange", 255, 201, 201 },
+    { 1026, "Pastel violet", 177, 167, 255 },
+    { 1027, "Pastel blue-green", 159, 243, 233 },
+    { 1028, "Pastel green", 204, 255, 204 },
+    { 1029, "Pastel yellow", 255, 255, 204 },
+    { 1030, "Pastel brown", 255, 204, 153 },
+    { 1031, "Royal purple", 98, 37, 209 },
+    { 1032, "Hot pink", 255, 0, 191 },
+}
+local BC_BY_NAME, BC_BY_NUMBER = {}, {}
+for _, e in ipairs(BRICKCOLORS) do
+    local rec = { number = e[1], name = e[2], r = e[3], g = e[4], b = e[5] }
+    BC_BY_NAME[e[2]] = rec
+    if BC_BY_NUMBER[e[1]] == nil then BC_BY_NUMBER[e[1]] = rec end
+end
+
 T.BrickColor = function(a, b, c)
+    local rec
     local name
-    if rawtype(a) == "string" then name = a
-    elseif b ~= nil then name = "Color3"
-    else name = "BrickColor " .. tostring(a) end
-    VMSMART_TYPES_STUBBED["BrickColor.Number"] = true
-    VMSMART_TYPES_STUBBED["BrickColor.Color"] = true
-    local derived = VMSMART_DERIVE("BrickColor|" .. name) % 1032 + 1
-    return make("BrickColor", { Name = name, Number = derived,
-                                Color = T.Color3(0, 0, 0),
-                                r = 0, g = 0, b = 0 })
+    if rawtype(a) == "string" then
+        name = a
+        rec = BC_BY_NAME[a]
+    elseif rawtype(a) == "number" and b == nil then
+        rec = BC_BY_NUMBER[a]
+        name = rec and rec.name or ("BrickColor " .. tostring(a))
+    elseif b ~= nil then
+        -- BrickColor.new(r, g, b): the host picks the nearest palette entry
+        local best, bestd = nil, nil
+        local rr, gg, bb = num(a) * 255, num(b) * 255, num(c) * 255
+        for _, e in ipairs(BRICKCOLORS) do
+            local d = (e[3] - rr) ^ 2 + (e[4] - gg) ^ 2 + (e[5] - bb) ^ 2
+            if bestd == nil or d < bestd then best, bestd = e, d end
+        end
+        rec = best and { number = best[1], name = best[2], r = best[3],
+                         g = best[4], b = best[5] }
+        name = rec and rec.name or "Color3"
+    else
+        name = "BrickColor " .. tostring(a)
+    end
+    if rec == nil then
+        VMSMART_TYPES_STUBBED["BrickColor.Number"] = true
+        VMSMART_TYPES_STUBBED["BrickColor.Color"] = true
+        local derived = VMSMART_DERIVE("BrickColor|" .. name) % 1032 + 1
+        return make("BrickColor", { Name = name, Number = derived,
+                                    Color = T.Color3(0, 0, 0),
+                                    r = 0, g = 0, b = 0 })
+    end
+    local r, g, bl = rec.r / 255, rec.g / 255, rec.b / 255
+    return make("BrickColor", { Name = rec.name, Number = rec.number,
+                                Color = T.Color3(r, g, bl),
+                                r = r, g = g, b = bl })
 end
 
 -- Random: deterministic here, and not the host's sequence.

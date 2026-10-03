@@ -552,6 +552,7 @@ if Instance == nil then
         end
         local props = { ClassName = class, Name = class, Parent = nil,
                         Archivable = true, RobloxLocked = false }
+        local destroyed, parentLocked = false, false
         self = setmetatable({},
             { __index = function(_, k)
                   -- EVERY PROPERTY READ, not only the ones with no answer. A
@@ -633,11 +634,30 @@ if Instance == nil then
                           return nil
                       end
                   elseif k == "Destroy" or k == "Remove" then
+                      -- WHAT DESTROY DOES IN THE HOST. It sets Parent to nil,
+                      -- it LOCKS Parent so a later assignment raises, and it
+                      -- destroys the children too. This was only unlinking the
+                      -- instance from its parent's list: Parent still read back
+                      -- as the old parent, where the host answers nil - and this
+                      -- build destroys a Folder and then reads its Parent.
                       return function()
                           local p = props.Parent
                           if p ~= nil and rawtype(p) == "table" then
-                              local drop = rawget(p, "VMSMART_DROP_CHILD")
+                              local drop = p.VMSMART_DROP_CHILD
                               if drop then drop(self) end
+                          end
+                          props.Parent = nil
+                          destroyed = true
+                          -- Remove() is the deprecated one and does NOT lock,
+                          -- it only reparents to nil
+                          if k == "Destroy" then
+                              parentLocked = true
+                              for i = #children, 1, -1 do
+                                  local c = children[i]
+                                  children[i] = nil
+                                  local d = c and c.Destroy
+                                  if d then pcall(d) end
+                              end
                           end
                       end
                   elseif k == "Clone" then
@@ -746,6 +766,13 @@ if Instance == nil then
                   -- read as having no consequence.
                   VMSMART_RECORD_CALL(class .. ":set_" .. tostring(k), t, v)
                   if k == "Parent" then
+                      if parentLocked then
+                          -- the host's own words for it
+                          error("The Parent property of " ..
+                                tostring(props.Name) .. " is locked, current "
+                                .. "parent: NULL, new parent " ..
+                                tostring(v and "Instance" or "NULL"), 0)
+                      end
                       local old = props.Parent
                       if old ~= nil and rawtype(old) == "table" then
                           local drop = rawget(old, "VMSMART_DROP_CHILD")
@@ -958,9 +985,24 @@ if Enum == nil then
                         true
                 end
                 local value = forcedValue or known or derivedValue(itemName)
-                local it = setmetatable(
-                    { Name = itemName, Value = value },
-                    { __index = function(_, k)
+                -- AN ENUM ITEM'S FIELDS, BEHIND THE METATABLE, for the same
+                -- reason as an instance's: in the host an EnumItem is userdata
+                -- and every read goes through the engine. Keeping Name and Value
+                -- in the table meant the two things this build reads off every
+                -- item it walks were served silently, so a wrong one left no
+                -- trace at all.
+                local itemFields = { Name = itemName, Value = value }
+                local it = setmetatable({}, {
+                      __index = function(_, k)
+                          local own = itemFields[k]
+                          if own ~= nil then
+                              if VMSMART_READ then
+                                  VMSMART_READ("Enum." .. enumName .. "."
+                                               .. itemName .. "." .. tostring(k),
+                                               own)
+                              end
+                              return own
+                          end
                           if k == "EnumType" then return enum end
                           return nil
                       end,
@@ -974,6 +1016,8 @@ if Enum == nil then
             return items[itemName]
         end
         enum = setmetatable({}, {
+            -- `tostring(Enum.PartType)` is "Enum.PartType" in the host
+            __tostring = function() return "Enum." .. enumName end,
             __index = function(_, k)
                 k = tostring(k)
                 if k == "GetEnumItems" then

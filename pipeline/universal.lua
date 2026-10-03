@@ -1474,21 +1474,27 @@ local function patchSlices(s)
         "local function (%w+)%((%w+)%)local (%w+)=(%w+)%[%2%];if not %3 then return nil end",
         function(fn, arg, v, tbl)
             hits = hits + 1
-            return ("local function %s(%s)"
-                    -- THE SLICE THE RUN NEVER ASKS FOR. `__SLICEMAP` is absent
-                    -- on every ordinary round, so this reads exactly as it did.
-                    -- On a round that sets it, the first request is answered
-                    -- with a slice the run did not reach, and the prototype hook
-                    -- then reports whatever the interpreter builds out of it -
-                    -- or nothing, which is an answer too.
-                    .. "local %s=%s[(__SLICEMAP and __SLICEMAP(%s)) or %s];"
+            return ("local function %s(%s)local %s=%s[%s];"
+                    -- THE SLICE THE RUN NEVER ASKS FOR, as an added statement
+                    -- rather than a rewritten one: the line above is the
+                    -- build's own text, byte for byte, so what was there is
+                    -- still readable from what is there now. `__SLICEMAP` is
+                    -- absent on every ordinary round, so this does nothing. On a
+                    -- round that sets it, the first request is answered with a
+                    -- slice the run did not reach, and the prototype hook then
+                    -- reports whatever the interpreter builds out of it - or
+                    -- nothing, which is an answer too.
+                    .. "if __SLICEMAP then local __m=__SLICEMAP(%s) "
+                    .. "if __m~=%s then %s=%s[__m] or %s end end;"
                     -- `#tbl` runs __len, and these VMs put metatables on the
                     -- tables they hand slices out of. rawlen asks no metamethod;
                     -- where it does not exist the count is simply not reported.
                     .. "if __SLICE then __SLICE(%q,%s,%s~=nil,"
                     .. "(rawlen and rawlen(%s) or -1),%s)end;"
                     .. "if not %s then return nil end"):format(
-                fn, arg, v, tbl, arg, arg, fn, arg, v, tbl, tbl, v)
+                fn, arg, v, tbl, arg,
+                arg, arg, v, tbl, v,
+                fn, arg, v, tbl, tbl, v)
         end)
     if hits == 0 then return nil end
     return out, hits .. " accessor(s)"

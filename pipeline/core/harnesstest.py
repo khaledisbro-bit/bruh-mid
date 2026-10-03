@@ -310,6 +310,10 @@ def slice_hook(path=UNIVERSAL):
         # the injected call now contains parentheses of its own, so the undo
         # has to run to the call's own `)end;` rather than the first `)`
         undone = _re.sub(r"if __SLICE then __SLICE\(.*?\)end;", "", out)
+        # and the redirect, which is a second inserted statement: the watch
+        # answers a request with a slice the run never asked for, and it has to
+        # be as pure an insertion as the call is
+        undone = _re.sub(r"if __SLICEMAP then .*?end end;", "", undone)
         if undone != text:
             bad.append("%s: the injection changed text around it. original %r, "
                        "recovered %r" % (name, text[:60], undone[:60]))
