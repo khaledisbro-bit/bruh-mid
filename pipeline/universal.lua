@@ -1070,25 +1070,49 @@ HID.__VMPROTO = setmetatable({}, {
         if type(proto) ~= "table" then return end
         if protoCopyN >= 2000 then return end
         protoCopyN = protoCopyN + 1
-        local copy = { fields = {}, n = protoCopyN }
+        local copy = { fields = {}, rows = {}, n = protoCopyN }
         -- every field that is an array of numbers: the instruction arrays and
         -- the operand arrays live there, and which slot holds which is read
         -- from the interpreter later rather than assumed here
         for k, v in pairs(proto) do
             if type(v) == "table" then
                 local nums, cnt = {}, 0
-                for i = 1, 4096 do
+                local rows, rcnt = {}, 0
+                for i = 1, 8192 do
                     local x = rawget(v, i)
                     if x == nil then break end
                     if type(x) == "number" then
                         cnt = cnt + 1
                         nums[cnt] = x
+                    elseif type(x) == "table" then
+                        -- THE INSTRUCTIONS. One row per instruction, each a
+                        -- small array: the opcode and its operands. This is
+                        -- the field the dispatch loop indexes by its program
+                        -- counter, and copying only arrays of numbers walked
+                        -- straight past it - which is why the first version of
+                        -- this took sixty functions and not one instruction.
+                        local row, rn = {}, 0
+                        for j = 0, 16 do
+                            local y = rawget(x, j)
+                            if type(y) == "number" then
+                                rn = rn + 1
+                                row[rn] = j .. "=" .. tostring(y)
+                            elseif type(y) == "string" and #y < 64 then
+                                rn = rn + 1
+                                row[rn] = j .. "=" .. string.format("%q", y)
+                            end
+                        end
+                        if rn > 0 then
+                            rcnt = rcnt + 1
+                            rows[rcnt] = tostring(i) .. ":" ..
+                                         table.concat(row, " ")
+                        end
                     else
-                        cnt = 0
                         break
                     end
                 end
                 if cnt > 0 then copy.fields[tostring(k)] = nums end
+                if rcnt > 0 then copy.rows[tostring(k)] = rows end
             elseif type(v) == "number" then
                 copy.fields["#" .. tostring(k)] = { v }
             end
@@ -2883,6 +2907,15 @@ if #protoCopies > 0 then
             end
             say("p" .. tostring(c.n) .. ":" .. k .. "=" ..
                 table.concat(parts, ","))
+        end
+        local rkeys = {}
+        for k in pairs(c.rows) do rkeys[#rkeys + 1] = k end
+        table.sort(rkeys)
+        for _, k in ipairs(rkeys) do
+            local rows = c.rows[k]
+            for j = 1, #rows do
+                say("p" .. tostring(c.n) .. "@" .. k .. ":" .. rows[j])
+            end
         end
     end
     say("proto_copies: " .. tostring(#protoCopies))
