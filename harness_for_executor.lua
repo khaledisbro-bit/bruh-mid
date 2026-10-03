@@ -471,27 +471,52 @@ if Instance == nil then
     -- wrote reads as nil, which is what the host answers too. A signal answers
     -- Connect with a connection that can be disconnected, and fires nothing,
     -- because nothing here produces events.
+    -- A SIGNAL IS NOT A TABLE TO THE HOST. `typeof(x.Changed)` is
+    -- "RBXScriptSignal" and `type` of it is "userdata"; a connection is
+    -- "RBXScriptConnection". Answering "table" to either is a difference a build
+    -- can read in one call, and `Changed` is in this one's constant table.
+    -- Reading a member twice gives the same function there, so these are kept
+    -- rather than rebuilt per read.
     local function newSignal(name)
         local sig
+        local members = {}
+        local function connect(_, fn)
+            local conn
+            local cmembers = {}
+            conn = setmetatable({}, { __index = function(_, j)
+                if cmembers[j] then return cmembers[j] end
+                if j == "Disconnect" or j == "disconnect" then
+                    cmembers[j] = function() end
+                    return cmembers[j]
+                end
+                if j == "Connected" then return true end
+                return nil
+            end })
+            if VMSMART_TAGGED then
+                VMSMART_TAGGED[conn] = "RBXScriptConnection"
+            end
+            return conn
+        end
         sig = setmetatable({}, {
             __index = function(_, k)
+                if members[k] then return members[k] end
                 if k == "Connect" or k == "ConnectParallel" or k == "Once" then
-                    return function(_, fn)
-                        return setmetatable({}, { __index = function(_, j)
-                            if j == "Disconnect" or j == "disconnect" then
-                                return function() end
-                            end
-                            if j == "Connected" then return true end
-                            return nil
-                        end })
-                    end
+                    members[k] = connect
+                    return connect
                 end
-                if k == "Wait" then return function() return nil end end
-                if k == "Fire" then return function() return nil end end
+                if k == "Wait" then
+                    members[k] = function() return nil end
+                    return members[k]
+                end
+                if k == "Fire" then
+                    members[k] = function() return nil end
+                    return members[k]
+                end
                 return nil
             end,
             __tostring = function() return name end,
         })
+        if VMSMART_TAGGED then VMSMART_TAGGED[sig] = "RBXScriptSignal" end
         return sig
     end
 
