@@ -33,7 +33,8 @@ import lua_tokens
 
 
 class Found:
-    __slots__ = ("maker", "proto", "upvals", "loop_at", "why", "enclosing")
+    __slots__ = ("maker", "proto", "upvals", "loop_at", "why", "enclosing",
+                 "maker_name")
 
     def __init__(self, **kw):
         for k in self.__slots__:
@@ -110,8 +111,12 @@ def find(src, row=None, pc=None, loop_at=None):
               direct[proto] // 4, nested[proto] // 8,
               ("; %s is the other thing it is given and is taken as the "
                "upvalues" % upvals) if upvals else ""))
+    # the maker's own name, for the places that need to find its call site: the
+    # text right before the function expression it was assigned to
+    nm = re.search(r"(\w+)\s*=\s*function\s*\(",
+                   src[max(0, maker.start - 48):maker.start + 20])
     return Found(maker=maker, proto=proto, upvals=upvals, loop_at=at, why=why,
-                 enclosing=len(enc)), why
+                 enclosing=len(enc), maker_name=(nm.group(1) if nm else None)), why
 
 
 # The edit. Table operations only - a protected build watches its own stack,
@@ -195,6 +200,224 @@ def patch_resolver(src, found):
     name, _param, end_at, _why = found
     edit = RESOLVER_EDIT % (name, '"resolver"')
     return src[:end_at] + edit + src[end_at:], edit
+
+
+# ------------------------------------------------------------------- the check
+#
+# A protected build of this family does not only hide the program: it decides
+# whether to run it. The decision is a hash. It asks the host for values - what
+# a datatype prints, what a method returns - digests them, and compares against
+# digests it carries. In a real client they match. In anything standing in for
+# one they do not, and the program is never reached.
+#
+# That comparison is the most useful thing in the file, because it is a TEST
+# with an answer the build already knows. Hook the digest and you learn, per
+# value, whether this environment behaved like the real one - and when it did
+# not, exactly which value was wrong. Nothing is guessed and nothing is
+# inserted: the digests are the build's own, and the only way to make them agree
+# is for the host to be right.
+#
+# Found by the algorithm's own constants. SHA-256's initial hash values are the
+# fractional parts of the square roots of the first eight primes and are the
+# same in every implementation, so finding them is recognising a published
+# algorithm rather than recognising this build.
+_SHA256_INIT = ("1779033703", "3144134277", "1013904242", "2773480762",
+                "1359893119", "2600822924", "528734635", "1541459225")
+
+
+def find_hasher(src):
+    """The function that digests a value, and where its body ends."""
+    at = -1
+    for c in _SHA256_INIT:
+        i = src.find(c)
+        if i >= 0:
+            at = i
+            break
+    if at < 0:
+        return None, ("no SHA-256 constants are in this source, so nothing "
+                      "here digests a value and there is no check to watch")
+    chain = lua_tokens.enclosing(src, at)
+    best = None
+    for f in chain:
+        if f.end is None:
+            continue
+        named = [p for p in f.params if p != "..."]
+        if not named:
+            continue
+        # the digest function, not the chunk that contains it: a span that is
+        # most of the file is the chunk
+        if f.end - f.start > len(src) // 4:
+            continue
+        best = f
+        break
+    if best is None:
+        return None, ("the SHA-256 constants are not inside a function this "
+                      "reads, so the digest cannot be watched")
+    m = re.search(r"local\s+function\s+(\w+)\s*\(\s*$",
+                  src[:best.start + 1])
+    if not m:
+        m = re.search(r"local\s+function\s+(\w+)\s*\(",
+                      src[max(0, best.start - 80):best.start + 40])
+    if not m:
+        return None, ("the digest function has no name to stand in front of, "
+                      "so it cannot be watched")
+    name = m.group(1)
+    why = ("SHA-256's own initial constants are at %d, inside a %d-byte "
+           "function named %s taking (%s) - so that is what digests a value"
+           % (at, best.end - best.start, name, ", ".join(best.params)))
+    return (name, best.end, why), why
+
+
+# One wrapper, after the function is defined: the digest and what was digested.
+# A wrapper is a call and a call is a stack frame, which this harness avoids
+# elsewhere on purpose - so this is its own round of the ladder, and a build that
+# notices gets the round without it.
+HASHER_EDIT = (" local %s_VS=%s %s=function(...) local r=%s_VS(...) "
+               "if __HASH then __HASH(r,...) end return r end ")
+
+
+def patch_hasher(src, found):
+    """`src` with the digest function wrapped, after it is defined."""
+    name, end_at, _why = found
+    edit = HASHER_EDIT % (name, name, name, name)
+    return src[:end_at] + edit + src[end_at:], edit
+
+
+# ------------------------------------------------------------------- the gate
+#
+# The point where a build of this family stops checking and starts running the
+# program - and the thing worth understanding about it is that the check is not a
+# comparison. The numbers the program measured from the host ARE the key:
+#
+#   local K = { f1(m1..m6), f2(m1..m6), f3(m1..m6) }
+#   PROGRAM = deserialise(decrypt(SLICE(2), K, salt, salt))
+#   return MAKER(PROGRAM, {})(args)
+#
+# So there is no branch to take and no digest to satisfy. A host that answers one
+# of those measurements differently produces a different key, the decryption
+# yields noise, and the deserialiser walks off the end of it. That is why forcing
+# a branch cannot reach the program and why host fidelity is the whole task.
+#
+# Watching it is what makes fidelity measurable: the key and the numbers it was
+# made from, written down each run, so the same harness run in a real client and
+# run here can be compared number by number and the one that differs is the one
+# to fix.
+#
+# Found by shape: the only place that hands the maker a table it has just built
+# from a slice and immediately calls the result.
+def _key_inputs(back, q):
+    """The locals the key was computed from, read just above it.
+
+    One key that differs from a real client's says the host was wrong somewhere.
+    The numbers it was made of say WHERE. They are looked for before the key's own
+    table rather than in the last few hundred bytes, because that table is long
+    enough on its own to push them out of reach.
+    """
+    head = back[:q] if q >= 0 else back
+    return re.findall(
+        r"local\s+(\w+)\s*=\s*\w+\[[^\]]+\](?:\[[^\]]+\])?\s*;", head)[-7:]
+
+
+def find_gate(src, maker_name):
+    """Where the payload is decrypted and run, and the key it is decrypted with.
+
+    Returns (key_var, prog_var, at, why) with `at` the offset of the `return`.
+    """
+    if not maker_name:
+        return None, "the maker has no name, so its call site cannot be found"
+    pat = re.compile(r"return\s+%s\s*\(\s*(\w+)\s*,\s*\{\s*\}\s*\)\s*\("
+                     % re.escape(maker_name))
+    sites = []
+    for m in pat.finditer(src):
+        prog = m.group(1)
+        back = src[max(0, m.start() - 2000):m.start()]
+        # the key: a local assigned a table constructor of parenthesised
+        # arithmetic, which is then given to the decryption and to the loop
+        keys = re.findall(r"local\s+(\w+)\s*=\s*\{\s*\(", back)
+        if not keys:
+            continue
+        key = keys[-1]
+        if ("%s," % key) not in back and ("%s)" % key) not in back:
+            continue
+        # WHERE TO WRITE IT DOWN: after the key is built, not before the call.
+        # The decryption and the deserialising happen between the two, and when
+        # the key is wrong the deserialiser raises - so an edit at the call site
+        # never runs on the runs that most need explaining. The first version of
+        # this recorded nothing for exactly that reason.
+        base = max(0, m.start() - 2000)
+        q = back.rfind("local %s={" % key)
+        at = m.start()
+        if q >= 0:
+            i = base + q + len("local %s=" % key)
+            depth = 0
+            while i < m.start():
+                c = src[i]
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        i += 1
+                        break
+                i += 1
+            while i < m.start() and src[i] == ";":
+                i += 1
+            at = i
+        why = ("the maker is called at %d on a table built just above it, and "
+               "the local %s - a table of computed numbers - is handed to the "
+               "decryption that built it: so %s is the key the payload is "
+               "decrypted with, and it is made of numbers measured from the "
+               "host. It is written down at %d, as soon as it exists, because "
+               "the decryption between there and the call is what raises when "
+               "the key is wrong" % (m.start(), key, key, at))
+        sites.append((key, prog, at, _key_inputs(back, q)))
+    if not sites:
+        return None, ("no place hands the maker a table built from a slice and "
+                      "calls it, so this build has no gate of that shape")
+    # EVERY COPY OF IT. This interpreter carries its dispatch six times over -
+    # one per stack-handling variant it chooses between at run time - so the gate
+    # exists six times and only one of them runs. Patching the first recorded
+    # nothing on a run that went through the fifth.
+    why = ("%d copy(s) of the gate: the maker is called on a table built just "
+           "above it from a slice, and the local %s - a table of computed "
+           "numbers - is handed to the decryption that built it. So %s is the "
+           "key the payload is decrypted with, and it is made of numbers "
+           "measured from the host. Each is written down as soon as it exists, "
+           "because the decryption between there and the call is what raises "
+           "when the key is wrong"
+           % (len(sites), sites[0][0], sites[0][0]))
+    if sites[0][3]:
+        why += (", together with the %d number(s) it was made of (%s)"
+                % (len(sites[0][3]), ", ".join(sites[0][3])))
+    return sites, why
+
+
+# The edit: the key and the measurements, written down before the payload runs.
+# A call, so it is its own round of the ladder.
+# The program table does not exist yet where this lands, so only the key
+# is passed; what became of the program is in the error, not here.
+GATE_EDIT = (" if __KEY then __KEY(%s%s) end "
+             # AND A WAY TO SUPPLY THE ONE THIS CONTAINER CANNOT MEASURE. The
+             # key is what a real client measures; nothing here can produce it,
+             # and no analysis can invert it. So a key measured by this same
+             # harness in a real client can be handed back in, and then the
+             # payload decrypts and its functions are read here like any other.
+             # Absent unless something sets it, reported when used, and it is a
+             # measurement of the host - not an answer written into this file.
+             "if VMSMART_PAYLOAD_KEY then %s=VMSMART_PAYLOAD_KEY end ")
+
+
+def patch_gate(src, sites):
+    """`src` with the key recorded at every copy of the gate.
+
+    Applied back to front so the offsets of the earlier ones stay valid.
+    """
+    edit = ""
+    for key, _prog, at, ins in sorted(sites, key=lambda s: -s[2]):
+        extra = ("," + ",".join(ins)) if ins else ""
+        edit = GATE_EDIT % (key, extra, key)
+        src = src[:at] + edit + src[at:]
+    return src, edit
 
 
 def _selftest():

@@ -177,6 +177,26 @@ def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
     res_edit = ""
     if res is not None:
         patched, res_edit = protohook.patch_resolver(patched, res)
+    # THE CHECK. This build decides whether to run the program by digesting
+    # values the host gives it and comparing against digests it carries. The
+    # third edit watches that digest - the inputs and the answer, nothing
+    # changed - so the report says, per value, whether this environment behaved
+    # like a real client and which value it got wrong if it did not.
+    hsh, hsh_why = protohook.find_hasher(patched)
+    hsh_edit = ""
+    if hsh is not None:
+        patched, hsh_edit = protohook.patch_hasher(patched, hsh)
+    # THE GATE. The numbers this build measured from the host are the key its
+    # own payload is decrypted with, so there is no branch to force and no
+    # digest to satisfy: a host that answers one measurement differently makes a
+    # different key and the payload comes out as noise. The fourth edit writes
+    # the key down at the moment it is used, which is what makes fidelity
+    # measurable - the same harness run in a real client and run here can be
+    # compared number by number.
+    gate, gate_why = protohook.find_gate(patched, found.maker_name)
+    gate_edit = ""
+    if gate is not None:
+        patched, gate_edit = protohook.patch_gate(patched, gate)
     key = "%d:%s" % (len(inner_src), inner_src[:24])
     out = ["-- ---- the interpreter, edited to hand over the program's "
            "functions ----",
@@ -185,6 +205,10 @@ def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
            "-- constants: " + (res_why if res is None else res_why).replace(
                "\n", " "),
            "-- the second edit: " + (res_edit.strip() or "none"),
+           "-- the check: " + hsh_why.replace("\n", " "),
+           "-- the third edit: " + (hsh_edit.strip() or "none"),
+           "-- the gate: " + gate_why.replace("\n", " "),
+           "-- the fourth edit: " + (gate_edit.strip() or "none"),
            "VMSMART_CHUNK_REPLACEMENT = {}",
            "VMSMART_CHUNK_REPLACEMENT[%s] = %s" % (lua_string(key),
                                                    lua_string(patched)),

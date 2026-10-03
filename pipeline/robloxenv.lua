@@ -461,6 +461,12 @@ if Instance == nil then
         end
     end
 
+    -- The properties every instance has, whatever its class. Their value may be
+    -- nil - Parent is, until something sets it - and nil is an answer. Anything
+    -- NOT in here is a property this file does not model, and that is what the
+    -- stub is for.
+    local declared = { ClassName = true, Name = true, Parent = true,
+                       Archivable = true, RobloxLocked = true }
     local function newInstance(class)
         local children = {}
         local attributes = {}
@@ -480,7 +486,8 @@ if Instance == nil then
             if type(v) ~= "function" then return v end
             return recorded(class .. ":" .. tostring(k), v)
         end
-        self = setmetatable({ ClassName = class, Name = class, Parent = nil },
+        self = setmetatable({ ClassName = class, Name = class, Parent = nil,
+                              Archivable = true, RobloxLocked = false },
             { __index = function(_, k) return answer(k, (function()
                   if k == "GetChildren" or k == "GetDescendants" then
                       return function()
@@ -573,6 +580,14 @@ if Instance == nil then
                   -- host answers it too
                   local byName = children[tostring(k)]
                   if byName ~= nil then return byName end
+                  -- A PROPERTY WHOSE VALUE IS NIL IS STILL ANSWERED. `Parent` of
+                  -- a fresh instance is nil in the host, and nil is the answer,
+                  -- not a missing one. Falling through to a stub here handed the
+                  -- build a truthy object where the host gives nothing - which
+                  -- is a difference it can read in one comparison, and this one
+                  -- did: it read Part.Parent, got something, and went down a
+                  -- path that ends by indexing a number.
+                  if declared[k] then return nil end
                   return VMSMART_STUB(VMSMART_INSTANCE_FIELDS_ASKED,
                                       class .. ":" .. tostring(k))
               end)()) end,
@@ -608,6 +623,15 @@ if Instance == nil then
                   rawset(t, k, v)
               end,
               __tostring = function() return tostring(rawget(self, "Name")) end })
+        -- WHAT `typeof` CALLS IT. In the host, typeof of every Instance is the
+        -- word "Instance" - not its class name - and `type` of one is
+        -- "userdata". A stand-in that builds instances out of tables answers
+        -- "table" to both, and that single word is enough for a protected build
+        -- to decide it is not talking to a real client: this one asks, gets
+        -- "table", takes the other branch, and leaves the slot it would have
+        -- filled empty. The run then stops taking the length of that slot.
+        if VMSMART_IS_INSTANCE == nil then VMSMART_IS_INSTANCE = {} end
+        VMSMART_IS_INSTANCE[self] = true
         return self
     end
     Instance = { new = function(class) return newInstance(tostring(class)) end }
@@ -652,11 +676,57 @@ if Enum == nil then
         return v
     end
 
+    -- THE HOST'S OWN ENUM NUMBERS.
+    --
+    -- An EnumItem's Value is a number the host assigns, and `GetEnumItems`
+    -- returns every item of that enum in Value order. Deriving a number from the
+    -- item's name gives a value that is stable here and wrong everywhere else,
+    -- and this build reads those numbers, mixes them, and uses the result. So
+    -- the enums it touches are written out with the host's numbers.
+    --
+    -- This is host DATA, like the class tree `IsA` walks a few hundred lines up:
+    -- an environment that stands in for a host needs the host's data to behave
+    -- like it. It is not an answer to any one script - no script is named here,
+    -- the lists are public, and an enum this file does not carry still gets a
+    -- derived number and is still recorded as derived.
+    local realEnums = {
+        PartType = { "Ball", "Block", "Cylinder", "Wedge", "CornerWedge" },
+        EasingStyle = { "Linear", "Sine", "Back", "Quad", "Quart", "Quint",
+                        "Bounce", "Elastic", "Exponential", "Circular",
+                        "Cubic" },
+        EasingDirection = { "In", "Out", "InOut" },
+        NormalId = { "Right", "Top", "Back", "Left", "Bottom", "Front" },
+        PlaybackState = { "Begin", "Delayed", "Playing", "Paused", "Completed",
+                          "Cancelled" },
+        TweenStatus = { "Canceled", "Completed" },
+        SortDirection = { "Ascending", "Descending" },
+        HttpContentType = { "ApplicationJson", "ApplicationXml",
+                            "ApplicationUrlEncoded", "TextPlain", "TextXml" },
+        RaycastFilterType = { "Exclude", "Include" },
+        HumanoidStateType = nil,
+    }
+    -- the values run from 0 in list order, which is how the host numbers them
+    local realEnumValues = {}
+    for enumName, names in pairs(realEnums) do
+        local byName, order = {}, {}
+        for i = 1, #names do
+            byName[names[i]] = i - 1
+            order[i] = names[i]
+        end
+        realEnumValues[enumName] = { byName = byName, order = order }
+    end
+
     local function makeEnum(enumName)
         local items, byValue, enum = {}, {}, nil
+        local real = realEnumValues[enumName]
         local function item(itemName, forcedValue)
             if items[itemName] == nil then
-                local value = forcedValue or derivedValue(itemName)
+                local known = real and real.byName[itemName]
+                if known == nil and real == nil then
+                    VMSMART_TYPES_STUBBED["Enum." .. enumName .. " values"] =
+                        true
+                end
+                local value = forcedValue or known or derivedValue(itemName)
                 local it = setmetatable(
                     { Name = itemName, Value = value },
                     { __index = function(_, k)
@@ -678,7 +748,21 @@ if Enum == nil then
                 if k == "GetEnumItems" then
                     return function()
                         local list = {}
+                        -- The host returns EVERY item of the enum, in Value
+                        -- order. Returning only the ones asked for so far, in
+                        -- whatever order a hash table yields, is a different
+                        -- list every run and a different list from the host's -
+                        -- and this build walks it.
+                        if real then
+                            for i = 1, #real.order do
+                                list[i] = item(real.order[i])
+                            end
+                            return list
+                        end
                         for _, v in pairs(items) do list[#list + 1] = v end
+                        table.sort(list, function(a, b)
+                            return tostring(a.Name) < tostring(b.Name)
+                        end)
                         return list
                     end
                 end
@@ -725,12 +809,38 @@ if Enum == nil then
     -- typeof has to agree, or every check of the model answers "table". The
     -- real one still answers for everything else.
     local realtypeof = typeof or type
+    -- taken before `type` is replaced below: the replacement answers "userdata"
+    -- for the objects this file builds, and `typeof` has to keep asking the
+    -- question the old way or it never recognises its own values
+    local realtype = type
+    VMSMART_REAL_TYPE = realtype
     typeof = function(v)
-        if type(v) == "table" then
+        if realtype(v) == "table" then
             local k = kinds[v] or (VMSMART_TAGGED and VMSMART_TAGGED[v])
             if k then return k end
+            -- an object this environment built as a host instance: in the host
+            -- every one of them is "Instance", whatever its class
+            if VMSMART_IS_INSTANCE and VMSMART_IS_INSTANCE[v] then
+                return "Instance"
+            end
         end
         return realtypeof(v)
+    end
+    -- AND WHAT PLAIN `type` CALLS IT. In the host an Instance and a datatype are
+    -- userdata; here they are tables, because a table is the only thing this can
+    -- build. `type` of one therefore answers "table" where the host answers
+    -- "userdata", and a build that asks reads the difference immediately. The
+    -- real answer is given for everything this environment did not build, so a
+    -- genuine table, string or number is still exactly what it is.
+    type = function(v)
+        if realtype(v) == "table" then
+            if (VMSMART_IS_INSTANCE and VMSMART_IS_INSTANCE[v])
+                    or (VMSMART_TAGGED and VMSMART_TAGGED[v] ~= nil)
+                    or (kinds and kinds[v] ~= nil) then
+                return "userdata"
+            end
+        end
+        return realtype(v)
     end
     VMSMART_ENUM_KINDS = kinds
 end
@@ -1031,6 +1141,31 @@ if game == nil then
     -- cannot do without, because a payload that never gets its bytes back never
     -- reaches its own interpreter.
     local function capability(name, key)
+        -- A GUID IS A SHAPE, NOT A SECRET. HttpService:GenerateGUID returns 32
+        -- upper-case hex digits with dashes after the 8th, 12th, 16th and 20th,
+        -- optionally wrapped in curly braces, and that default is true. The
+        -- digits are random and nothing can predict them, but the SHAPE is
+        -- fixed - and this build reads positions 9, 14, 19 and 24 of one and
+        -- expects a dash at each. A stub answered something else, so those four
+        -- reads disagreed with the host and what the program computed from them
+        -- was wrong from there on.
+        if name == "HttpService" and key == "GenerateGUID" then
+            return function(_, braces)
+                local hex = "0123456789ABCDEF"
+                local out = {}
+                for i = 1, 32 do
+                    local r = math.random(1, 16)
+                    out[#out + 1] = string.sub(hex, r, r)
+                    if i == 8 or i == 12 or i == 16 or i == 20 then
+                        out[#out + 1] = "-"
+                    end
+                end
+                local g = table.concat(out)
+                -- the host wraps it unless asked not to
+                if braces == false then return g end
+                return "{" .. g .. "}"
+            end
+        end
         if key == "DecompressBuffer" or key == "DecompressString" then
             return function(_, data, _algorithm)
                 local isBuffer = buffer ~= nil and type(data) ~= "string"
@@ -1108,20 +1243,42 @@ if game == nil then
                 end,
                 __tostring = function() return name end,
             })
+            -- the wrapper stands in front of the instance, so it is the thing
+            -- the program holds: it has to answer typeof the same way
+            if VMSMART_IS_INSTANCE == nil then VMSMART_IS_INSTANCE = {} end
+            VMSMART_IS_INSTANCE[services[name]] = true
         end
         return services[name]
     end
+    -- `game` is an Instance too - its class is DataModel and typeof of it is
+    -- "Instance", same as every other object in the tree.
+    -- The data model is an Instance like any other: its class is DataModel, so
+    -- `game.ClassName` is "DataModel", `game:IsA("Instance")` is true, and
+    -- typeof of it is "Instance". Answering nil to all of that is a difference a
+    -- build can read in one call, so what this cannot do itself is handed to a
+    -- real instance of that class and only GetService is answered here.
+    local gameInst = VMSMART_NEW_INSTANCE and VMSMART_NEW_INSTANCE("DataModel")
     game = setmetatable({}, {
         __index = function(_, k)
             if k == "GetService" or k == "FindService" or k == "service" then
                 return function(_, name) return service(tostring(name)) end
             end
-            if k == "GetChildren" then return function() return {} end end
             if k == "Players" or k == "Workspace" then return service(k) end
+            if gameInst ~= nil then
+                local own = rawget(gameInst, k)
+                if own ~= nil then return own end
+                return gameInst[k]
+            end
+            if k == "GetChildren" then return function() return {} end end
             return nil
         end,
-        __tostring = function() return "DataModel(standin)" end,
+        __newindex = function(_, k, v)
+            if gameInst ~= nil then gameInst[k] = v return end
+        end,
+        __tostring = function() return "Game" end,
     })
+    if VMSMART_IS_INSTANCE == nil then VMSMART_IS_INSTANCE = {} end
+    VMSMART_IS_INSTANCE[game] = true
     workspace = game:GetService("Workspace")
     -- `Game` is the host's own alias for `game`, and answering it with a datatype
     -- root made the program read a stub where it expected the data model.

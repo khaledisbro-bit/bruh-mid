@@ -1094,7 +1094,25 @@ HID.__VMPROTO = setmetatable({}, {
         if protoCopyN >= 2000 then return end
         protoCopyN = protoCopyN + 1
         local copy = { fields = {}, rows = {}, deep = {}, live = {},
-                       n = protoCopyN }
+                       shape = {}, n = protoCopyN }
+        -- WHAT IS AND IS NOT THERE. The interpreter takes the length of some of
+        -- a prototype's fields the moment a closure for it is called, so a
+        -- prototype missing one of those does not fail later - it fails there,
+        -- with "attempt to get length of a nil value" and nothing to say which
+        -- field or which function. This records the type of every field, so the
+        -- report can name the one that is absent.
+        for k = 1, 24 do
+            local v = rawget(proto, k)
+            local t = type(v)
+            if t == "table" then
+                local okn, n = pcall(function() return #v end)
+                copy.shape[k] = "table#" .. (okn and tostring(n) or "?")
+            elseif t ~= "nil" then
+                copy.shape[k] = t
+            else
+                copy.shape[k] = "nil"
+            end
+        end
         -- every field that is an array of numbers: the instruction arrays and
         -- the operand arrays live there, and which slot holds which is read
         -- from the interpreter later rather than assumed here
@@ -1280,6 +1298,70 @@ end
 -- parameter whose body indexes a captured table by that parameter and returns
 -- nil when the entry is absent. Lua back-references tie the three uses of the
 -- parameter together, so no name appears here either.
+-- THE CHECK, AND WHETHER THIS ENVIRONMENT PASSED IT.
+--
+-- A build of this family decides whether to run the program by digesting values
+-- the host gives it and comparing against digests it carries. That comparison is
+-- the most useful thing in the file: it is a test whose answer the build already
+-- knows, so watching it says - per value - whether this environment behaved like
+-- a real client, and when it did not, exactly which value was wrong.
+--
+-- Only watched. Nothing here answers for the comparison or changes its result.
+local hashes, hashN = {}, 0
+HID.__HASH = function(result, ...)
+    hashN = hashN + 1
+    if hashN > 4000 then return end
+    local parts = { "out=" .. tostring(result) }
+    local n = select("#", ...)
+    for i = 1, n do
+        local v = (select(i, ...))
+        local t = type(v)
+        if t == "string" then
+            parts[#parts + 1] = "in" .. i .. "=s$" .. HEXOF(v)
+        elseif t == "number" or t == "boolean" then
+            parts[#parts + 1] = "in" .. i .. "=" .. t:sub(1, 1) .. "="
+                                .. tostring(v)
+        elseif t == "nil" then
+            parts[#parts + 1] = "in" .. i .. "=nil"
+        else
+            parts[#parts + 1] = "in" .. i .. "=" .. t
+        end
+    end
+    hashes[#hashes + 1] = table.concat(parts, "|")
+end
+
+-- THE KEY THE PAYLOAD IS DECRYPTED WITH, and the numbers it was made of.
+--
+-- This build does not compare the host against anything. It MEASURES the host
+-- and uses the measurements as the decryption key for its own program. So a
+-- wrong answer anywhere does not fail a check - it produces a different key, and
+-- the program comes out as noise that the deserialiser walks off the end of.
+--
+-- Written down here so fidelity is measurable rather than guessed at: run this
+-- same harness in a real client and run it here, and the number that differs is
+-- the thing to fix.
+local keyLog = {}
+HID.__KEY = function(key, ...)
+    local parts = {}
+    if type(key) == "table" then
+        for i = 1, 8 do
+            local v = rawget(key, i)
+            if v == nil then break end
+            parts[#parts + 1] = tostring(i) .. "=" .. tostring(v)
+        end
+    end
+    -- and the numbers it was made of, which is what says WHERE this environment
+    -- answered differently from a real client rather than only that it did
+    local n = select("#", ...)
+    local froms = {}
+    for i = 1, n do
+        froms[#froms + 1] = tostring((select(i, ...)))
+    end
+    keyLog[#keyLog + 1] = "key:" .. table.concat(parts, " ")
+                          .. (n > 0 and ("  from:" .. table.concat(froms, ","))
+                              or "")
+end
+
 local slices, sliceN = {}, 0
 local sliceSwapUsed = nil
 -- EVERY SLICE, not only the ones the run asked for. The accessor is handed its
@@ -2686,7 +2768,22 @@ local function runPayload()
         rec.err = "loadstring failed"
     else
         pcall(setfenv, f, env)
-        local ok, r = pcall(f)
+        -- WHERE IT STOPPED, not only that it stopped. Everything in these
+        -- chunks is on line 1, so an error message names the chunk and nothing
+        -- else, and "attempt to get length of a nil value" could be any of a
+        -- hundred places. A traceback is taken while the stack is still
+        -- standing, which is the only moment it exists.
+        local trace = nil
+        local ok, r = xpcall(f, function(e)
+            local tb = nil
+            if debug and debug.traceback then
+                local okk, t = pcall(debug.traceback, tostring(e), 2)
+                if okk then tb = t end
+            end
+            trace = tb
+            return e
+        end)
+        rec.trace = trace
         rec.ok = ok
         -- Only a run that finished HAS a return value. On a failed run the
         -- second pcall result is the error, and calling its type the chunk's
@@ -2694,6 +2791,12 @@ local function runPayload()
         rec.rtype = ok and tostring(typeof(r)) or "nil"
         if not ok then
             rec.err = tostring(r)
+            if trace then
+                behavior[#behavior+1] = "  [where it stopped]"
+                for line in tostring(trace):gmatch("[^\n]+") do
+                    behavior[#behavior+1] = "    " .. line:sub(1, 300)
+                end
+            end
         else
             -- BFS: exercise functions the chunk returned, to surface nested
             -- behavior.
@@ -3064,6 +3167,14 @@ if #protoCopies > 0 then
             say("p" .. tostring(c.n) .. ":" .. k .. "=" ..
                 table.concat(parts, ","))
         end
+        if c.shape then
+            local parts = {}
+            for k = 1, 24 do
+                parts[#parts + 1] = tostring(k) .. "=" ..
+                                    tostring(c.shape[k] or "nil")
+            end
+            say("p" .. tostring(c.n) .. "$shape:" .. table.concat(parts, " "))
+        end
         local dkeys = {}
         for k in pairs(c.deep) do dkeys[#dkeys + 1] = k end
         table.sort(dkeys)
@@ -3277,6 +3388,12 @@ if #slices > 0 then
     if sliceSwapUsed then
         say("swap:" .. sliceSwapUsed)
     end
+    for i = 1, #keyLog do say(keyLog[i]) end
+end
+if #hashes > 0 then
+    say("---HASHES---")
+    for i = 1, #hashes do say(hashes[i]) end
+    say("hash_calls: " .. tostring(hashN))
 end
 -- Every row that was logged, not the first three thousand of them. The logger's
 -- cap is what limits a capture; printing fewer than it collected meant a run of
