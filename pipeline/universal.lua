@@ -314,6 +314,7 @@ HID.__CAP = function() end
 -- the running VM into a disassembler of the paths that actually execute. All
 -- guarded: if the shape does not match, the trace is simply skipped.
 local ops, opn = {}, 0
+local PROTO_LEVELS = {}
 -- WHICH ROUND a record belongs to. The ladder runs the same payload again with
 -- one edit taken out each time it raises, so a capture holds several rounds of
 -- the same program. Without this they read as one long run: the instruction
@@ -1050,7 +1051,22 @@ end
 -- build-specific is carried over: their loop_names() returns literal variable
 -- names for known builds, and that is exactly the lookup this project refuses.
 local protoSeen, protoN = {}, 0
-HID.__PROTO = function(p)
+HID.__PROTO = function(level, p, ...)
+    -- WHICH level was called, recorded whether or not its first argument is a
+    -- prototype: that is how the maker is told from the functions around it.
+    if type(level) == "number" then
+        PROTO_LEVELS[level] = (PROTO_LEVELS[level] or 0) + 1
+    else
+        p, level = level, nil
+    end
+    if type(p) ~= "table" then
+        -- the prototype may be any of the arguments, not the first
+        local n = select("#", ...)
+        for i = 1, n do
+            local v = (select(i, ...))
+            if type(v) == "table" then p = v break end
+        end
+    end
     if type(p) ~= "table" then return end
     local k = tostring(p)
     if protoSeen[k] then return end
@@ -1795,6 +1811,89 @@ local function patchJumps(s)
     return out, hits .. " jump decoder(s)"
 end
 
+-- THE FUNCTION THAT MAKES THE PROGRAM'S FUNCTIONS, found by where it sits
+-- rather than by what it looks like.
+--
+-- This build runs an interpreter closure; the function that ENCLOSES that
+-- closure is called once for every function of the program, and it is handed
+-- that function's instruction array. Hooking it brings back every function's
+-- instructions - including the ones this run never calls, which is where a
+-- payload sits when a check sends execution past it.
+--
+-- The shape that finds it: the dispatch loop's position is already known, so
+-- the enclosing function headers are the ones whose `end` falls after it. The
+-- innermost is the interpreter itself; the next one out that takes arguments is
+-- the maker.
+local function enclosingFunctions(s, at, limit)
+    -- ONE PASS, with a stack. The functions that enclose a point are the ones
+    -- still open when the pass reaches it, and the only way to know that is to
+    -- read the blocks in order: `function`, `do`, `if` and `repeat` open one,
+    -- `end` and `until` close one. Looking at the headers nearest the point
+    -- instead finds the helpers declared just before the loop, which enclose
+    -- nothing - this build has eight of them in the two hundred characters
+    -- before its dispatch loop.
+    local stack = {}
+    local i = 1
+    local n = #s
+    while i <= n do
+        local a, b, word = s:find("([%a_][%w_]*)", i)
+        if not a or a > at then break end
+        if word == "function" then
+            -- its parameter list, if the header is right here
+            local _, pe, params = s:find("^[%s]*[%w_.:]*[%s]*%(([^)]*)%)", b + 1)
+            stack[#stack + 1] = { a = a, b = pe or b, params = params or "" }
+        elseif word == "do" or word == "if" or word == "repeat" then
+            stack[#stack + 1] = false
+        elseif word == "end" or word == "until" then
+            if #stack > 0 then stack[#stack] = nil end
+        end
+        i = b + 1
+    end
+    -- innermost first
+    local out = {}
+    for k = #stack, 1, -1 do
+        if stack[k] then
+            out[#out + 1] = stack[k]
+            if limit and #out >= limit then break end
+        end
+    end
+    return out
+end
+
+local function patchProtosByLoop(s, at)
+    if not at then return nil, 0 end
+    local encl = enclosingFunctions(s, at, 40)
+    -- the innermost enclosing function is the interpreter; the next one out
+    -- that takes arguments is the one called once per program function
+    -- WHICH of the enclosing functions is the maker is not guessed. Every
+    -- enclosing function that takes arguments is hooked, each one saying which
+    -- level it is, and the run reports which ones were actually called. One
+    -- call per program function is the maker; the rest cost nothing.
+    local picks = {}
+    for i = 1, #encl do
+        if encl[i].params and encl[i].params:match("[%a_]") then
+            picks[#picks + 1] = { h = encl[i], level = i }
+            if #picks >= 3 then break end
+        end
+    end
+    if #picks == 0 then return nil, 0 end
+    -- inject from the LAST position backwards, so earlier offsets stay valid
+    table.sort(picks, function(x, y) return x.h.b > y.h.b end)
+    local out = s
+    for _, pick in ipairs(picks) do
+        local args = {}
+        for tok in pick.h.params:gmatch("[%a_][%w_]*") do
+            args[#args + 1] = tok
+        end
+        if #args > 0 then
+            local inject = ";if __PROTO then __PROTO(" .. tostring(pick.level)
+                           .. "," .. table.concat(args, ",") .. ")end"
+            out = out:sub(1, pick.h.b) .. inject .. out:sub(pick.h.b + 1)
+        end
+    end
+    return out, #picks
+end
+
 local function patchProtos(s)
     -- The self-indexed variable: X[X[...]]. Lua patterns carry back-references,
     -- so this is one match and no name appears in it.
@@ -1888,7 +1987,50 @@ env.loadstring = function(src, ...)
         else
             behavior[#behavior+1] = "  [no jump decoder matched]"
         end
+        -- EVERY EDIT IS COMPILED BEFORE IT IS BELIEVED. An edit that does not
+        -- parse makes the loader fall back to the original, and the run then
+        -- looks exactly like one where the edit matched and found nothing -
+        -- which is what the prototype hook looked like for three rounds of
+        -- this: "hooked prototype makers -> 3" and not one prototype seen,
+        -- because the chunk it produced would not compile and was never used.
+        local function compiles(text)
+            local f = (loadstring or load)
+            if not f then return true end
+            local ok, fn = pcall(f, text)
+            return ok and fn ~= nil
+        end
         local okP, patchedP, pn = pcall(patchProtos, src)
+        if okP and patchedP and not compiles(patchedP) then
+            behavior[#behavior+1] = "  [the prototype hook's edit did not "
+                .. "compile; it is not used, and nothing is hooked by it]"
+            okP, patchedP = false, nil
+        end
+        if (not okP) or (not patchedP) then
+            -- The shape-based match found nothing. Where the dispatch loop is
+            -- is already known, and the function that encloses it is the one
+            -- called once per program function, so the maker is found by its
+            -- position instead. This is what brings back the instructions of
+            -- functions this run never calls - which is where a payload sits
+            -- when a check sends execution past it.
+            local okT, topT = pcall(findLoopTop, src)
+            if okT and topT and topT.at then
+                local okL, patchedL, ln = pcall(patchProtosByLoop, src, topT.at)
+                if okL and patchedL and not compiles(patchedL) then
+                    behavior[#behavior+1] = "  [the prototype hook found "
+                        .. tostring(ln) .. " enclosing function(s) by position, "
+                        .. "but the edit did not compile - this source is one "
+                        .. "line of a megabyte and the word `function` appears "
+                        .. "inside its strings, so a reader that counts blocks "
+                        .. "in the text cannot be trusted on it. Nothing is "
+                        .. "hooked, and nothing is claimed]"
+                    okL, patchedL = false, nil
+                end
+                if okL and patchedL then
+                    okP, patchedP, pn = true, patchedL,
+                                        tostring(ln) .. " (by position)"
+                end
+            end
+        end
         if okP and patchedP then
             src = patchedP
             protosDone = true
@@ -2641,6 +2783,18 @@ end
 -- Names the program asked its environment for and did not get, because a real
 -- client does not have them either. This is the list to work from when a run
 -- stops for want of one: it says what the program wanted, in its own words.
+-- which enclosing function the maker hook actually caught
+do
+    local parts = {}
+    for lvl, n in pairs(PROTO_LEVELS) do
+        parts[#parts + 1] = "level " .. tostring(lvl) .. " called "
+                            .. tostring(n) .. " time(s)"
+    end
+    if #parts > 0 then
+        table.sort(parts)
+        say("proto_levels: " .. table.concat(parts, ", "))
+    end
+end
 if VMSMART_NOT_A_HOST_NAME ~= nil then
     local names = {}
     for k, n in pairs(VMSMART_NOT_A_HOST_NAME) do
