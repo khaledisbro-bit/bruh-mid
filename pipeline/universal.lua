@@ -1062,15 +1062,39 @@ local protoSeen, protoN = {}, 0
 -- over them. A function the program never calls is copied on the same terms as
 -- one it does, which is the whole point: what the checks route execution away
 -- from is in hand anyway.
+-- Bytes, as hex. A constant's value arrives as a string of arbitrary bytes and
+-- a capture is a text file, so the only safe way across is hex. Long blobs are
+-- cut and the cut is recorded, so a truncated value can never be mistaken for a
+-- short one.
+local HEXOF = function(sv)
+    local n = #sv
+    local cut = false
+    if n > 8192 then sv = string.sub(sv, 1, 8192) cut = true end
+    local out = string.gsub(sv, ".", function(ch)
+        return string.format("%02x", string.byte(ch))
+    end)
+    if cut then return out .. ":cut" .. tostring(n) end
+    return out
+end
 local protoCopies, protoCopyN = {}, 0
+local protoResolver = nil
 HID.__VMPROTO = setmetatable({}, {
     __index = function() return nil end,
     __newindex = function(t, proto, ups)
         rawset(t, proto, ups or true)
+        -- THE PROGRAM'S OWN DECRYPTOR, handed over the same way the prototypes
+        -- are: as a key of this table, one write and no call. It is kept and
+        -- not used until the run is over, so asking it for a constant cannot
+        -- change anything the build can see while the build is still watching.
+        if type(proto) == "function" and ups == "resolver" then
+            protoResolver = proto
+            return
+        end
         if type(proto) ~= "table" then return end
         if protoCopyN >= 2000 then return end
         protoCopyN = protoCopyN + 1
-        local copy = { fields = {}, rows = {}, deep = {}, n = protoCopyN }
+        local copy = { fields = {}, rows = {}, deep = {}, live = {},
+                       n = protoCopyN }
         -- every field that is an array of numbers: the instruction arrays and
         -- the operand arrays live there, and which slot holds which is read
         -- from the interpreter later rather than assumed here
@@ -1125,12 +1149,33 @@ HID.__VMPROTO = setmetatable({}, {
                     -- the walk below never happened
                     for j, w in pairs(v) do
                         if type(w) == "table" then
+                            -- the table itself, kept so the program's own
+                            -- resolver can be asked for it after the run
+                            copy.live[tostring(k) .. "." .. tostring(j)] = w
                             local sub, sn = {}, 0
                             for q, x in pairs(w) do
                                 if type(q) == "number" and type(x) == "number"
                                         and sn < 4096 then
                                     sn = sn + 1
                                     sub[sn] = tostring(q) .. ">" .. tostring(x)
+                                elseif type(q) == "number"
+                                        and type(x) == "string"
+                                        and sn < 4096 then
+                                    -- THE BYTES THE NUMBERS POINT AT. A
+                                    -- constant in this family is a small table
+                                    -- holding a type tag, a seed, and the
+                                    -- ciphertext of the value as a string. The
+                                    -- pass above copied the tag and the seed
+                                    -- and dropped the string, so every constant
+                                    -- arrived as a pair of numbers with the
+                                    -- value missing - which is why a function
+                                    -- nothing called could be read as
+                                    -- instructions and not as what it says.
+                                    -- Written as hex: the bytes are arbitrary,
+                                    -- and a capture is a text file read line by
+                                    -- line.
+                                    sn = sn + 1
+                                    sub[sn] = tostring(q) .. "$" .. HEXOF(x)
                                 end
                             end
                             if sn > 0 then
@@ -1153,6 +1198,12 @@ HID.__VMPROTO = setmetatable({}, {
                                                 dn = dn + 1
                                                 d3[dn] = tostring(a) .. ">"
                                                          .. tostring(b)
+                                            elseif type(a) == "number"
+                                                    and type(b) == "string"
+                                                    and dn < 512 then
+                                                dn = dn + 1
+                                                d3[dn] = tostring(a) .. "$"
+                                                         .. HEXOF(b)
                                             end
                                         end
                                         if dn > 0 then
@@ -1230,12 +1281,54 @@ end
 -- nil when the entry is absent. Lua back-references tie the three uses of the
 -- parameter together, so no name appears here either.
 local slices, sliceN = {}, 0
-HID.__SLICE = function(name, idx, present, count)
+local sliceSwapUsed = nil
+-- EVERY SLICE, not only the ones the run asked for. The accessor is handed its
+-- own table, so the first request shows what else is in there: a slice the run
+-- never reached is described on the same terms as one it did, and the analysis
+-- can cut it out of the bytes it already holds. Same reason as the prototypes -
+-- what the checks route execution away from is in hand anyway.
+local sliceTable = {}
+HID.__SLICE = function(name, idx, present, count, tbl)
     sliceN = sliceN + 1
     if sliceN > 2000 then return end
     slices[#slices+1] = tostring(name) .. ":" .. tostring(idx) .. ":"
                         .. (present and "ok" or "MISSING") .. ":"
                         .. tostring(count)
+    if type(tbl) == "table" and not sliceTable[tostring(name)] then
+        local rows = {}
+        for i = 1, 256 do
+            local m = rawget(tbl, i)
+            if m == nil then break end
+            if type(m) == "table" then
+                local parts = {}
+                for j = 1, 8 do
+                    local x = rawget(m, j)
+                    if type(x) == "number" then
+                        parts[#parts+1] = tostring(j) .. "=" .. tostring(x)
+                    elseif type(x) == "string" then
+                        parts[#parts+1] = tostring(j) .. "=#" .. tostring(#x)
+                    end
+                end
+                rows[#rows+1] = tostring(i) .. ":" .. table.concat(parts, " ")
+            else
+                rows[#rows+1] = tostring(i) .. ":" .. type(m)
+            end
+        end
+        sliceTable[tostring(name)] = rows
+    end
+end
+
+-- The redirect. Served only when VMSMART_SLICE_SWAP names one, so an ordinary
+-- round has no __SLICEMAP in its environment and the accessor is unchanged.
+if type(VMSMART_SLICE_SWAP) == "table" then
+    HID.__SLICEMAP = function(i)
+        local to = VMSMART_SLICE_SWAP[i] or VMSMART_SLICE_SWAP[tostring(i)]
+        if to then
+            sliceSwapUsed = tostring(i) .. "->" .. tostring(to)
+            return to
+        end
+        return i
+    end
 end
 
 local function patchSlices(s)
@@ -1244,14 +1337,21 @@ local function patchSlices(s)
         "local function (%w+)%((%w+)%)local (%w+)=(%w+)%[%2%];if not %3 then return nil end",
         function(fn, arg, v, tbl)
             hits = hits + 1
-            return ("local function %s(%s)local %s=%s[%s];"
+            return ("local function %s(%s)"
+                    -- THE SLICE THE RUN NEVER ASKS FOR. `__SLICEMAP` is absent
+                    -- on every ordinary round, so this reads exactly as it did.
+                    -- On a round that sets it, the first request is answered
+                    -- with a slice the run did not reach, and the prototype hook
+                    -- then reports whatever the interpreter builds out of it -
+                    -- or nothing, which is an answer too.
+                    .. "local %s=%s[(__SLICEMAP and __SLICEMAP(%s)) or %s];"
                     -- `#tbl` runs __len, and these VMs put metatables on the
                     -- tables they hand slices out of. rawlen asks no metamethod;
                     -- where it does not exist the count is simply not reported.
                     .. "if __SLICE then __SLICE(%q,%s,%s~=nil,"
-                    .. "(rawlen and rawlen(%s) or -1))end;"
+                    .. "(rawlen and rawlen(%s) or -1),%s)end;"
                     .. "if not %s then return nil end"):format(
-                fn, arg, v, tbl, arg, fn, arg, v, tbl, v)
+                fn, arg, v, tbl, arg, arg, fn, arg, v, tbl, tbl, v)
         end)
     if hits == 0 then return nil end
     return out, hits .. " accessor(s)"
@@ -2983,8 +3083,44 @@ if #protoCopies > 0 then
                 say("p" .. tostring(c.n) .. "@" .. k .. ":" .. rows[j])
             end
         end
+        -- THE CONSTANTS, AS VALUES. An instruction carries an index into a
+        -- table whose entries hold the value as ciphertext, so the shape of a
+        -- function is readable long before any of its words are. The program's
+        -- own resolver does the decrypting, here, after the run: asked for
+        -- every entry of every table the prototype holds, and whatever comes
+        -- back is written with its type. An entry that is not a constant gives
+        -- back itself and is written as a table, which says so.
+        if protoResolver then
+            local lkeys = {}
+            for k in pairs(c.live) do lkeys[#lkeys + 1] = k end
+            table.sort(lkeys)
+            for _, k in ipairs(lkeys) do
+                local ok, val = pcall(protoResolver, c.live[k])
+                if ok then
+                    local tv = type(val)
+                    local body
+                    if tv == "string" then
+                        body = "s$" .. HEXOF(val)
+                    elseif tv == "number" or tv == "boolean" then
+                        body = tv:sub(1, 1) .. "=" .. tostring(val)
+                    elseif tv == "nil" then
+                        body = "nil"
+                    else
+                        body = tv
+                    end
+                    say("p" .. tostring(c.n) .. "!" .. k .. "=" .. body)
+                else
+                    say("p" .. tostring(c.n) .. "!" .. k .. "=error")
+                end
+            end
+        end
     end
     say("proto_copies: " .. tostring(#protoCopies))
+    if protoResolver then
+        say("proto_resolver: the interpreter's own")
+    else
+        say("proto_resolver: none, so the constants stayed as numbers")
+    end
 end
 if type(VMSMART_INNER_SRC) == "string" then
     say("---INNERSRC---")
@@ -3133,6 +3269,14 @@ end
 if #slices > 0 then
     say("---SLICES---")
     for i = 1, math.min(#slices, 600) do say(slices[i]) end
+    for nm, rows in pairs(sliceTable) do
+        for i = 1, #rows do
+            say("table:" .. nm .. ":" .. rows[i])
+        end
+    end
+    if sliceSwapUsed then
+        say("swap:" .. sliceSwapUsed)
+    end
 end
 -- Every row that was logged, not the first three thousand of them. The logger's
 -- cap is what limits a capture; printing fewer than it collected meant a run of

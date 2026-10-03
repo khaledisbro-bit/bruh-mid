@@ -45,6 +45,7 @@ import opsem           # noqa: E402
 import plain           # noqa: E402
 import probes         # noqa: E402
 import protodecode     # noqa: E402
+import protolift       # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -418,6 +419,8 @@ class Analysis:
         """
         self.program_decoded = None
         self.program_text = ""
+        self.flow_text = ""
+        self.vocab_text = ""
         raw = getattr(self.capture, "raw", "") or ""
         if "---PROTOS---" not in raw:
             self.program_text = protodecode.report(protodecode.Program())
@@ -426,6 +429,43 @@ class Analysis:
         protodecode.verify(P, raw)
         self.program_decoded = P
         self.program_text = protodecode.report(P)
+        self.flow_text = self._decode_flow(raw, P)
+
+    def _decode_flow(self, raw, P):
+        """Where each of those instructions goes, and what the entry reaches.
+
+        Instructions in file order are not the program: control flow here is
+        flattened and every block ends by jumping to a number it computes. The
+        arithmetic that computes it is in the interpreter's own source, so the
+        jumps resolve without running any of them - and then the one question
+        worth asking of a protected build has an answer: which instructions can
+        be reached from the entry at all.
+        """
+        vm = getattr(self, "vm", None)
+        src = getattr(self, "vm_source", "") or ""
+        if not (vm and getattr(vm, "ok", False) and src):
+            return ("Where each instruction goes could not be worked out: the "
+                    "interpreter's own source is not in hand, and the jump "
+                    "arithmetic is in it.\n")
+        try:
+            jumpers = protolift.jump_opcodes(src, vm)
+            consts = protolift.const_operands(src, vm)
+            fns = protolift.read(raw)
+            flow = protolift.fallthrough(raw, jumpers, fns)
+            dist = [p for p in P.distinct() if p in fns]
+            dec = {p: P.decoded[p] for p in dist}
+            for pid in dist:
+                protolift.walk(fns[pid], dec[pid], jumpers,
+                               protolift.pick_jump_field(fns[pid]), flow)
+            ck, ag, unk, fell = protolift.verify(fns, raw, jumpers)
+            self.program_flow = (fns, dec, jumpers, consts)
+            self.vocab_text = protolift.vocabulary(
+                {p: fns[p] for p in dist}, dec)
+            return protolift.report({p: fns[p] for p in dist}, dec, jumpers,
+                                    consts, flow, ck, ag, unk, fell)
+        except Exception as exc:
+            return ("Where each instruction goes could not be worked out (%s: "
+                    "%s).\n" % (exc.__class__.__name__, exc))
 
     def _harness_age_lines(self):
         """Which harness wrote this capture, said before anything is read from it.
@@ -737,6 +777,8 @@ class Analysis:
             "BRANCHES.txt": branches.report(self.branch_why, self.cfg),
             "FUNCTIONS_CAPTURED.txt": _protos_report(self.capture),
             "ALL_INSTRUCTIONS.txt": self.program_text,
+            "WHERE_IT_GOES.txt": getattr(self, "flow_text", ""),
+            "WHAT_IT_SAYS.txt": getattr(self, "vocab_text", ""),
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),

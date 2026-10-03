@@ -166,15 +166,33 @@ def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
     if found is None:
         return None, why
     patched, edit = protohook.patch(inner_src, found)
+    # THE WORDS, NOT ONLY THE SHAPE. An instruction that loads a constant
+    # carries an index; the constant table holds the value as ciphertext. So a
+    # function read this way comes out as instructions with no strings in them.
+    # The interpreter decrypts a constant the first time it is asked for, so the
+    # second edit hands that resolver over and the program decrypts its own
+    # constants. If the resolver is not found the first edit still stands and
+    # the report says the constants stayed numbers.
+    res, res_why = protohook.find_resolver(patched)
+    res_edit = ""
+    if res is not None:
+        patched, res_edit = protohook.patch_resolver(patched, res)
     key = "%d:%s" % (len(inner_src), inner_src[:24])
     out = ["-- ---- the interpreter, edited to hand over the program's "
            "functions ----",
            "-- " + why.replace("\n", " "),
            "-- the edit: " + edit.strip(),
+           "-- constants: " + (res_why if res is None else res_why).replace(
+               "\n", " "),
+           "-- the second edit: " + (res_edit.strip() or "none"),
            "VMSMART_CHUNK_REPLACEMENT = {}",
            "VMSMART_CHUNK_REPLACEMENT[%s] = %s" % (lua_string(key),
                                                    lua_string(patched)),
            ""]
+    if res is not None:
+        why = why + "; and the constants are resolved by the interpreter's own resolver - " + res_why
+    else:
+        why = why + "; " + res_why
     return "\n".join(out), why
 
 

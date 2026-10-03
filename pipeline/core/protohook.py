@@ -130,6 +130,73 @@ def patch(src, found):
     return src[:at] + edit + src[at:], edit
 
 
+# ------------------------------------------------------------------ constants
+#
+# An instruction that loads a constant carries an index, and the constant table
+# holds a small record per index: a type tag, a seed, and the VALUE AS
+# CIPHERTEXT. Reading the index is not reading the constant, so a function that
+# never ran decodes to instructions with no strings in them - the shape of the
+# program without any of its words.
+#
+# The interpreter decrypts a constant the first time it is asked for, through a
+# memoised resolver. Rather than reimplement that decryption - which would be a
+# second implementation to keep right - the resolver itself is taken, and the
+# program's own code turns its own constants into values.
+#
+# It is found by shape, like the maker: a local function of ONE parameter whose
+# first act is to look that parameter up in a captured table and return field 1
+# of what it finds. That is a memo cache, and a memo cache in front of one
+# argument is what a lazy resolver looks like. No name is assumed.
+_RESOLVER = re.compile(
+    r"local\s+function\s+(\w+)\s*\(\s*(\w+)\s*\)\s*"
+    r"local\s+(\w+)\s*=\s*(\w+)\s*\[\s*\2\s*\]\s*;?\s*"
+    r"if\s+\3\s+then\s+return\s+\3\s*\[\s*1\s*\]\s*end")
+
+
+def find_resolver(src):
+    """The memoised one-parameter resolver, and where its body ends."""
+    best = None
+    for m in _RESOLVER.finditer(src):
+        name, param, _memo, cache = m.groups()
+        # the cache must be something the function captured rather than made:
+        # a resolver remembers across calls, so its table is declared outside
+        if re.search(r"local\s+%s\s*=" % re.escape(cache), src[:m.start()]) \
+                is None:
+            continue
+        f = None
+        for g in lua_tokens.functions(src):
+            if g.start >= m.start() and g.end:
+                f = g
+                break
+        if f is None:
+            continue
+        why = ("a one-parameter function at %d (%s) whose first act is to look "
+               "its argument up in %s and return field 1 of what it finds: a "
+               "memo cache in front of one argument, which is what a lazy "
+               "resolver looks like" % (m.start(), name, cache))
+        best = (name, param, f.end, why)
+        break
+    if best is None:
+        return None, ("no memoised one-parameter resolver was found, so the "
+                      "constants stay as the numbers the instructions carry")
+    return best, best[3]
+
+
+# The second edit, in the same currency as the first: one table write, no call.
+# The resolver is handed over as a KEY, so the harness can ask it for every
+# constant after the copying - the program decrypting its own strings.
+# A leading space is not cosmetic: the edit lands straight after the
+# resolver's `end`, and `endif` is one name to a Lua lexer.
+RESOLVER_EDIT = " if __VMPROTO then __VMPROTO[%s]=%s end "
+
+
+def patch_resolver(src, found):
+    """`src` with the resolver handed over, after the resolver is defined."""
+    name, _param, end_at, _why = found
+    edit = RESOLVER_EDIT % (name, '"resolver"')
+    return src[:end_at] + edit + src[end_at:], edit
+
+
 def _selftest():
     # an interpreter the shape this looks for: a maker handed a proto table and
     # an upvalue table, returning the closure that runs it
