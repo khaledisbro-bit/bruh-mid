@@ -428,6 +428,16 @@ end
             return None
         args = [self.R.value(v.id) for v in st.popped]
         op = m.operation
+        # `t[nil] = v` raises in Lua: a table index cannot be nil. The
+        # instruction ran and the script carried on, so the key was not nil -
+        # this analysis simply does not know what it was. The readable
+        # rendering says so; the runnable one must not write the statement at
+        # all, or the file stops there and nothing after it can be compared.
+        if self.runnable and op in ("SETINDEX", "SETVAR", "SETSLOT") and args:
+            key = args[1] if (op == "SETINDEX" and len(args) > 1) else None
+            if key is not None and (key.strip() == "nil"
+                                    or key.strip().startswith("<")):
+                return "OP(%d%s)" % (st.op, "".join(", " + a for a in args))
         if op == "SETINDEX" and len(args) >= 3:
             base, key, value = args[0], args[1], args[2]
             name = key[1:-1] if key.startswith('"') and key.endswith('"') else None

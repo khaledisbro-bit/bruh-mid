@@ -273,6 +273,13 @@ def _store(body, vm):
         return None
     if re.search(r"\w+\[%s\[\d+\]\]\[1\]\s*=[^=]" % re.escape(vm.row), body):
         return "SETVAR"
+    # The same write, with the operand reached through a local or two:
+    # `local g = row[2]; local h = g[1]; BOX[h[2]][1] = v`. What makes it a
+    # variable write is the one-element box on the left, not how the index was
+    # worked out - and insisting on the direct shape left the busiest store in
+    # this build reading as a write to a table field.
+    if re.search(r"\w+\[.{1,40}?\]\[1\]\s*=[^=]", body):
+        return "SETVAR"
     # a negative-operand chain selecting a named slot, then a write to it
     if re.search(r"(\w+)\s*=\s*\w+\s*;?\s*$", body) and \
        re.search(r"\w+==-\d+\s+then", body):
@@ -438,8 +445,24 @@ def _pushes(body, vm):
     return _path_count(body, needles)
 
 
-def classify(body, vm):
+# Operations that leave a value. A handler that execution measured as producing
+# nothing cannot be one of these, whatever its text looks like.
+VALUE_OPS = {"INDEX", "GETVAR", "GETSLOT", "LOADK", "NEWTABLE", "LEN", "CALL",
+             "ADD", "SUB", "MUL", "DIV", "MOD", "POW", "CONCAT", "EQ", "NE",
+             "LT", "LE", "GT", "GE", "NOT", "UNM"}
+
+
+def classify(body, vm, produces=None):
     """What one handler body does, in terms the body itself states.
+
+    `produces` is what execution measured: True if this opcode was seen leaving
+    a value, False if it was seen leaving none, None if nothing settled it. A
+    handler whose text reads as a value operation but which was measured to
+    leave nothing is not that operation - the expression the reader found is
+    working the value out, and what the handler DOES with it is the write at the
+    end. Without this, the busiest store in two different builds read as an
+    index: `v = v[1]` unboxes a variable, and unboxing is not the point of the
+    handler.
 
     Two styles, because this family writes both: handlers that take values with a
     pop helper and hand the result to a push helper, and handlers that work on the
@@ -492,6 +515,12 @@ def classify(body, vm):
         # family's stores end with a write to a variable box, to one of the
         # interpreter's named slots, or to a table - and reading only pushes left
         # every one of them unexplained.
+        store = _store(body, vm)
+        if store is not None:
+            return store, pops
+        return None, pops
+    if produces is False:
+        # measured to leave nothing. The write at the end is what it does.
         store = _store(body, vm)
         if store is not None:
             return store, pops
@@ -712,7 +741,16 @@ def apply(models, src, steps):
                 rejected["reads operand %d, the instruction carried %d"
                          % (max(used), want)] += 1
                 continue                     # reads an operand it never had
-            sem, pops = classify(body, vm)
+            # What execution measured about whether this opcode leaves a
+            # value. The handler's text is read against it rather than on its
+            # own: the two are independent evidence and the measurement is the
+            # harder of them to argue with.
+            produces = None
+            if model.pushes is not None:
+                produces = model.pushes > 0
+            elif model.delta is not None and model.delta < 0:
+                produces = False
+            sem, pops = classify(body, vm, produces)
             if sem is None:
                 rejected["body not classified"] += 1
                 continue
