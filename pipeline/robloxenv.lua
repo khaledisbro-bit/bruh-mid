@@ -196,10 +196,17 @@ function VMSMART_RECORD_CALL(key, ...)
     -- the two together by position
     local at = VMSMART_ROW
     local rid = VMSMART_ID((select(1, ...)), false)
-    VMSMART_CALLS[#VMSMART_CALLS + 1] = receiver .. ":" .. member .. "("
+    local shown = receiver .. ":" .. member .. "("
         .. table.concat(parts, ", ") .. ")"
+    VMSMART_CALLS[#VMSMART_CALLS + 1] = shown
         .. (rid and ("  @on=#" .. tostring(rid)) or "")
         .. (type(at) == "number" and ("  @row=" .. tostring(at)) or "")
+    -- and into the one ordered transcript, where it sits between the value that
+    -- was built for it and the member read off what it returned
+    if VMSMART_EVENT then
+        VMSMART_EVENT("call", shown .. (rid and ("  on=#" .. tostring(rid))
+                                        or ""))
+    end
     return #VMSMART_CALLS
 end
 

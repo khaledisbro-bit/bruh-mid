@@ -49,6 +49,7 @@ import protolift       # noqa: E402
 import gate            # noqa: E402
 import render          # noqa: E402
 import story           # noqa: E402
+import source          # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -426,6 +427,7 @@ class Analysis:
         self.vocab_text = ""
         self.gate_text = ""
         self.story_text = ""
+        self.source_text = ""
         self.listing_text = ""
         self.split_text = ""
         raw = getattr(self.capture, "raw", "") or ""
@@ -448,6 +450,9 @@ class Analysis:
             # AND THE SAME THING IN WORDS. The listing is accurate and
             # unreadable; a reader wants to know what the script does.
             self.story_text = story.report(self.capture, g)
+            # AND AS LUA. The transcript is ordered, so the layer that runs can
+            # be written back out as source a person can read.
+            self.source_text = source.write(self.capture)
         except Exception as exc:
             self.gate_text = ("The gate could not be read (%s: %s).\n"
                               % (exc.__class__.__name__, exc))
@@ -826,6 +831,7 @@ class Analysis:
             "WHAT_IT_SAYS.txt": getattr(self, "vocab_text", ""),
             "THE_GATE.txt": getattr(self, "gate_text", ""),
             "READ_THIS_FIRST.txt": getattr(self, "story_text", ""),
+            "LAYER_ONE_AS_LUA.lua": getattr(self, "source_text", ""),
             "PROGRAM_LISTING.txt": getattr(self, "listing_text", ""),
             "THE_TWO_PARTS.txt": getattr(self, "split_text", ""),
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),

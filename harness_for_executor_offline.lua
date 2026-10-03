@@ -216,10 +216,17 @@ function VMSMART_RECORD_CALL(key, ...)
     -- the two together by position
     local at = VMSMART_ROW
     local rid = VMSMART_ID((select(1, ...)), false)
-    VMSMART_CALLS[#VMSMART_CALLS + 1] = receiver .. ":" .. member .. "("
+    local shown = receiver .. ":" .. member .. "("
         .. table.concat(parts, ", ") .. ")"
+    VMSMART_CALLS[#VMSMART_CALLS + 1] = shown
         .. (rid and ("  @on=#" .. tostring(rid)) or "")
         .. (type(at) == "number" and ("  @row=" .. tostring(at)) or "")
+    -- and into the one ordered transcript, where it sits between the value that
+    -- was built for it and the member read off what it returned
+    if VMSMART_EVENT then
+        VMSMART_EVENT("call", shown .. (rid and ("  on=#" .. tostring(rid))
+                                        or ""))
+    end
     return #VMSMART_CALLS
 end
 
@@ -3727,14 +3734,26 @@ end
 -- answered out of this environment's own table is answered silently, so a wrong
 -- one leaves no trace - and these builds fold what they read into the key their
 -- payload is decrypted with, so a reader needs to see each one.
--- Every host value the program asked this environment to build, in the order it
--- asked. The instruction listing says what the program does and is unreadable;
--- this says the same thing in the host's own words.
+-- ONE ORDERED TRANSCRIPT of everything the program did to the host: the values
+-- it asked to be built, the members it read back, the methods it called. Kept in
+-- one list because the order between them is the program, and three separate
+-- lists cannot be interleaved afterwards - a value built, then read, then passed
+-- to a call is three entries whose order is the only thing that says they belong
+-- together.
+local events, eventN = {}, 0
+VMSMART_EVENT = function(kind, text)
+    eventN = eventN + 1
+    if eventN > 60000 then return end
+    events[#events + 1] = kind .. ":" .. tostring(text)
+end
+
 local made, madeN = {}, 0
 VMSMART_MADE = function(what, args)
     madeN = madeN + 1
     if madeN > 4000 then return end
-    made[#made + 1] = what .. ".new(" .. tostring(args) .. ")"
+    local line = what .. ".new(" .. tostring(args) .. ")"
+    made[#made + 1] = line
+    VMSMART_EVENT("made", line)
 end
 
 local reads, readN = {}, 0
@@ -3753,6 +3772,7 @@ VMSMART_READ = function(what, value)
         shown = t .. (typeof ~= nil and ("/" .. tostring(typeof(value))) or "")
     end
     local line = what .. " -> " .. shown
+    VMSMART_EVENT("read", line)
     if readSeen[line] then
         readSeen[line] = readSeen[line] + 1
         return
@@ -5889,6 +5909,11 @@ if VMSMART_REFUSED_CLASSES ~= nil then
         say("---REFUSEDCLASSES---")
         for i = 1, #names do say(names[i]) end
     end
+end
+if #events > 0 then
+    say("---TRANSCRIPT---")
+    say("events_total: " .. tostring(eventN))
+    for i = 1, math.min(#events, 40000) do say(events[i]) end
 end
 if #made > 0 then
     say("---MADE---")
