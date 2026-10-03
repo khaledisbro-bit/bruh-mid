@@ -1399,6 +1399,51 @@ VMSMART_READ = function(what, value)
     reads[#reads + 1] = line
 end
 
+-- EVERY DECRYPTION THE BUILD PERFORMED, with its key and its input, so a
+-- reimplementation can be checked against it rather than trusted. The pieces
+-- that are not the payload are decrypted with keys the file carries, so those
+-- calls succeed - and one success is a test with an answer.
+local ciphers, cipherN = {}, 0
+HID.__CIPHER = function(result, data, key, salt, tag)
+    cipherN = cipherN + 1
+    -- The first few, and then every call whose key is a TABLE. A build of this
+    -- family decrypts hundreds of small constants with keys the file carries,
+    -- and exactly one piece with the three numbers it measured - which is the
+    -- one worth seeing, and it happens long after the first forty.
+    local isPayload = type(key) == "table"
+    if cipherN > 40 and not isPayload then return end
+    if isPayload then
+        cipherN = cipherN - 1
+    end
+    local function brief(v)
+        local t = type(v)
+        if t == "string" then
+            -- the whole of a short one: a digest cut to 24 of its 64 characters
+            -- is not a digest, and this is the value a reimplementation has to
+            -- reproduce to prove itself
+            local keep = (#v <= 96) and v or string.sub(v, 1, 24)
+            return "s/" .. tostring(#v) .. "/" .. HEXOF(keep)
+        elseif t == "number" or t == "boolean" then
+            return t:sub(1, 1) .. "=" .. tostring(v)
+        elseif t == "table" then
+            local parts = {}
+            for i = 1, 6 do
+                local x = rawget(v, i)
+                if x == nil then break end
+                parts[#parts + 1] = tostring(i) .. "=" ..
+                    (type(x) == "string" and ("s/" .. tostring(#x))
+                     or tostring(x))
+            end
+            return "t{" .. table.concat(parts, ",") .. "}"
+        end
+        return t
+    end
+    ciphers[#ciphers + 1] = (isPayload and "PAYLOAD " or "")
+        .. "in=" .. brief(data) .. " key=" .. brief(key)
+        .. " salt=" .. brief(salt) .. " tag=" .. brief(tag)
+        .. " out=" .. brief(result)
+end
+
 local keyLog = {}
 -- AND WHETHER THE DECRYPTION PRODUCED A PROGRAM. Between the key and the call
 -- comes the decryption and the deserialising, and when the key is wrong the
@@ -3537,6 +3582,10 @@ if #made > 0 then
     say("---MADE---")
     say("made_total: " .. tostring(madeN))
     for i = 1, math.min(#made, 1200) do say(made[i]) end
+end
+if #ciphers > 0 then
+    say("---CIPHER---")
+    for i = 1, #ciphers do say(ciphers[i]) end
 end
 say("---READS---")
 say("reads_total: " .. tostring(readN))

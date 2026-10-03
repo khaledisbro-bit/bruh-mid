@@ -435,6 +435,69 @@ def patch_gate(src, sites):
     return src, edit
 
 
+# ---------------------------------------------------------------- the cipher
+#
+# The payload is decrypted with a keystream: three numbers advanced per byte and
+# exclusive-ored into the data. The arithmetic is in the interpreter's own
+# source, so it can be reimplemented - and a reimplementation that is never
+# checked against the original is a guess with extra steps.
+#
+# This watches the real one. The build decrypts more than one piece, and the
+# pieces that are NOT the payload are decrypted with keys the file carries rather
+# than with keys it measures - so those calls succeed. One of them is enough to
+# check a reimplementation against: same input, same key, same output, or the
+# reimplementation is wrong.
+#
+# Found by the algorithm's own constants: the three-way state update uses 48271,
+# 65599 and 31337 in one expression each, which is this cipher and not a
+# published one.
+def find_cipher(src):
+    """The decryption function, and where its body ends."""
+    at = -1
+    for m in re.finditer(r"48271", src):
+        w = src[m.start():m.start() + 400]
+        if "65599" in w and "31337" in w:
+            at = m.start()
+            break
+    if at < 0:
+        return None, ("no three-way keystream update is in this source, so "
+                      "there is no cipher of this shape to watch")
+    chain = lua_tokens.enclosing(src, at)
+    best = None
+    for f in chain:
+        if f.end is None:
+            continue
+        named = [p for p in f.params if p != "..."]
+        if len(named) < 2:
+            continue
+        if f.end - f.start > len(src) // 4:
+            continue
+        best = f
+        break
+    if best is None:
+        return None, "the keystream update is not inside a function this reads"
+    m = re.search(r"local\s+function\s+(\w+)\s*\(",
+                  src[max(0, best.start - 80):best.start + 40])
+    if not m:
+        return None, "the decryption function has no name to stand in front of"
+    name = m.group(1)
+    why = ("the three-way keystream update is at %d, inside a %d-byte function "
+           "named %s taking (%s) - so that is what decrypts a piece"
+           % (at, best.end - best.start, name, ", ".join(best.params)))
+    return (name, best.end, why), why
+
+
+CIPHER_EDIT = (" local %s_VC=%s %s=function(...) local r=%s_VC(...) "
+               "if __CIPHER then __CIPHER(r,...) end return r end ")
+
+
+def patch_cipher(src, found):
+    """`src` with the decryption watched, after it is defined."""
+    name, end_at, _why = found
+    edit = CIPHER_EDIT % (name, name, name, name)
+    return src[:end_at] + edit + src[end_at:], edit
+
+
 def _selftest():
     # an interpreter the shape this looks for: a maker handed a proto table and
     # an upvalue table, returning the closure that runs it

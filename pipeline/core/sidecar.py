@@ -197,6 +197,15 @@ def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
     gate_edit = ""
     if gate is not None:
         patched, gate_edit = protohook.patch_gate(patched, gate)
+    # THE CIPHER. A reimplementation of the decryption that is never checked
+    # against the original is a guess with extra steps. The build decrypts
+    # several pieces and the ones that are not the payload use keys the file
+    # carries, so those calls succeed - and one success is enough to check a
+    # reimplementation against: same input, same key, same output.
+    cip, cip_why = protohook.find_cipher(patched)
+    cip_edit = ""
+    if cip is not None:
+        patched, cip_edit = protohook.patch_cipher(patched, cip)
     key = "%d:%s" % (len(inner_src), inner_src[:24])
     out = ["-- ---- the interpreter, edited to hand over the program's "
            "functions ----",
@@ -209,6 +218,8 @@ def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
            "-- the third edit: " + (hsh_edit.strip() or "none"),
            "-- the gate: " + gate_why.replace("\n", " "),
            "-- the fourth edit: " + (gate_edit.strip() or "none"),
+           "-- the cipher: " + cip_why.replace("\n", " "),
+           "-- the fifth edit: " + (cip_edit.strip() or "none"),
            "VMSMART_CHUNK_REPLACEMENT = {}",
            "VMSMART_CHUNK_REPLACEMENT[%s] = %s" % (lua_string(key),
                                                    lua_string(patched)),

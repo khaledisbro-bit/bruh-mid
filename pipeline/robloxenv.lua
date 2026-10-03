@@ -471,16 +471,24 @@ if Instance == nil then
     local function newSignal(name)
         local sig
         local members = {}
+        local listeners = {}
         local function connect(_, fn)
             local conn
             local cmembers = {}
+            local slot = nil
+            if rawtype(fn) == "function" then
+                listeners[#listeners + 1] = fn
+                slot = #listeners
+            end
             conn = setmetatable({}, { __index = function(_, j)
                 if cmembers[j] then return cmembers[j] end
                 if j == "Disconnect" or j == "disconnect" then
-                    cmembers[j] = function() end
+                    cmembers[j] = function()
+                        if slot then listeners[slot] = nil end
+                    end
                     return cmembers[j]
                 end
-                if j == "Connected" then return true end
+                if j == "Connected" then return slot ~= nil end
                 return nil
             end })
             if VMSMART_TAGGED then
@@ -500,7 +508,12 @@ if Instance == nil then
                     return members[k]
                 end
                 if k == "Fire" then
-                    members[k] = function() return nil end
+                    members[k] = function(_, ...)
+                        for i = 1, #listeners do
+                            local fn = listeners[i]
+                            if fn then pcall(fn, ...) end
+                        end
+                    end
                     return members[k]
                 end
                 return nil
@@ -508,6 +521,12 @@ if Instance == nil then
             __tostring = function() return name end,
         })
         if VMSMART_TAGGED then VMSMART_TAGGED[sig] = "RBXScriptSignal" end
+        -- A SIGNAL THAT NEVER FIRES IS NOT A SIGNAL. Connect stored nothing and
+        -- Fire did nothing, so a build that connects to Changed, writes a
+        -- property and waits to be called back was never called back - and the
+        -- host calls back. Firing is what the host does, so this fires.
+        VMSMART_SIGNALS = VMSMART_SIGNALS or {}
+        VMSMART_SIGNALS[sig] = listeners
         return sig
     end
 
@@ -805,6 +824,27 @@ if Instance == nil then
                   -- of them was recorded, so every instruction that computed one
                   -- read as having no consequence.
                   VMSMART_RECORD_CALL(class .. ":set_" .. tostring(k), t, v)
+                  -- THE HOST TELLS LISTENERS. Writing a property fires Changed
+                  -- with the property's NAME, and fires the signal
+                  -- GetPropertyChangedSignal handed out for that property. A
+                  -- build that connects, writes and waits to hear back heard
+                  -- nothing here.
+                  local function fire(sig, ...)
+                      local l = VMSMART_SIGNALS and VMSMART_SIGNALS[sig]
+                      if not l then return end
+                      for i = 1, #l do
+                          local fn = l[i]
+                          if fn then pcall(fn, ...) end
+                      end
+                  end
+                  local notify = function()
+                      if signals["Changed"] then
+                          fire(signals["Changed"], tostring(k))
+                      end
+                      if signals[tostring(k)] then
+                          fire(signals[tostring(k)])
+                      end
+                  end
                   if k == "Parent" then
                       if parentLocked then
                           -- the host's own words for it
@@ -820,6 +860,7 @@ if Instance == nil then
                       end
                       props.Parent = v
                       link(v)
+                      notify()
                       return
                   end
                   if k == "Name" then
@@ -832,9 +873,11 @@ if Instance == nil then
                       end
                       props.Name = v
                       if p ~= nil then link(p) end
+                      notify()
                       return
                   end
                   props[k] = v
+                  notify()
               end,
               __tostring = function() return tostring(props.Name) end })
         -- WHAT `typeof` CALLS IT. In the host, typeof of every Instance is the
