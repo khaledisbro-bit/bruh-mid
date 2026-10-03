@@ -44,6 +44,7 @@ import noise           # noqa: E402
 import opsem           # noqa: E402
 import plain           # noqa: E402
 import probes         # noqa: E402
+import protodecode     # noqa: E402
 import sccp           # noqa: E402
 import stackint        # noqa: E402
 import staticcode      # noqa: E402
@@ -403,9 +404,28 @@ class Analysis:
             self.lift, self.models, self.verdicts, capture.calls, self.calls,
             (getattr(self, "type_withdrawn", 0),
              getattr(self, "type_examined", 0)))
+        self.decode_program()
         (_f, self.in_step, self.unaccounted, self.accounted,
          self.accounted_share) = verify.fidelity(
             capture.calls, self.calls)
+
+    def decode_program(self):
+        """The instructions of every function the interpreter was handed.
+
+        This is the part a run cannot reach: a function the checks route past
+        is still handed over, and its instructions are masked the same way as
+        the ones that ran - so the same arithmetic reads them.
+        """
+        self.program_decoded = None
+        self.program_text = ""
+        raw = getattr(self.capture, "raw", "") or ""
+        if "---PROTOS---" not in raw:
+            self.program_text = protodecode.report(protodecode.Program())
+            return
+        P = protodecode.decode(protodecode.read(raw))
+        protodecode.verify(P, raw)
+        self.program_decoded = P
+        self.program_text = protodecode.report(P)
 
     def _harness_age_lines(self):
         """Which harness wrote this capture, said before anything is read from it.
@@ -621,6 +641,19 @@ class Analysis:
                  "figure here is a share of the run, not of the program")(
                      *staticcode.coverage(self.capture.code,
                                           self.program))),
+             ] + ([
+             "the whole program          %d instruction(s) in %d function(s), "
+             "%d%% of them an operation this run also performed - the "
+             "functions it never entered included"
+             % (sum(len(self.program_decoded.decoded[p])
+                    for p in self.program_decoded.distinct()),
+                len(self.program_decoded.distinct()),
+                100 * sum(1 for p in self.program_decoded.distinct()
+                          for v in self.program_decoded.decoded[p].values()
+                          if v[0] is not None)
+                // max(1, sum(len(self.program_decoded.decoded[p])
+                              for p in self.program_decoded.distinct()))),
+             ] if getattr(self, "program_decoded", None) else []) + [
              "instructions explained     %d of %d (%.0f%%)"
              % (explained, total, 100 * cov),
              "verdicts                   real %d, unproven %d, decoy %d"
@@ -703,6 +736,7 @@ class Analysis:
             "VERIFICATION.txt": self.verification,
             "BRANCHES.txt": branches.report(self.branch_why, self.cfg),
             "FUNCTIONS_CAPTURED.txt": _protos_report(self.capture),
+            "ALL_INSTRUCTIONS.txt": self.program_text,
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),
@@ -1024,6 +1058,15 @@ def selftest():
     _dispatch._selftest()
     import actions as _ac
     if _ac._selftest():
+        ok = False
+    import protodecode as _pd
+    if _pd._selftest():
+        ok = False
+    import lua_tokens as _lt
+    if _lt._selftest():
+        ok = False
+    import protohook as _ph
+    if _ph._selftest():
         ok = False
     import antitamper as _at
     if _at._selftest():

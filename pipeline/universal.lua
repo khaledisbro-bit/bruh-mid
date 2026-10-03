@@ -1070,7 +1070,7 @@ HID.__VMPROTO = setmetatable({}, {
         if type(proto) ~= "table" then return end
         if protoCopyN >= 2000 then return end
         protoCopyN = protoCopyN + 1
-        local copy = { fields = {}, rows = {}, n = protoCopyN }
+        local copy = { fields = {}, rows = {}, deep = {}, n = protoCopyN }
         -- every field that is an array of numbers: the instruction arrays and
         -- the operand arrays live there, and which slot holds which is read
         -- from the interpreter later rather than assumed here
@@ -1113,6 +1113,62 @@ HID.__VMPROTO = setmetatable({}, {
                 end
                 if cnt > 0 then copy.fields[tostring(k)] = nums end
                 if rcnt > 0 then copy.rows[tostring(k)] = rows end
+                -- ONE LEVEL DEEPER. The interpreter takes the tables it needs
+                -- to decode a block out of a sub-table of the prototype: which
+                -- block a counter is in, what each block's key material is,
+                -- and the table that turns an unmasked number into an opcode.
+                -- They are tables of tables, so the pass above walks past them.
+                do
+                    -- always, not only when the field looked like neither an
+                    -- array nor rows: a sub-table whose keys are counters has
+                    -- numbers at 1..16 too, so the row reader claims it and
+                    -- the walk below never happened
+                    for j, w in pairs(v) do
+                        if type(w) == "table" then
+                            local sub, sn = {}, 0
+                            for q, x in pairs(w) do
+                                if type(q) == "number" and type(x) == "number"
+                                        and sn < 4096 then
+                                    sn = sn + 1
+                                    sub[sn] = tostring(q) .. ">" .. tostring(x)
+                                end
+                            end
+                            if sn > 0 then
+                                copy.deep[tostring(k) .. "." .. tostring(j)] =
+                                    sub
+                            else
+                                -- ONE MORE LEVEL: the block descriptors. Each
+                                -- block has a table of its own - where it
+                                -- starts and ends, which key material decodes
+                                -- it, and a per-predecessor entry - and that
+                                -- is a table of tables, which the pass above
+                                -- walks past.
+                                for q, y in pairs(w) do
+                                    if type(y) == "table" then
+                                        local d3, dn = {}, 0
+                                        for a, b in pairs(y) do
+                                            if type(a) == "number"
+                                                    and type(b) == "number"
+                                                    and dn < 512 then
+                                                dn = dn + 1
+                                                d3[dn] = tostring(a) .. ">"
+                                                         .. tostring(b)
+                                            end
+                                        end
+                                        if dn > 0 then
+                                            copy.deep[tostring(k) .. "."
+                                                .. tostring(j) .. "."
+                                                .. tostring(q)] = d3
+                                        end
+                                    end
+                                end
+                            end
+                        elseif type(w) == "number" then
+                            copy.deep[tostring(k) .. ".#" .. tostring(j)] =
+                                { tostring(w) }
+                        end
+                    end
+                end
             elseif type(v) == "number" then
                 copy.fields["#" .. tostring(k)] = { v }
             end
@@ -2906,6 +2962,16 @@ if #protoCopies > 0 then
                 parts[j] = tostring(arr[j])
             end
             say("p" .. tostring(c.n) .. ":" .. k .. "=" ..
+                table.concat(parts, ","))
+        end
+        local dkeys = {}
+        for k in pairs(c.deep) do dkeys[#dkeys + 1] = k end
+        table.sort(dkeys)
+        for _, k in ipairs(dkeys) do
+            local sub = c.deep[k]
+            local parts = {}
+            for j = 1, math.min(#sub, 4096) do parts[j] = sub[j] end
+            say("p" .. tostring(c.n) .. "~" .. k .. ":" ..
                 table.concat(parts, ","))
         end
         local rkeys = {}
