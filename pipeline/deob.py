@@ -388,6 +388,35 @@ def main():
         ents, snote = sidecarmod.decompressions(src)
         print("              " + sidecarmod.describe(ents, snote))
         side = sidecarmod.emit_lua(ents, snote) if ents else None
+        # The interpreter's own source, edited to hand over the program's
+        # functions. It can only be prepared once the program has built the
+        # chunk, so it comes from an earlier run's capture - which is also why
+        # it is keyed by the chunk's own bytes rather than by a file name.
+        prepared_chunk = ""
+        prev_inner = os.path.join(a.out, "inner_source.lua")
+        if os.path.isfile(prev_inner):
+            with open(prev_inner, encoding="latin1") as f:
+                inner_text = f.read()
+            try:
+                from core import vmsrc as _vmsrc
+                _vm = _vmsrc.discover(inner_text)
+                sub, subwhy = sidecarmod.chunk_replacement(
+                    inner_text, getattr(_vm, "row", None),
+                    getattr(_vm, "pc", None))
+            except Exception as exc:
+                sub, subwhy = None, ("preparing the chunk raised %s"
+                                     % exc.__class__.__name__)
+            if sub:
+                # kept apart from the decompression sidecar, because that one
+                # is rebuilt whenever a run asks for more frames - and the
+                # first version of this was thrown away on exactly that round
+                prepared_chunk = sub
+                side = (side or "") + "\n" + sub
+                print("              the interpreter was edited to hand over "
+                      "the program's functions: " + subwhy)
+            else:
+                print("              the interpreter was not edited: "
+                      + str(subwhy))
         rec = localvm.run(luau, harness, sidecar_text=side)
         print("              " + localvm.describe(rec))
         # A build whose packing this tool does not recognise hands its bytes
@@ -408,7 +437,7 @@ def main():
                   "not found in the file; decompressed from the bytes the "
                   "program itself produced, running again"
                   % len(fresh))
-            side = sidecarmod.emit_lua(ents, snote)
+            side = sidecarmod.emit_lua(ents, snote) + "\n" + prepared_chunk
             rec = localvm.run(luau, harness, sidecar_text=side)
             print("              " + localvm.describe(rec))
         # The whole run is kept, not only the block inside it. When a capture

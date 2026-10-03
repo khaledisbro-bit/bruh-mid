@@ -90,6 +90,28 @@ class Capture:
             # the row numbers are what every other record is anchored on, so
             # they are left exactly as they were
             self.rows = keep
+        # THE PROGRAM'S OWN FUNCTIONS, taken where the interpreter builds
+        # them rather than where it runs them. Each one is a set of numbered
+        # fields: the arrays that hold its instructions, and the scalars that
+        # say how many there are. Which field is which is not assumed here -
+        # it is read from the interpreter - so they are kept as they came.
+        self.protos = {}
+        for ln in self.sections.get("PROTOS", []):
+            m = re.match(r"^p(\d+):([#]?[\w.]+)=(.*)$", ln.strip())
+            if not m:
+                continue
+            pid, field, body = int(m.group(1)), m.group(2), m.group(3)
+            vals = []
+            for x in body.split(","):
+                x = x.strip()
+                if not x:
+                    continue
+                try:
+                    vals.append(float(x) if ("." in x or "e" in x.lower())
+                                else int(x))
+                except ValueError:
+                    pass
+            self.protos.setdefault(pid, {})[field] = vals
         self.constants = _constants(self.sections)
         # One capture can hold two runs of the same payload, and their call
         # logs are written one after the other into the same section. Comparing

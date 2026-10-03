@@ -55,6 +55,59 @@ import verify          # noqa: E402
 import version         # noqa: E402
 
 
+def _protos_report(capture):
+    """The program's own functions, as the interpreter was handed them.
+
+    This is not what ran. It is what the program IS: every function the
+    interpreter built a closure for, whether or not anything called it. A build
+    that routes execution past its payload still hands the payload over here,
+    which is the only way a one-run analysis sees the part it never reaches.
+    """
+    protos = getattr(capture, "protos", None) or {}
+    T = ["THE PROGRAM'S OWN FUNCTIONS",
+         "=" * 46,
+         "Taken where the interpreter builds a closure, not where it runs one.",
+         "A function nothing called is here on the same terms as one that ran.",
+         ""]
+    if not protos:
+        T += ["No function was handed over in this capture. That happens when",
+              "the interpreter's own source could not be prepared - the report",
+              "says why where it was tried - or when this build hands its",
+              "functions over some other way.", ""]
+        return "\n".join(T)
+    # the same function appears once per round of the ladder; group by shape
+    shapes = {}
+    for pid, fields in sorted(protos.items()):
+        key = tuple(sorted((f, len(v)) for f, v in fields.items()))
+        shapes.setdefault(key, []).append(pid)
+    T.append("%d function(s) handed over, %d distinct"
+             % (len(protos), len(shapes)))
+    T.append("")
+    for key, pids in sorted(shapes.items(), key=lambda kv: -max(
+            n for _f, n in kv[0])):
+        fields = protos[pids[0]]
+        scalars = {f: v[0] for f, v in fields.items()
+                   if f.startswith("#") and len(v) == 1}
+        arrays = {f: len(v) for f, v in fields.items() if not f.startswith("#")}
+        T.append("  function %s%s"
+                 % (", ".join("#%d" % p for p in pids[:4]),
+                    " and %d more" % (len(pids) - 4) if len(pids) > 4 else ""))
+        if arrays:
+            T.append("      arrays:  " + ", ".join(
+                "field %s holds %d number(s)" % (f, n)
+                for f, n in sorted(arrays.items())))
+        if scalars:
+            T.append("      numbers: " + ", ".join(
+                "field %s = %s" % (f[1:], v)
+                for f, v in sorted(scalars.items())))
+        T.append("")
+    T += ["What is NOT done with them yet: the instruction stream is encoded,",
+          "and which field holds what is read from the interpreter rather than",
+          "assumed. Decoding these into instructions is the next step, and it",
+          "is what turns a function nothing called into source.", ""]
+    return "\n".join(T)
+
+
 class Analysis:
     """Everything one capture supports, and the reports that explain it."""
 
@@ -649,6 +702,7 @@ class Analysis:
                                         self.emitter.R, self.calls, self.models),
             "VERIFICATION.txt": self.verification,
             "BRANCHES.txt": branches.report(self.branch_why, self.cfg),
+            "FUNCTIONS_CAPTURED.txt": _protos_report(self.capture),
             "HOST_QUESTIONS.txt": antitamper.report(self.capture.calls),
             "DISAGREEMENTS.txt": disagree.report(
                 self.lift, self.models, self.differences, self.capture.rows),

@@ -150,6 +150,34 @@ def from_request(text):
 _SAFE = set(range(32, 127)) - {ord('"'), ord("\\")}
 
 
+def chunk_replacement(inner_src, vm_row=None, vm_pc=None):
+    """The interpreter's own source, edited so it hands over the program's
+    functions, as Lua the harness can read.
+
+    Keyed by the bytes the program will produce, so the harness can tell the
+    chunk it is about to load from any other. The key is its length and its
+    first 24 bytes, which is enough to tell one chunk from another and cheap
+    for the harness to compute on a megabyte.
+    """
+    if PKG not in sys.path:
+        sys.path.insert(0, PKG)
+    import protohook
+    found, why = protohook.find(inner_src, row=vm_row, pc=vm_pc)
+    if found is None:
+        return None, why
+    patched, edit = protohook.patch(inner_src, found)
+    key = "%d:%s" % (len(inner_src), inner_src[:24])
+    out = ["-- ---- the interpreter, edited to hand over the program's "
+           "functions ----",
+           "-- " + why.replace("\n", " "),
+           "-- the edit: " + edit.strip(),
+           "VMSMART_CHUNK_REPLACEMENT = {}",
+           "VMSMART_CHUNK_REPLACEMENT[%s] = %s" % (lua_string(key),
+                                                   lua_string(patched)),
+           ""]
+    return "\n".join(out), why
+
+
 def lua_string(data):
     """A Luau string literal for arbitrary bytes.
 

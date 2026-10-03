@@ -1051,6 +1051,52 @@ end
 -- build-specific is carried over: their loop_names() returns literal variable
 -- names for known builds, and that is exactly the lookup this project refuses.
 local protoSeen, protoN = {}, 0
+-- THE PROGRAM'S FUNCTIONS, taken where the interpreter builds them.
+--
+-- The edit the analysis puts in the interpreter is one table write and nothing
+-- else: `__VMPROTO[proto] = upvalues`. No call, no new local - a protected
+-- build watches its own stack, and a hook that calls out changes what it sees.
+--
+-- The work happens here, in the metatable, where the build cannot look: the
+-- write is caught and the proto's arrays are copied before anything has run
+-- over them. A function the program never calls is copied on the same terms as
+-- one it does, which is the whole point: what the checks route execution away
+-- from is in hand anyway.
+local protoCopies, protoCopyN = {}, 0
+HID.__VMPROTO = setmetatable({}, {
+    __index = function() return nil end,
+    __newindex = function(t, proto, ups)
+        rawset(t, proto, ups or true)
+        if type(proto) ~= "table" then return end
+        if protoCopyN >= 2000 then return end
+        protoCopyN = protoCopyN + 1
+        local copy = { fields = {}, n = protoCopyN }
+        -- every field that is an array of numbers: the instruction arrays and
+        -- the operand arrays live there, and which slot holds which is read
+        -- from the interpreter later rather than assumed here
+        for k, v in pairs(proto) do
+            if type(v) == "table" then
+                local nums, cnt = {}, 0
+                for i = 1, 4096 do
+                    local x = rawget(v, i)
+                    if x == nil then break end
+                    if type(x) == "number" then
+                        cnt = cnt + 1
+                        nums[cnt] = x
+                    else
+                        cnt = 0
+                        break
+                    end
+                end
+                if cnt > 0 then copy.fields[tostring(k)] = nums end
+            elseif type(v) == "number" then
+                copy.fields["#" .. tostring(k)] = { v }
+            end
+        end
+        protoCopies[#protoCopies + 1] = copy
+    end,
+})
+
 HID.__PROTO = function(level, p, ...)
     -- WHICH level was called, recorded whether or not its first argument is a
     -- prototype: that is how the maker is told from the functions around it.
@@ -1950,6 +1996,22 @@ local function patchResolver(s)
 end
 
 env.loadstring = function(src, ...)
+    -- A chunk the analysis prepared, keyed by the bytes the program produced.
+    -- The preparation needs the chunk, and the chunk only exists once the
+    -- program has built it, so this is the second run's part: the first run
+    -- hands the chunk over, the analysis edits it with a real reading of its
+    -- structure, and this run uses that instead.
+    if VMSMART_CHUNK_REPLACEMENT ~= nil and type(src) == "string" then
+        local n0 = #src
+        local key = tostring(n0) .. ":" .. string.sub(src, 1, 24)
+        local sub = VMSMART_CHUNK_REPLACEMENT[key]
+        if sub ~= nil then
+            behavior[#behavior+1] = "  [using the prepared chunk for this "
+                .. "loadstring: " .. tostring(n0) .. " bytes in, "
+                .. tostring(#sub) .. " out]"
+            src = sub
+        end
+    end
     local n = #tostring(src or "")
     loads[#loads+1] = n
     local layer = detectLayer(src)
@@ -2805,6 +2867,25 @@ if VMSMART_NOT_A_HOST_NAME ~= nil then
         say("---NOTAHOSTNAME---")
         for i = 1, #names do say(names[i]) end
     end
+end
+if #protoCopies > 0 then
+    say("---PROTOS---")
+    for i = 1, #protoCopies do
+        local c = protoCopies[i]
+        local keys = {}
+        for k in pairs(c.fields) do keys[#keys + 1] = k end
+        table.sort(keys)
+        for _, k in ipairs(keys) do
+            local arr = c.fields[k]
+            local parts = {}
+            for j = 1, math.min(#arr, 4096) do
+                parts[j] = tostring(arr[j])
+            end
+            say("p" .. tostring(c.n) .. ":" .. k .. "=" ..
+                table.concat(parts, ","))
+        end
+    end
+    say("proto_copies: " .. tostring(#protoCopies))
 end
 if type(VMSMART_INNER_SRC) == "string" then
     say("---INNERSRC---")
