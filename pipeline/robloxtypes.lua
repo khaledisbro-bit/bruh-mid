@@ -97,6 +97,33 @@ local function make(typeName, fields, methods, lazy, ops)
     local v = {}
     local wrapped = nil
     VMSMART_FIELDS[v] = fields
+    -- EVERY VALUE THIS ENVIRONMENT BUILT, with what it was built from, in
+    -- order. The instruction listing is accurate and unreadable; a person
+    -- reading it wants to know that the program asked for Vector3.new(434, 452,
+    -- 128) and read its components back, and that is a thing this file knows at
+    -- the moment it happens.
+    if VMSMART_MADE then
+        local parts = {}
+        -- `__args` where a type has one: `__order` is what the HOST prints,
+        -- and for TweenInfo the host prints nothing but its name, so the two
+        -- lists are not the same question.
+        for _, k in ipairs(fields.__args or fields.__order or {}) do
+            local x = fields[k]
+            if rawtype(x) == "number" or rawtype(x) == "boolean" then
+                parts[#parts + 1] = tostring(x)
+            elseif rawtype(x) == "string" then
+                parts[#parts + 1] = string.format("%q", x)
+            elseif rawtype(x) == "table" then
+                -- an enum item is tagged in the enum table rather than the
+                -- datatype one, and it prints itself as Enum.X.Y, which is the
+                -- readable thing to write here
+                local tag = (VMSMART_TAGGED and VMSMART_TAGGED[x])
+                    or (VMSMART_ENUM_KINDS and VMSMART_ENUM_KINDS[x])
+                parts[#parts + 1] = tag and tostring(x) or "..."
+            end
+        end
+        VMSMART_MADE(typeName, table.concat(parts, ", "))
+    end
     local meta = {
         __index = function(t, k)
             local own = fields[k]
@@ -394,7 +421,8 @@ T.NumberSequence = function(a, b)
         keys = { T.NumberSequenceKeypoint(0, a, 0),
                  T.NumberSequenceKeypoint(1, a, 0) }
     end
-    return make("NumberSequence", { Keypoints = keys })
+    return make("NumberSequence", { Keypoints = keys,
+                                    __args = { "Keypoints" } })
 end
 
 T.Rect = function(a, b, c, d)
@@ -447,7 +475,10 @@ T.TweenInfo = function(time, style, direction, reps, reverses, delay)
                                EasingStyle = style, EasingDirection = direction,
                                RepeatCount = num(reps),
                                Reverses = reverses and true or false,
-                               DelayTime = num(delay) })
+                               DelayTime = num(delay),
+                               __args = { "Time", "EasingStyle",
+                                          "EasingDirection", "RepeatCount",
+                                          "Reverses", "DelayTime" } })
 end
 
 T.PhysicalProperties = function(d, f, e, fw, ew)
@@ -617,7 +648,8 @@ T.BrickColor = function(a, b, c)
     local r, g, bl = rec.r / 255, rec.g / 255, rec.b / 255
     return make("BrickColor", { Name = rec.name, Number = rec.number,
                                 Color = T.Color3(r, g, bl),
-                                r = r, g = g, b = bl })
+                                r = r, g = g, b = bl,
+                                __args = { "Name", "Number" } })
 end
 
 -- Random: deterministic here, and not the host's sequence.

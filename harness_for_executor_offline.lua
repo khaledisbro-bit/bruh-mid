@@ -591,6 +591,14 @@ if Instance == nil then
             if rawtype(v) ~= "function" then return v end
             local have = wrappedMethods[k]
             if have then return have end
+            -- This file's own bookkeeping is not something the program called.
+            -- Recording it put VMSMART_ADD_CHILD in the list of what the script
+            -- asked the host for, which is a statement about this file dressed
+            -- up as a statement about the script.
+            if tostring(k):sub(1, 8) == "VMSMART_" then
+                wrappedMethods[k] = v
+                return v
+            end
             local w = recorded(class .. ":" .. tostring(k), v)
             wrappedMethods[k] = w
             return w
@@ -1713,6 +1721,33 @@ local function make(typeName, fields, methods, lazy, ops)
     local v = {}
     local wrapped = nil
     VMSMART_FIELDS[v] = fields
+    -- EVERY VALUE THIS ENVIRONMENT BUILT, with what it was built from, in
+    -- order. The instruction listing is accurate and unreadable; a person
+    -- reading it wants to know that the program asked for Vector3.new(434, 452,
+    -- 128) and read its components back, and that is a thing this file knows at
+    -- the moment it happens.
+    if VMSMART_MADE then
+        local parts = {}
+        -- `__args` where a type has one: `__order` is what the HOST prints,
+        -- and for TweenInfo the host prints nothing but its name, so the two
+        -- lists are not the same question.
+        for _, k in ipairs(fields.__args or fields.__order or {}) do
+            local x = fields[k]
+            if rawtype(x) == "number" or rawtype(x) == "boolean" then
+                parts[#parts + 1] = tostring(x)
+            elseif rawtype(x) == "string" then
+                parts[#parts + 1] = string.format("%q", x)
+            elseif rawtype(x) == "table" then
+                -- an enum item is tagged in the enum table rather than the
+                -- datatype one, and it prints itself as Enum.X.Y, which is the
+                -- readable thing to write here
+                local tag = (VMSMART_TAGGED and VMSMART_TAGGED[x])
+                    or (VMSMART_ENUM_KINDS and VMSMART_ENUM_KINDS[x])
+                parts[#parts + 1] = tag and tostring(x) or "..."
+            end
+        end
+        VMSMART_MADE(typeName, table.concat(parts, ", "))
+    end
     local meta = {
         __index = function(t, k)
             local own = fields[k]
@@ -2010,7 +2045,8 @@ T.NumberSequence = function(a, b)
         keys = { T.NumberSequenceKeypoint(0, a, 0),
                  T.NumberSequenceKeypoint(1, a, 0) }
     end
-    return make("NumberSequence", { Keypoints = keys })
+    return make("NumberSequence", { Keypoints = keys,
+                                    __args = { "Keypoints" } })
 end
 
 T.Rect = function(a, b, c, d)
@@ -2063,7 +2099,10 @@ T.TweenInfo = function(time, style, direction, reps, reverses, delay)
                                EasingStyle = style, EasingDirection = direction,
                                RepeatCount = num(reps),
                                Reverses = reverses and true or false,
-                               DelayTime = num(delay) })
+                               DelayTime = num(delay),
+                               __args = { "Time", "EasingStyle",
+                                          "EasingDirection", "RepeatCount",
+                                          "Reverses", "DelayTime" } })
 end
 
 T.PhysicalProperties = function(d, f, e, fw, ew)
@@ -2233,7 +2272,8 @@ T.BrickColor = function(a, b, c)
     local r, g, bl = rec.r / 255, rec.g / 255, rec.b / 255
     return make("BrickColor", { Name = rec.name, Number = rec.number,
                                 Color = T.Color3(r, g, bl),
-                                r = r, g = g, b = bl })
+                                r = r, g = g, b = bl,
+                                __args = { "Name", "Number" } })
 end
 
 -- Random: deterministic here, and not the host's sequence.
@@ -3687,6 +3727,16 @@ end
 -- answered out of this environment's own table is answered silently, so a wrong
 -- one leaves no trace - and these builds fold what they read into the key their
 -- payload is decrypted with, so a reader needs to see each one.
+-- Every host value the program asked this environment to build, in the order it
+-- asked. The instruction listing says what the program does and is unreadable;
+-- this says the same thing in the host's own words.
+local made, madeN = {}, 0
+VMSMART_MADE = function(what, args)
+    madeN = madeN + 1
+    if madeN > 4000 then return end
+    made[#made + 1] = what .. ".new(" .. tostring(args) .. ")"
+end
+
 local reads, readN = {}, 0
 local readSeen = {}
 VMSMART_READ = function(what, value)
@@ -5839,6 +5889,11 @@ if VMSMART_REFUSED_CLASSES ~= nil then
         say("---REFUSEDCLASSES---")
         for i = 1, #names do say(names[i]) end
     end
+end
+if #made > 0 then
+    say("---MADE---")
+    say("made_total: " .. tostring(madeN))
+    for i = 1, math.min(#made, 1200) do say(made[i]) end
 end
 say("---READS---")
 say("reads_total: " .. tostring(readN))

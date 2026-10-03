@@ -571,6 +571,14 @@ if Instance == nil then
             if rawtype(v) ~= "function" then return v end
             local have = wrappedMethods[k]
             if have then return have end
+            -- This file's own bookkeeping is not something the program called.
+            -- Recording it put VMSMART_ADD_CHILD in the list of what the script
+            -- asked the host for, which is a statement about this file dressed
+            -- up as a statement about the script.
+            if tostring(k):sub(1, 8) == "VMSMART_" then
+                wrappedMethods[k] = v
+                return v
+            end
             local w = recorded(class .. ":" .. tostring(k), v)
             wrappedMethods[k] = w
             return w

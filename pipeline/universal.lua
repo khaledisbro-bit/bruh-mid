@@ -1352,6 +1352,16 @@ end
 -- answered out of this environment's own table is answered silently, so a wrong
 -- one leaves no trace - and these builds fold what they read into the key their
 -- payload is decrypted with, so a reader needs to see each one.
+-- Every host value the program asked this environment to build, in the order it
+-- asked. The instruction listing says what the program does and is unreadable;
+-- this says the same thing in the host's own words.
+local made, madeN = {}, 0
+VMSMART_MADE = function(what, args)
+    madeN = madeN + 1
+    if madeN > 4000 then return end
+    made[#made + 1] = what .. ".new(" .. tostring(args) .. ")"
+end
+
 local reads, readN = {}, 0
 local readSeen = {}
 VMSMART_READ = function(what, value)
@@ -3504,6 +3514,11 @@ if VMSMART_REFUSED_CLASSES ~= nil then
         say("---REFUSEDCLASSES---")
         for i = 1, #names do say(names[i]) end
     end
+end
+if #made > 0 then
+    say("---MADE---")
+    say("made_total: " .. tostring(madeN))
+    for i = 1, math.min(#made, 1200) do say(made[i]) end
 end
 say("---READS---")
 say("reads_total: " .. tostring(readN))

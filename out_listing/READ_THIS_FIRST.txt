@@ -1,0 +1,231 @@
+WHAT THIS SCRIPT DOES, IN WORDS
+==========================================================
+
+THE SHORT ANSWER
+----------------------------------------------------------
+  The file is in two layers. The layer that RUNS does not do
+  anything a script would do - it measures the machine it is on.
+  It builds one Roblox value after another, reads their parts back,
+  calls methods on them, and mixes everything it gets into three
+  numbers.
+
+  Those three numbers are the key the SECOND layer is encrypted
+  with. The second layer is the script. It is in the file and it is
+  not readable, because the key is whatever a real Roblox client
+  would have answered.
+
+  So there is no hidden branch to take and nothing to switch off.
+  The measuring is not protecting the script - the measuring IS the
+  password.
+
+WHERE EACH LAYER IS
+----------------------------------------------------------
+  piece 1: 96891 byte(s)   asked for by the run
+  piece 2: 10494 byte(s)   asked for by the run
+  piece 3: 1375 byte(s)   asked for by the run
+  piece 4: 221 byte(s)   asked for by the run
+
+  The big piece is the measuring layer, and this analysis has
+  read all of it. The 10494-byte piece is the script itself.
+
+THE PASSWORD THIS MACHINE PRODUCED
+----------------------------------------------------------
+  562797805, 1581986302, 337997813
+
+  Wrong. The script came out as noise, so at least one of
+  the thousands of questions it asked was answered
+  differently here than a real client would answer it.
+
+WHAT IT ASKED THE HOST TO BUILD, IN ORDER
+----------------------------------------------------------
+  780 value(s) in all. Repeats of the same kind are folded.
+
+  UDim.new(...) x2, the first being UDim.new(0, 940)
+  UDim2.new(0, 940, 0.03125, 155)
+  UDim.new(...) x2, the first being UDim.new(0, 558)
+  UDim2.new(0, 558, 0.0625, 163)
+  Vector3.new(434, 452, 128)
+  UDim.new(...) x2, the first being UDim.new(0, 308)
+  UDim2.new(0, 308, 0.3125, 226)
+  UDim.new(...) x2, the first being UDim.new(0, 38)
+  UDim2.new(0, 38, 0.0625, 94)
+  TweenInfo.new(0.3125, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 1, true, 0.5)
+  UDim.new(...) x2, the first being UDim.new(0, 100)
+  UDim2.new(0, 100, 0.3125, 24)
+  Color3.new(0.06666666666666667, 0.06666666666666667, 0.06666666666666667)
+  BrickColor.new("Really black", 1003)
+  Color3.new(0.06666666666666667, 0.06666666666666667, 0.06666666666666667)
+  BrickColor.new("Really black", 1003)
+  UDim.new(...) x2, the first being UDim.new(0, 788)
+  UDim2.new(0, 788, 0.5625, 152)
+  UDim.new(...) x2, the first being UDim.new(0, 83)
+  UDim2.new(0, 83, 0, 175)
+  Random.new(...) x2, the first being Random.new()
+  UDim.new(...) x2, the first being UDim.new(0, 500)
+  UDim2.new(0, 500, 0.625, 84)
+  NumberSequenceKeypoint.new(...) x2, the first being NumberSequenceKeypoint.new(0, 0.65625, 0.8125)
+  NumberSequence.new(...)
+  UDim.new(...) x2, the first being UDim.new(0, 440)
+  UDim2.new(0, 440, 0.25, 21)
+  UDim.new(...) x2, the first being UDim.new(0, 646)
+  UDim2.new(0, 646, 0.65625, 162)
+  UDim.new(...) x2, the first being UDim.new(0, 826)
+  UDim2.new(0, 826, 0, 146)
+  UDim.new(...) x3, the first being UDim.new(0.6875, 38)
+  UDim2.new(0, 985, 1, 246)
+  Vector3.new(...) x3, the first being Vector3.new(16, 0, 0)
+  UDim.new(...) x2, the first being UDim.new(0, 151)
+  UDim2.new(0, 151, 0.125, 56)
+  UDim.new(...) x2, the first being UDim.new(0, 315)
+  UDim2.new(0, 315, 0.875, 21)
+  UDim.new(...) x2, the first being UDim.new(0, 965)
+  UDim2.new(0, 965, 0.5, 26)
+  UDim.new(...) x2, the first being UDim.new(0, 872)
+  UDim2.new(0, 872, 0.8125, 172)
+  UDim.new(...) x2, the first being UDim.new(0, 342)
+  UDim2.new(0, 342, 0.8125, 1)
+  UDim.new(...) x2, the first being UDim.new(0, 193)
+  UDim2.new(0, 193, 0, 106)
+  UDim.new(...) x2, the first being UDim.new(0, 983)
+  UDim2.new(0, 983, 0.875, 18)
+  UDim.new(...) x2, the first being UDim.new(0, 110)
+  UDim2.new(0, 110, 0.1875, 133)
+  UDim.new(...) x2, the first being UDim.new(0, 102)
+  UDim2.new(0, 102, 0.125, 2)
+  UDim.new(...) x2, the first being UDim.new(0, 179)
+  UDim2.new(0, 179, 0.78125, 75)
+  UDim.new(...) x2, the first being UDim.new(0, 647)
+  UDim2.new(0, 647, 0.1875, 50)
+  UDim.new(...) x2, the first being UDim.new(0, 471)
+  UDim2.new(0, 471, 0.75, 175)
+  Vector2.new(403, 111)
+  UDim.new(...) x2, the first being UDim.new(0, 17)
+  UDim2.new(0, 17, 0.625, 208)
+  UDim.new(...) x2, the first being UDim.new(0, 48)
+  UDim2.new(0, 48, 0.96875, 5)
+  Color3.new(0.09375, 0.5, 0.625)
+  UDim.new(...) x2, the first being UDim.new(0, 763)
+  UDim2.new(0, 763, 0.375, 234)
+  Vector3.new(19, 10, 20)
+  UDim.new(...) x2, the first being UDim.new(0, 525)
+  UDim2.new(0, 525, 1, 199)
+  UDim.new(...) x2, the first being UDim.new(0, 347)
+  UDim2.new(0, 347, 0.25, 120)
+  UDim.new(...) x2, the first being UDim.new(0, 460)
+  UDim2.new(0, 460, 0.25, 213)
+  UDim.new(...) x2, the first being UDim.new(0, 447)
+  UDim2.new(0, 447, 0.875, 55)
+  NumberRange.new(51, 93)
+  UDim.new(...) x2, the first being UDim.new(0, 919)
+  UDim2.new(0, 919, 0, 202)
+  UDim.new(...) x2, the first being UDim.new(0, 537)
+  UDim2.new(0, 537, 0.9375, 36)
+  Color3.new(...) x3, the first being Color3.new(0.15625, 0.625, 0.5625)
+  UDim.new(...) x2, the first being UDim.new(0, 463)
+  UDim2.new(0, 463, 0.375, 159)
+  Vector2.new(...) x2, the first being Vector2.new(21, 70)
+  Rect.new()
+  UDim.new(...) x2, the first being UDim.new(0, 128)
+  UDim2.new(0, 128, 1, 142)
+  UDim.new(...) x2, the first being UDim.new(0, 940)
+  UDim2.new(0, 940, 0.03125, 155)
+  UDim.new(...) x2, the first being UDim.new(0, 558)
+  UDim2.new(0, 558, 0.0625, 163)
+  Vector3.new(434, 452, 128)
+  UDim.new(...) x2, the first being UDim.new(0, 308)
+  UDim2.new(0, 308, 0.3125, 226)
+  UDim.new(...) x2, the first being UDim.new(0, 38)
+  UDim2.new(0, 38, 0.0625, 94)
+  TweenInfo.new(0.3125, Enum.EasingStyle.Back, Enum.EasingDirection.Out, 1, true, 0.5)
+  UDim.new(...) x2, the first being UDim.new(0, 100)
+  UDim2.new(0, 100, 0.3125, 24)
+  Color3.new(0.06666666666666667, 0.06666666666666667, 0.06666666666666667)
+  BrickColor.new("Really black", 1003)
+  Color3.new(0.06666666666666667, 0.06666666666666667, 0.06666666666666667)
+  BrickColor.new("Really black", 1003)
+  UDim.new(...) x2, the first being UDim.new(0, 788)
+  UDim2.new(0, 788, 0.5625, 152)
+  UDim.new(...) x2, the first being UDim.new(0, 83)
+  UDim2.new(0, 83, 0, 175)
+  Random.new(...) x2, the first being Random.new()
+  UDim.new(...) x2, the first being UDim.new(0, 500)
+  UDim2.new(0, 500, 0.625, 84)
+  NumberSequenceKeypoint.new(...) x2, the first being NumberSequenceKeypoint.new(0, 0.65625, 0.8125)
+  NumberSequence.new(...)
+  UDim.new(...) x2, the first being UDim.new(0, 440)
+  UDim2.new(0, 440, 0.25, 21)
+  UDim.new(...) x2, the first being UDim.new(0, 646)
+  UDim2.new(0, 646, 0.65625, 162)
+  UDim.new(...) x2, the first being UDim.new(0, 826)
+  UDim2.new(0, 826, 0, 146)
+  UDim.new(...) x3, the first being UDim.new(0.6875, 38)
+  UDim2.new(0, 985, 1, 246)
+
+WHAT IT CALLED ON THE HOST
+----------------------------------------------------------
+  Each one once, in the order it first happened.
+
+  host:GetService_unknown("EncodingService")  -- this file cannot place that name among the host's services; a real client may raise here
+  Folder:SetAttribute("4rI3AaoQ85", 579)
+  Folder:GetAttributes()
+  Folder:GetAttribute("4rI3AaoQ85")
+  Folder:Destroy()
+  ReplicatedStorage:IsA("Players")
+  ReplicatedStorage:IsA("ServiceProvider")
+  ReplicatedStorage:IsA("RunService")
+  ReplicatedStorage:IsA("Folder")
+  Part:set_Name("AZXyj26AUybzMh")
+  Part:set_Size(Vector3(X=19,Y=10,Z=20))
+  Part:Destroy()
+  Folder:set_Name("8CeGNFoPEPfT")
+  Folder:set_Name("ZeekraguZQ0x")
+  Folder:set_Parent(#10)
+  Folder:GetFullName()
+  Folder:set_Parent(#14)
+  Model:GetChildren()
+  Model:FindFirstChild("Folder")
+  Model:FindFirstChildOfClass("Folder")
+  Model:FindFirstChildWhichIsA("Instance")
+  Model:Destroy()
+  Folder:set_Parent(#20)
+  Folder:set_Parent(#24)
+  Folder:set_Parent(#30)
+  Folder:set_Parent(#34)
+  Folder:set_Parent(#40)
+  Folder:set_Parent(#44)
+  Folder:set_Parent(#50)
+  Folder:set_Parent(#54)
+  Folder:set_Parent(#60)
+  Folder:set_Parent(#64)
+
+WHAT IT ASKED FOR THAT CANNOT EXIST
+----------------------------------------------------------
+  It asks the host to make objects of classes there is no such
+  thing as. A real client refuses; anything that says yes has
+  told it that it is not on a real client.
+
+  Instance.new('part')  -> refused here too
+  Instance.new('qOyUT0qI5OURkfR1n0h0')  -> refused here too
+
+WHY THE HASHES ARE NOT A FINGERPRINT
+----------------------------------------------------------
+  The file carries SHA-256 digests that look like a fingerprint
+  of a real machine. They are not. Watching the hash function
+  shows what it was given, and every one of them is a digest of
+  one of the script's own literals:
+
+  "lw", "number", "string", 0, 0.09375, 0.15625, 0.3125, 0.5, 0.5625, 0.625, 0.65625, 0.6875, 0.8125, 1, 10, 111, 128, 154, 19, 2, 20, 21, 320, 36, 38, 403, 434, 452
+
+  So `x == 1` is written as `hash(x) == <a digest of 1>`. It is
+  a way of hiding a comparison, not a check on the machine.
+
+WHAT WOULD FINISH IT
+----------------------------------------------------------
+  One of the measurements still differs from a real client's. Every
+  value the file itself double-checks is already right here, which
+  is why it gets as far as asking for the encrypted piece. What is
+  wrong is in something it does not double-check.
+
+  The same harness run once on a real client prints the password it
+  measures there. With that, the piece decrypts here and the script
+  reads out like any other.
