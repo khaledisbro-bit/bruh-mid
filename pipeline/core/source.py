@@ -150,6 +150,72 @@ def _flush(chain, lines):
     del chain[:]
 
 
+
+# WHICH ANSWERS THE PASSWORD IS MADE OF.
+#
+# Each of these was settled the same way: change what this environment answers
+# for it, run again, and see whether the key the build computes moves. A key that
+# moves means the answer is folded into it. A key that does not move means the
+# build reads the answer and throws it away.
+#
+# That is a measurement, not an opinion, and it is why the two lists are not the
+# same length as the list of things the program touches.
+FEEDS = {
+    "UDim": True, "UDim2": True, "Vector3": True, "Vector2": True,
+    "Color3": True, "NumberRange": True, "TweenInfo": True,
+    "NumberSequenceKeypoint": True, "NumberSequence": True,
+    "BrickColor": False, "Random": False,
+}
+
+CALL_FEEDS = {
+    "Destroy": True, "SetAttribute": True, "GetAttribute": True,
+    "GetAttributes": True, "GetFullName": True, "IsA": True,
+    "GetChildren": True, "FindFirstChild": True, "FindFirstChildOfClass": True,
+    "FindFirstChildWhichIsA": True, "set_Parent": True, "set_Name": True,
+    "set_Size": True,
+    "NextInteger": False, "Clone": False, "GenerateGUID": False,
+}
+
+
+def _verdict(line):
+    """Whether this line's answer is one the password is made of."""
+    m = re.match(r"^local \w+ = (\w+)\.new\(", line)
+    if m:
+        v = FEEDS.get(m.group(1))
+        return v
+    m = re.match(r"^local _ = (\w+)", line)
+    if m:
+        # a read is attributed by the type its variable name was made from
+        name = m.group(1)
+        if name.startswith("Enum."):
+            return False
+        for typ, v in FEEDS.items():
+            if name.startswith(typ[0].lower() + typ[1:3]):
+                return v
+        return None
+    m = re.match(r"^\w+:(\w+)\(", line)
+    if m:
+        return CALL_FEEDS.get(m.group(1))
+    return None
+
+
+def marked(text):
+    """The same source with each line marked by what the key is made of."""
+    out = []
+    for line in text.split("\n"):
+        if not line or line.startswith("--"):
+            out.append(line)
+            continue
+        v = _verdict(line)
+        if v is True:
+            out.append(line + "  -- IN THE PASSWORD")
+        elif v is False:
+            out.append(line + "  -- noise: read and thrown away")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 class _Cap:
     def __init__(self, sections):
         self.sections = sections
@@ -188,6 +254,16 @@ def _selftest():
         probs.append("the output does not say the script itself is absent")
     if "nothing to" not in write(_Cap({})):
         probs.append("an empty capture does not say so")
+    mk = marked(txt)
+    if "local vec_1 = Vector3.new(434, 452, 128)  -- IN THE PASSWORD" not in mk:
+        probs.append("a value the password is made of is not marked")
+    if "Folder:Destroy()  -- IN THE PASSWORD" not in mk:
+        probs.append("a call the password is made of is not marked")
+    if marked("-- a comment").endswith("PASSWORD"):
+        probs.append("a comment was marked")
+    nm = marked("local bri_1 = BrickColor.new(\"Really black\", 1003)")
+    if "noise" not in nm:
+        probs.append("a value that is thrown away is not marked: %r" % nm)
     for p in probs:
         print("  PROBLEM: " + p)
     print("source selftest %s" % ("ok" if not probs else "FAILED"))
