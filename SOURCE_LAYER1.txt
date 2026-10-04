@@ -101,8 +101,11 @@ fn 2.c11(3 parameters)   -- packed, opened under 'string'
 
 fn 2.c12(1 parameter)   -- packed, opened under 'number'
     31 step(s), stack 703834, jump key 1984240614
+    names, in order:
+        264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb  
+        string  format  %.17g  e([+-])0+(%d+)  e%1%2  gsub
     numbers: 2, first few: 487375, 3101307
-    still wrapped: 8
+    still wrapped: 1
 
 fn 4.c8(1 parameter)   -- packed, opened under '1'
     14 step(s), stack 604504, jump key 692930895

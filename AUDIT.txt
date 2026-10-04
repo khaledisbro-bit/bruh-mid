@@ -1,0 +1,108 @@
+AUDIT
+
+DOES EVERY BYTE ACCOUNT FOR ITSELF
+
+  slice 1    96891 byte(s),  96891 read   all of it
+  slice 2    10494 byte(s), none read   waits on the key
+  slice 3     1375 byte(s), 124 entries, 108 exact
+  slice 4      221 byte(s), 18 name(s), all of it
+
+IS ANYTHING STILL WRAPPED
+
+  17 function(s), 682 constant(s)
+  123 came out as text, 555 as numbers
+  0 still wrapped
+
+IS ANY OF IT DECOY
+
+  17 answer(s) are folded into the key:
+      FindFirstChild's result                    folded     (div_findfirst)
+      IsA                                        step 82    (div_isa, div_isaonly)
+      NumberRange.Min                            step 164   (div_range)
+      NumberSequenceKeypoint.Envelope            step 50    (div_nskp)
+      TweenInfo.RepeatCount                      step 24    (div_reps)
+      TweenInfo.Reverses                         step 25    (div_rev)
+      UDim.Offset                                step 3     (div_udim)
+      UDim.Scale                                 step 3     (div_scale)
+      Vector3:Dot                                step 76    (div_dot)
+      a Color3 component                         step 127   (div_color3)
+      a Vector3 component                        step 10    (div_vec3)
+      an enum item's Value                       step 65    (div_enumval)
+      the attribute written and read back        step 0     (div_getattr, div_attrnil)
+      the dash positions in a GUID               step 119   (div_guid)
+      typeof of a datatype                       step 92    (div_type)
+      typeof of an Instance                      folded     (div_typeofinst)
+      what GetFullName joins with                step 151   (div_fullname2)
+
+  8 answer(s) are read and thrown away:
+      BrickColor.Name                            (div_brickname)
+      BrickColor.Number                          (div_brick)
+      GetAttributes beyond the one attribute     (div_getattrs)
+      the Random sequence                        (div_rand)
+      the braces around a GUID                   (div_guidbraces)
+      the message Instance.new refuses with      (div_newmsg)
+      the order GetChildren returns children in  (div_children)
+      tostring of an Enum, an enum item, the container or an Instance (div_tsenum, div_tsenumitem, div_tsenums, div_instname)
+
+  So yes, there is decoy, and it is named rather than suspected. Each row
+  was settled by running the build twice with one host answer changed and
+  comparing the fold chain step for step.
+
+DOES IT HOLD TOGETHER
+
+  names recovered: 123, of which 0 are not printable text
+  wrapper forms seen, all of them handled:
+      194 packed function    4
+      68 packed constant     673
+
+IS IT TOO SHORT, AND IS A LAYER MISSING
+
+  steps per function, smallest first:
+      2.c12.c10      5
+      7              5
+      8              6
+      10             7
+      11             7
+      9              8
+      2.c11          11
+      6              13
+      4.c8           14
+      2.c12          31
+      4              38
+      2              70
+      5              71
+      3              93
+      1              152
+      12             180
+      main           2536
+
+  5 function(s) under eight steps.
+  A function that small is normal here: the slice asks one question
+  per helper, and the shortest of them do exactly that - one builds
+  the GUID question, one reads .Inner off a proxy, two call
+  Instance.new with a name the host refuses.
+
+  3247 step(s) across 17 function(s), from 96891 byte(s): 29.8 bytes a step.
+  Every byte is accounted for, so the length is the file's and not this
+  tool's: nothing was dropped to make it fit.
+
+  layers, and what each one gave:
+      1  the outer chunk          decoded
+      2  one loadstring           the interpreter, read
+      3  the slice cipher         slice 1 open, slice 2 waits on the key
+      4  the deserialiser         17 function(s)
+      5  the packed constants     678 value(s)
+      6  the string pointers      123 name(s)
+      7  the packed functions     4 opened
+
+THE VERDICT
+
+  Nothing is left wrapped in the slice that is open, every byte of it
+  accounts for itself, every wrapper form is handled, and every name
+  came out as text.
+
+  What remains is slice 2, and it is not a layer this tool has not
+  reached - it is the same layers behind one number. The key is a hash
+  over the host's answers; seventeen of those answers are folded and
+  known, four more are decoy and known, and one of the folded ones is
+  still answered wrongly here.

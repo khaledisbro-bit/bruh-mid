@@ -299,6 +299,19 @@ def constants_of(fn, block, index):
     for i, const in enumerate(fn["constants"], 1):
         state, value = unpack_constant(const)
         row = {"index": i, "state": state, "value": value, "text": None}
+        # A CONSTANT CAN BE A STRING POINTER ALREADY, with no packing around it.
+        # Layer 5 was only tried on what layer 4 had just unpacked, so a constant
+        # the file stored as {0, slot, material} outright came back as "other" and
+        # its name was left on the table. Seven of them, and the audit is what
+        # found it: a form seen and not handled is a missed layer, whatever else
+        # adds up.
+        if state == "other" and isinstance(const, dict):
+            direct = resolve_text(const, block, index)
+            if direct is not None:
+                row["text"] = direct
+                row["state"] = "text"
+                out.append(row)
+                continue
         if value is None and isinstance(const, dict) and const["arr"] \
                 and const["arr"][0] == WRAP_PROTO:
             row["value"] = const

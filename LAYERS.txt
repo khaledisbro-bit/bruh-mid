@@ -8,9 +8,9 @@ String table: 124 entr(ies).
 Functions: 17.
 
 Constants: 682 in all.
-  116 came out as text, through layers 4 and 5
+  123 came out as text, through layers 4 and 5
   550 came out as a number, through layer 4
-  16 are still wrapped, and say why below
+  9 are still wrapped, and say why below
 
 main function
   instructions 2536, parameters 3, stack 138307, jump key 633355888
@@ -727,15 +727,15 @@ nested function 2.c11
 
 nested function 2.c12
   instructions 31, parameters 1, stack 703834, jump key 1984240614
-       1  [other]
+       1  264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb
        2  487375
        3  3101307
-       4  [other]
-       5  [other]
-       6  [other]
-       7  [other]
-       8  [other]
-       9  [other]
+       4  string
+       5  format
+       6  %.17g
+       7  e([+-])0+(%d+)
+       8  e%1%2
+       9  gsub
       10  [a function, opened under '0']
 
 nested function 4.c8
