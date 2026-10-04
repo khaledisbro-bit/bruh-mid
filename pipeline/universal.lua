@@ -1390,6 +1390,7 @@ VMSMART_READ = function(what, value)
         shown = t .. (typeof ~= nil and ("/" .. tostring(typeof(value))) or "")
     end
     local line = what .. " -> " .. shown
+    VMSMART_LAST_READ, VMSMART_READ_N = line, readN
     VMSMART_EVENT("read", line)
     if readSeen[line] then
         readSeen[line] = readSeen[line] + 1
@@ -1464,6 +1465,70 @@ HID.__GATE = function(prog)
     end
     keyLog[#keyLog + 1] = "gate: the payload decrypted to " .. what
 end
+-- EVERY MODULO THE PROGRAM PERFORMS, with what went in.
+--
+-- The key is five numbers the program accumulates, and an accumulator in this
+-- family is one statement: acc = (acc*k + something) % m. The gate reads the
+-- finished numbers and says nothing about how they got there, so a wrong answer
+-- shows up only as five numbers that are all wrong at once.
+--
+-- The interpreter computes the program's modulo in one place per fused opcode,
+-- and the operands are right there. Watching it gives the whole chain in order:
+-- every value folded, with the counter it was folded at. From that the fold can
+-- be replayed outside the run, and a wrong answer becomes the one step where the
+-- replay and the run disagree, instead of five numbers with nothing to say.
+--
+-- Only the two moduli the accumulators use are kept, because everything else is
+-- the program doing ordinary arithmetic.
+local mods, modN, modKept = {}, 0, 0
+-- WHAT THE FOLD IS GIVEN, call by call.
+--
+-- The three large numbers the gate reads are produced by one function of the
+-- program - ninety-three instructions, three parameters, called a hundred and
+-- ninety-four times a run - and the five numbers move when a host answer moves.
+-- So its arguments are the measurements, in the order they are folded. The
+-- interpreter packs a call's arguments in one place, so this watches that place
+-- and writes down what each call was handed.
+local argsLog, argsN = {}, 0
+VMSMART_ARGS_FN = VMSMART_ARGS_FN or 93
+HID.__ARGS = function(fn, packed)
+    -- A fold step on its own is a number. What places it is what the host was
+    -- last asked: the read or the call just before it. Written down beside each
+    -- step, the chain stops being a list of numbers and becomes a list of
+    -- questions in the order they were put.
+    -- only the fold, so its calls line up one to one with the moduli it performs
+    if fn ~= VMSMART_ARGS_FN then return end
+    if argsN >= 4000 then return end
+    local n = 0
+    local parts = {}
+    if type(packed) == "table" then
+        for i = 1, 8 do
+            local v = rawget(packed, i)
+            if v == nil then break end
+            n = n + 1
+            parts[#parts + 1] = tostring(v)
+        end
+    end
+    argsN = argsN + 1
+    argsLog[#argsLog + 1] = tostring(fn) .. ";" .. tostring(n) .. ";"
+                            .. table.concat(parts, ",")
+                            .. ";" .. tostring(VMSMART_READ_N or 0)
+                            .. ";" .. tostring(VMSMART_LAST_READ or "-")
+                            .. ";" .. tostring(VMSMART_LAST_CALL or "-")
+end
+
+HID.__MOD = function(a, b, pc, op, fn)
+    modN = modN + 1
+    if (b == 1000003 or b == 2147483647) and modKept < 6000
+       and type(a) == "number" then
+        modKept = modKept + 1
+        mods[#mods + 1] = tostring(pc) .. ";" .. tostring(a) .. ";"
+                          .. tostring(b) .. ";" .. tostring(a % b)
+                          .. ";" .. tostring(op) .. ";" .. tostring(fn)
+    end
+    return a % b
+end
+
 HID.__KEY = function(key, ...)
     local parts = {}
     if type(key) == "table" then
@@ -3586,6 +3651,16 @@ end
 if #ciphers > 0 then
     say("---CIPHER---")
     for i = 1, #ciphers do say(ciphers[i]) end
+end
+if #argsLog > 0 then
+    say("---CALLARGS---")
+    say("calls_logged: " .. tostring(argsN))
+    for i = 1, #argsLog do say(argsLog[i]) end
+end
+if #mods > 0 then
+    say("---MODS---")
+    say("mods_total: " .. tostring(modN) .. "  kept: " .. tostring(modKept))
+    for i = 1, #mods do say(mods[i]) end
 end
 say("---READS---")
 say("reads_total: " .. tostring(readN))

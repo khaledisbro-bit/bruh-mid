@@ -1,0 +1,32 @@
+FOLD CHAIN
+
+Each line is one host answer changed on purpose, and the step where
+the run stopped agreeing with the untouched run. The step is where
+that answer is read and folded. A change that parts the chain at a
+later step is read later; one that parts it at step 0 is read before
+anything else; one that does not part it at all is not folded.
+
+/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_brick.out
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
+
+/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_rand.out
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
+
+/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_type.out
+    args  parts at step 92 of 1164
+          untouched: (93, [1, 651140, 2036])
+          changed:   (93, [1, 201239, 2036])
+    mods  parts at step 320 of 4470
+          untouched: (30, 40299364477885, 2147483647, 1833841930, '279', '93')
+          changed:   (28, 830568760, 1000003, 566270, '279', '152')
+
+/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_guid.out
+    args  parts at step 119 of 1164
+          untouched: (93, [1, 776851, 6265])
+          changed:   (93, [1, 546032, 6265])
+    mods  parts at step 425 of 4470
+          untouched: (30, 39869070718925, 2147483647, 1036812370, '279', '93')
+          changed:   (28, 823334268, 1000003, 331799, '279', '152')
+

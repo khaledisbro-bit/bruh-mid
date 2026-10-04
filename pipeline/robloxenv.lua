@@ -199,6 +199,8 @@ function VMSMART_RECORD_CALL(key, ...)
     local shown = receiver .. ":" .. member .. "("
         .. table.concat(parts, ", ") .. ")"
     VMSMART_CALLS[#VMSMART_CALLS + 1] = shown
+    -- the last question put to the host, so a fold step can be placed beside it
+    VMSMART_LAST_CALL = shown
         .. (rid and ("  @on=#" .. tostring(rid)) or "")
         .. (type(at) == "number" and ("  @row=" .. tostring(at)) or "")
     -- and into the one ordered transcript, where it sits between the value that

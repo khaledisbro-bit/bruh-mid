@@ -1,0 +1,322 @@
+WHAT THE BUILD MEASURES, IN ORDER
+
+Every step where the build folds something into the numbers that
+become its key, with the question it had just put to the host. The
+step count is one pass of the measurement layer. A step is not the
+same thing as a question - several steps can follow one answer - but
+the order is the build's own, and a wrong answer shows up at the
+first step after it.
+
+194 fold step(s) in one pass.
+
+step    1
+    last call: Folder:GetAttribute("4rI3AaoQ85")  @on=#2  @row=68
+step    4
+    last read: UDim.Offset -> 155
+    last call: Folder:GetAttribute("4rI3AaoQ85")  @on=#2  @row=68
+step    5
+    last read: UDim.Offset -> 155
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step    8
+    last read: UDim.Offset -> 163
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   11
+    last read: Vector3.X -> 434
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   12
+    last read: Vector3.Y -> 452
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   13
+    last read: Vector3.Z -> 128
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   14
+    last read: UDim.Offset -> 226
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   19
+    last read: UDim.Offset -> 94
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   22
+    last read: TweenInfo.Time -> 0.3125
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   23
+    last read: TweenInfo.EasingStyle -> table/EnumItem
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   24
+    last read: TweenInfo.EasingDirection -> table/EnumItem
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   25
+    last read: TweenInfo.RepeatCount -> 1
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   26
+    last read: TweenInfo.Reverses -> true
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   27
+    last read: TweenInfo.DelayTime -> 0.5
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   28
+    last read: UDim.Offset -> 24
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   31
+    last read: BrickColor.Name -> "Really black"
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   32
+    last read: BrickColor.Number -> 1003
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   34
+    last read: UDim.Offset -> 152
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   40
+    last read: UDim.Offset -> 175
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   42
+    last read: Random:NextInteger() -> 127
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   45
+    last read: UDim.Offset -> 84
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   47
+    last read: NumberSequence.Keypoints -> table/table
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   49
+    last read: NumberSequenceKeypoint.Time -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   50
+    last read: NumberSequenceKeypoint.Value -> 0.65625
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   51
+    last read: NumberSequenceKeypoint.Envelope -> 0.8125
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   52
+    last read: NumberSequenceKeypoint.Time -> 1
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   53
+    last read: NumberSequenceKeypoint.Value -> 0.5
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   54
+    last read: UDim.Offset -> 21
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   60
+    last read: UDim.Offset -> 162
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   65
+    last read: Enum.PartType.Ball.Name -> "Ball"
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   66
+    last read: Enum.PartType.Ball.Value -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   67
+    last read: Enum.PartType.Ball.Name -> "Ball"
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   68
+    last read: Enum.PartType.Ball.Value -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   69
+    last read: UDim.Offset -> 146
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   72
+    last read: UDim.Scale -> 0.6875
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   73
+    last read: UDim.Offset -> 38
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   74
+    last read: UDim.Offset -> 246
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   76
+    last read: Vector3:Dot() -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   78
+    last read: Vector3.X -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   79
+    last read: Vector3.Y -> 0
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   80
+    last read: Vector3.Z -> 320
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   81
+    last read: UDim.Offset -> 56
+    last call: Folder:Destroy()  @on=#2  @row=1148
+step   83
+    last read: UDim.Offset -> 56
+    last call: ReplicatedStorage:IsA("Players")  @on=#6  @row=19929
+step   84
+    last read: UDim.Offset -> 56
+    last call: ReplicatedStorage:IsA("ServiceProvider")  @on=#6  @row=20062
+step   85
+    last read: UDim.Offset -> 56
+    last call: ReplicatedStorage:IsA("RunService")  @on=#6  @row=20192
+step   86
+    last read: UDim.Offset -> 56
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   87
+    last read: UDim.Offset -> 21
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   90
+    last read: UDim.Offset -> 26
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   95
+    last read: UDim.Offset -> 172
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   96
+    last read: UDim.Offset -> 1
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   97
+    last read: UDim.Offset -> 106
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step   98
+    last read: DataModel.ClassName -> "DataModel"
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  101
+    last read: UDim.Offset -> 18
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  102
+    last read: UDim.Offset -> 133
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  103
+    last read: UDim.Offset -> 2
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  107
+    last read: UDim.Offset -> 75
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  108
+    last read: UDim.Offset -> 50
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  109
+    last read: UDim.Offset -> 175
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  112
+    last read: Vector2.X -> 403
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  113
+    last read: Vector2.Y -> 111
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  114
+    last read: UDim.Offset -> 208
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  124
+    last read: UDim.Offset -> 5
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  128
+    last read: Color3.R -> 0.09375
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  129
+    last read: Color3.G -> 0.5
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  130
+    last read: Color3.B -> 0.625
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  131
+    last read: UDim.Offset -> 234
+    last call: ReplicatedStorage:IsA("Folder")  @on=#6  @row=20322
+step  133
+    last read: Part.Size -> table/Vector3
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  134
+    last read: Part.ClassName -> "Part"
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  135
+    last read: Part.Name -> "AZXyj26AUybzMh"
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  137
+    last read: Vector3.X -> 19
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  138
+    last read: Vector3.Y -> 10
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  139
+    last read: Vector3.Z -> 20
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  140
+    last read: UDim.Offset -> 199
+    last call: Part:set_Size(Vector3(X=19,Y=10,Z=20))  @on=#9  @row=31794
+step  141
+    last read: UDim.Offset -> 199
+    last call: Part:Destroy()  @on=#9  @row=34207
+step  149
+    last read: UDim.Offset -> 120
+    last call: Part:Destroy()  @on=#9  @row=34207
+step  151
+    last read: UDim.Offset -> 120
+    last call: Folder:GetFullName()  @on=#10  @row=36064
+step  152
+    last read: UDim.Offset -> 120
+    last call: Folder:GetFullName()  @on=#11  @row=36523
+step  153
+    last read: UDim.Offset -> 213
+    last call: Folder:GetFullName()  @on=#11  @row=37282
+step  154
+    last read: UDim.Offset -> 213
+    last call: Folder:Destroy()  @row=37454
+step  155
+    last read: Part.ClassName -> "Part"
+    last call: Folder:Destroy()  @row=37454
+step  156
+    last read: Folder.ClassName -> "Folder"
+    last call: Folder:Destroy()  @row=37454
+step  157
+    last read: Part.Name -> "Part"
+    last call: Folder:Destroy()  @row=37454
+step  158
+    last read: Folder.Name -> "Folder"
+    last call: Folder:Destroy()  @row=37454
+step  162
+    last read: UDim.Offset -> 55
+    last call: Folder:Destroy()  @row=37454
+step  163
+    last read: UDim.Offset -> 55
+    last call: Folder:Destroy()  @on=#13  @row=39327
+step  165
+    last read: NumberRange.Min -> 51
+    last call: Folder:Destroy()  @on=#13  @row=39327
+step  166
+    last read: NumberRange.Max -> 93
+    last call: Folder:Destroy()  @on=#13  @row=39327
+step  167
+    last read: UDim.Offset -> 202
+    last call: Folder:Destroy()  @on=#13  @row=39327
+step  169
+    last read: UDim.Offset -> 202
+    last call: Model:FindFirstChildWhichIsA("Instance")  @on=#14  @row=40675
+step  173
+    last read: Folder.Parent -> table/Instance
+    last call: Model:FindFirstChildWhichIsA("Instance")  @on=#14  @row=40675
+step  174
+    last read: UDim.Offset -> 36
+    last call: Model:FindFirstChildWhichIsA("Instance")  @on=#14  @row=40675
+step  175
+    last read: UDim.Offset -> 36
+    last call: Folder:Destroy()  @row=41498
+step  177
+    last read: Color3:Lerp() -> table/Color3
+    last call: Folder:Destroy()  @row=41498
+step  178
+    last read: Color3.R -> 0.15625
+    last call: Folder:Destroy()  @row=41498
+step  179
+    last read: Color3.G -> 0.625
+    last call: Folder:Destroy()  @row=41498
+step  180
+    last read: Color3.B -> 0.5625
+    last call: Folder:Destroy()  @row=41498
+step  181
+    last read: UDim.Offset -> 159
+    last call: Folder:Destroy()  @row=41498
+step  183
+    last read: Rect.Max -> table/Vector2
+    last call: Folder:Destroy()  @row=41498
+step  186
+    last read: Vector2.X -> 21
+    last call: Folder:Destroy()  @row=41498
+step  187
+    last read: Vector2.Y -> 70
+    last call: Folder:Destroy()  @row=41498
+step  188
+    last read: Vector2.X -> 89
+    last call: Folder:Destroy()  @row=41498
+step  189
+    last read: Vector2.Y -> 154
+    last call: Folder:Destroy()  @row=41498
+step  190
+    last read: UDim.Offset -> 142
+    last call: Folder:Destroy()  @row=41498
