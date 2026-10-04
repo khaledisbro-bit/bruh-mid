@@ -457,9 +457,27 @@ T.Rect = function(a, b, c, d)
     local min, max
     if rawtype(a) == "table" then min, max = a, b
     else min, max = T.Vector2(a, b), T.Vector2(c, d) end  -- Rect.new takes either
+    -- THE HOST WILL NOT HOLD A RECT INSIDE OUT. A Rect whose maximum is below
+    -- its minimum is not a shape, and the host's constructor raises the maximum
+    -- to the minimum, per axis, rather than keeping what it was handed. This
+    -- file kept what it was handed, so a Rect built with its corners the wrong
+    -- way round answered Max with the smaller corner where a client answers with
+    -- the larger one - and this build reads Rect.Max and folds it.
+    --
+    -- Which way the host clamps is the one thing here not read off the file: a
+    -- maximum below a minimum has to move, and moving the maximum up is what
+    -- keeps Min and Width meaning what they say. Recorded as derived.
+    local mnx, mny = num(min.X), num(min.Y)
+    local mxx, mxy = num(max.X), num(max.Y)
+    if mxx < mnx or mxy < mny then
+        VMSMART_TYPES_STUBBED["Rect.Max clamped up to Min"] = true
+        if mxx < mnx then mxx = mnx end
+        if mxy < mny then mxy = mny end
+        max = T.Vector2(mxx, mxy)
+    end
     return make("Rect", { Min = min, Max = max,
-                          Width = f32(num(max.X) - num(min.X)),
-                          Height = f32(num(max.Y) - num(min.Y)) })
+                          Width = f32(mxx - mnx),
+                          Height = f32(mxy - mny) })
 end
 
 T.Ray = function(origin, direction)

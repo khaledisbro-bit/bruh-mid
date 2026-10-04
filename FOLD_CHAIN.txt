@@ -4,12 +4,24 @@ The answers this build folds into its key, and the ones it reads and
 throws away. Sorted by where each one enters the chain.
 
   folded at step 0       the attribute written and read back
+  folded at step 0       the attribute missing altogether
   folded at step 3       UDim.Offset
+  folded at step 3       UDim.Scale
+  folded at step 10      a Vector3 component
+  folded at step 24      TweenInfo.RepeatCount
+  folded at step 25      TweenInfo.Reverses
   folded at step 50      NumberSequenceKeypoint.Envelope
+  folded at step 65      an enum item's Value
   folded at step 76      Vector3:Dot
   folded at step 82      IsA
+  folded at step 85      IsA(Folder) alone
   folded at step 92      typeof of a datatype
-  folded at step 119     the shape of a GUID
+  folded at step 119     the dash positions in a GUID
+  folded at step 127     a Color3 component
+  folded at step 151     what GetFullName joins with
+  folded at step 164     NumberRange.Min
+  read and thrown away   the braces around a GUID
+  read and thrown away   the Instance.new refusal message
   read and thrown away   BrickColor.Number
   read and thrown away   the Random sequence
 
@@ -33,6 +45,14 @@ the attribute written and read back
           untouched: (30, 79982077966237, 2147483647, 1197017369, '279', '93')
           changed:   (28, 1656720098, 1000003, 715130, '279', '152')
 
+the attribute missing altogether
+    args  parts at step 0 of 1164
+          untouched: (93, [1, 111730, 285])
+          changed:   (93, [1, 259590, 285])
+    mods  parts at step 2 of 4470
+          untouched: (30, 79982077966237, 2147483647, 1197017369, '279', '93')
+          changed:   (28, 1656720098, 1000003, 715130, '279', '152')
+
 UDim.Offset
     args  parts at step 3 of 1164
           untouched: (93, [2, 1096, 5870])
@@ -41,6 +61,46 @@ UDim.Offset
           untouched: (38, 54912996, 1000003, 912834, '279', '71')
           changed:   (38, 54912998, 1000003, 912836, '279', '71')
 
+UDim.Scale
+    args  parts at step 3 of 1164
+          untouched: (93, [2, 1096, 5870])
+          changed:   (93, [2, 1098, 5870])
+    mods  parts at step 11 of 4470
+          untouched: (38, 54912996, 1000003, 912834, '279', '71')
+          changed:   (38, 54912998, 1000003, 912836, '279', '71')
+
+a Vector3 component
+    args  parts at step 10 of 1164
+          untouched: (93, [1, 158494, 3183])
+          changed:   (93, [1, 175765, 3183])
+    mods  parts at step 36 of 4470
+          untouched: (30, 74862070333817, 2147483647, 790399397, '279', '93')
+          changed:   (28, 1550032763, 1000003, 28113, '279', '152')
+
+TweenInfo.RepeatCount
+    args  parts at step 24 of 1164
+          untouched: (93, [1, 929420, 1600])
+          changed:   (93, [1, 678457, 1600])
+    mods  parts at step 82 of 4470
+          untouched: (30, 80737558923745, 2147483647, 763731133, '279', '93')
+          changed:   (28, 1671584158, 1000003, 579145, '279', '152')
+
+TweenInfo.Reverses
+    args  parts at step 25 of 1164
+          untouched: (93, [1, 367353, 8065])
+          changed:   (93, [1, 182711, 8065])
+    mods  parts at step 85 of 4470
+          untouched: (30, 37011786143975, 2147483647, 2052971577, '279', '93')
+          changed:   (28, 763731133, 1000003, 728844, '279', '152')
+
+an enum item's Value
+    args  parts at step 65 of 1164
+          untouched: (93, [1, 950827, 3015])
+          changed:   (93, [1, 691413, 3015])
+    mods  parts at step 231 of 4470
+          untouched: (30, 9162812812015, 2147483647, 1647573913, '279', '93')
+          changed:   (28, 185202345, 1000003, 201790, '279', '152')
+
 NumberSequenceKeypoint.Envelope
     args  parts at step 50 of 1164
           untouched: (93, [1, 592468, 789])
@@ -48,6 +108,22 @@ NumberSequenceKeypoint.Envelope
     mods  parts at step 175 of 4470
           untouched: (30, 73100574274324, 2147483647, 230930444, '279', '93')
           changed:   (28, 1509604067, 1000003, 599540, '279', '152')
+
+a Color3 component
+    args  parts at step 127 of 1164
+          untouched: (93, [1, 729025, 4355])
+          changed:   (93, [1, 595305, 4355])
+    mods  parts at step 453 of 4470
+          untouched: (30, 36974290873653, 2147483647, 1064923254, '279', '93')
+          changed:   (28, 761643707, 1000003, 641424, '279', '152')
+
+NumberRange.Min
+    args  parts at step 164 of 1164
+          untouched: (93, [1, 824991, 445])
+          changed:   (93, [1, 2947, 445])
+    mods  parts at step 573 of 4470
+          untouched: (30, 16610455917135, 2147483647, 1817391237, '279', '93')
+          changed:   (28, 343704947, 1000003, 703918, '279', '152')
 
 Vector3:Dot
     args  parts at step 76 of 1164
@@ -65,6 +141,14 @@ IsA
           untouched: (30, 59638561545121, 2147483647, 793184284, '279', '93')
           changed:   (28, 1233493997, 1000003, 490298, '279', '152')
 
+IsA(Folder) alone
+    args  parts at step 85 of 1164
+          untouched: (93, [1, 657068, 6809])
+          changed:   (93, [1, 275727, 6809])
+    mods  parts at step 296 of 4470
+          untouched: (30, 14456643850960, 2147483647, 1931423003, '279', '93')
+          changed:   (28, 294369747, 1000003, 368865, '279', '152')
+
 typeof of a datatype
     args  parts at step 92 of 1164
           untouched: (93, [1, 651140, 2036])
@@ -73,13 +157,29 @@ typeof of a datatype
           untouched: (30, 40299364477885, 2147483647, 1833841930, '279', '93')
           changed:   (28, 830568760, 1000003, 566270, '279', '152')
 
-the shape of a GUID
+what GetFullName joins with
+    args  parts at step 151 of 1164
+          untouched: (93, [1, 914698, 1116])
+          changed:   (93, [1, 113874, 1116])
+    mods  parts at step 531 of 4470
+          untouched: (30, 9336221715222, 2147483647, 1110301713, '279', '93')
+          changed:   (28, 189763176, 1000003, 762609, '279', '152')
+
+the dash positions in a GUID
     args  parts at step 119 of 1164
           untouched: (93, [1, 776851, 6265])
           changed:   (93, [1, 546032, 6265])
     mods  parts at step 425 of 4470
           untouched: (30, 39869070718925, 2147483647, 1036812370, '279', '93')
           changed:   (28, 823334268, 1000003, 331799, '279', '152')
+
+the braces around a GUID
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
+
+the Instance.new refusal message
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
 
 BrickColor.Number
     args  identical, 1164 step(s)
