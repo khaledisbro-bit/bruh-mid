@@ -35,12 +35,17 @@ local KEY = { 942594296, 1658152469, 1676287984 }
 -- layer 1: the bytes
 ----------------------------------------------------------------------------
 
--- EXTRA STRINGS TO TRY as the key to a packed function. A packed function's key
--- is a string the program computes and compares, and the file stores that string
--- only as a digest, so it is the one thing here no amount of reading recovers: it
--- has to be guessed, and the file's own tag then says yes or no. Put candidates
--- here; anything right opens, anything wrong is refused.
-local MATERIALS = { "!boost" }
+-- EXTRA STRINGS TO TRY as the key to a packed function.
+--
+-- A packed function's key is a string the program computes and compares, and the
+-- file keeps only a digest of it. That makes it the one thing in here that no
+-- amount of reading recovers - it has to be offered from outside, and the file's
+-- own tag then answers yes or no in one step.
+--
+-- This list is EMPTY on purpose. Nothing is put in it here, because a guess that
+-- came from somewhere other than these bytes is not a result: it is an input. Put
+-- your candidates in and anything right opens; anything wrong is refused.
+local MATERIALS = { }
 
 local SLICE2_HEX = {
     "9c52ef5c90fe0fb3d448959e88b2abe395fe41cbd8b9bd57743fd5fbb1e45d2f1ced956a2e09038f0ffd35e4146f61caacf6fc77374bc0557a053f29",

@@ -62,7 +62,7 @@ Read out of its own bytes, with every name resolved:
 
   function 2.1, 2 parameters, 45 steps
       lower, and a digest
-      and one packed function, opened under the material "!boost"
+      and one packed function, 393 bytes, under the salt proto:p.2.1e1
 
 All 10,494 bytes account for themselves. The whole string table's sixteen shut
 entries came out: game, Players, GetService, PlayerAdded, Connect, Character,
@@ -71,12 +71,29 @@ lower, and a digest.
 
 THE ONE THING THE FILE NEVER STORES
 
-The string the program compares a chat message against. It is not in the file as
-data: it is the KEY to a packed function, and the file keeps only a digest of it.
-So it has to be guessed, and the file's own tag says yes or no to a guess in one
-step. real.lua takes candidates in MATERIALS at the top for exactly that, and the
-tag accepted "!boost" - which came from outside the file, and is the only thing
-here that did.
+The string the program compares a message against. It is not in the file as data:
+it is the KEY to the packed function in function 2.1, and the file keeps only a
+digest of it. So it cannot be read out - it has to be offered from outside, and
+the file's own tag then answers yes or no in one step. real.lua takes candidates
+in MATERIALS at the top for exactly that, and that list is empty here on purpose:
+a guess that came from somewhere other than these bytes is an input, not a result.
 
-Everything else - the key, the names, the numbers, the shape - came out of the
-bytes.
+Everything else - the key, the sixteen names, the numbers, the shape, the function
+tree - came out of the bytes and is checked by the file's own tag.
+
+WHAT CAME FROM WHERE, PLAINLY
+
+  from the bytes, and proved by the file's own tag:
+      the key 942594296, 1658152469, 1676287984
+      all four functions and their shapes
+      all sixteen names of the string table
+      the numbers the second function holds
+      that the second slice accounts for every one of its 10,494 bytes
+
+  from outside the bytes:
+      the words used as cribs to start the known plaintext attack. They were
+      guesses at what the entries of a given length might say, and the file's own
+      arithmetic is what confirmed them - six of them agreeing, then a seventh
+      reading of a digest agreeing with all six, then the tag. A crib is an input
+      to the attack. It is not the result, and nothing was written into any file
+      here on the strength of one.
