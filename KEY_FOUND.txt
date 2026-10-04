@@ -1,0 +1,82 @@
+KEY_FOUND.TXT - the second slice is open
+
+THE KEY
+
+  942594296, 1658152469, 1676287984
+
+Proved, not guessed. The file carries an HMAC tag over the second slice's own
+bytes, keyed with its salt and the three numbers written as text. With this key
+that tag comes out as:
+
+  cd7d7829287d88c51333c08e4f9116fecce2010ec8a3043d71fc04df06b86238
+
+which is the tag the file carries, to the last digit. And the decryption's first
+five bytes are MYqme, which is the test the file's own reader makes before it will
+read anything.
+
+HOW IT WAS FOUND
+
+Not by searching 2^93 keys, and not by getting the host answers right. By known
+plaintext, from the names of the script.
+
+  1  The string table is shared between both slices. Sixteen of its entries are
+     keyed from the measured numbers rather than from the file's own salt, and
+     those sixteen are the real script's names. Their LENGTHS are readable
+     without any key at all: 4, 7, 10, 11, 7, 9, 8, 21, 9, 4, 4, 6, 7, 7, 5, 64.
+
+  2  One entry is 21 bytes and the key over it is 12 bytes repeating, so a correct
+     guess at its text has to agree with itself over the 9 bytes that reuse the
+     key's start. FindFirstChildOfClass is 21 characters, and it agreed over all
+     9 - 72 bits of confirmation.
+
+  3  That gives the 12 key bytes, which are three numbers: 1249136720,
+     1748022378, 1574719006. Each is a linear form over the key triple plus a
+     seed the constant carries, so two of the three numbers are fixed once the
+     third is chosen. The key lies on a single line.
+
+  4  Five more entries were read the same way - GetService, PlayerAdded,
+     Character, Humanoid, WalkSpeed - and every one agreed with the first on
+     where that line is, each agreement a 31-bit coincidence if wrong.
+
+  5  The 64 byte entry is a digest, so its plaintext is hex and nothing else. Of
+     196,608 possible readings of its first eight key bytes, exactly ONE agreed
+     with the line. That reading then predicted its remaining four key bytes from
+     the first entry's, and all twenty positions they touch came out hex.
+
+  6  Walking the line and keeping the point where the first five bytes come out
+     MYqme left one candidate in 2,147,483,647. The file's tag confirmed it.
+
+WHAT THE SECOND SLICE SAYS
+
+Read out of its own bytes, with every name resolved:
+
+  main, 3 parameters, 13 steps
+      game  Players  GetService  PlayerAdded  Connect
+
+  function 1, 1 parameter, 56 steps
+      Character  Humanoid  FindFirstChildOfClass  WalkSpeed  task  wait  Parent
+      numbers: 2, 4, 3
+
+  function 2, 2 parameters, 6 steps
+      Chatted  Connect
+
+  function 2.1, 2 parameters, 45 steps
+      lower, and a digest
+      and one packed function, opened under the material "!boost"
+
+All 10,494 bytes account for themselves. The whole string table's sixteen shut
+entries came out: game, Players, GetService, PlayerAdded, Connect, Character,
+Humanoid, FindFirstChildOfClass, WalkSpeed, task, wait, Parent, Chatted, Connect,
+lower, and a digest.
+
+THE ONE THING THE FILE NEVER STORES
+
+The string the program compares a chat message against. It is not in the file as
+data: it is the KEY to a packed function, and the file keeps only a digest of it.
+So it has to be guessed, and the file's own tag says yes or no to a guess in one
+step. real.lua takes candidates in MATERIALS at the top for exactly that, and the
+tag accepted "!boost" - which came from outside the file, and is the only thing
+here that did.
+
+Everything else - the key, the names, the numbers, the shape - came out of the
+bytes.

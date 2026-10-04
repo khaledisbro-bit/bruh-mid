@@ -146,6 +146,33 @@ class Reader:
         raise ValueError("unknown tag %d at %d" % (t, self.p - 1))
 
 
+def li(seed, key):
+    """The key material the file builds from the measured numbers.
+
+    Three linear forms over the key triple and one seed the constant carries,
+    each written out as four bytes, low end first. Twelve bytes in all, used as a
+    repeating key. This is the form every constant of the real slice uses, which
+    is why that slice stays shut until the key is known - and opens the moment it
+    is.
+    """
+    try:
+        s = int(seed)
+    except (TypeError, ValueError):
+        s = 0
+    L1, L2, L3 = (k % MOD for k in key)
+    C = 1812386200
+    lt = (L1 * 48271 + L2 * 131 + L3 * 17 + C * 257 + s * 31 + 104729) % MOD
+    lT = (L2 * 65599 + L3 * 257 + L1 * 31 + C * 17 + s * 313 + 524287) % MOD
+    lk = (L3 * 31337 + L1 * 193 + L2 * 73 + C * 7919 + s * 257 + 131071) % MOD
+    out = bytearray()
+    for v in (lt, lT, lk):
+        out += bytes(((v >> (8 * i)) & 255) for i in range(4))
+    return bytes(out)
+
+
+MOD = 2147483647
+
+
 def repeat_xor(data, material):
     """The cipher's other branch: exclusive-or against a string repeated."""
     key = material.encode() if isinstance(material, str) else material
@@ -222,7 +249,7 @@ def string_index(block, offset):
     return out
 
 
-def unpack_constant(const):
+def unpack_constant(const, key=None):
     """Layer 4. Returns (state, value). State says why, when there is no value.
 
     A constant with the fourth field set to 1 takes its key from the measured
@@ -250,10 +277,14 @@ def unpack_constant(const):
                 None)
     if len(arr) < 3 or arr[0] != WRAP_CONST:
         return "other", const
-    if const["map"].get(4) == 1 or (len(arr) >= 4 and arr[3] == 1):
+    flagged = const["map"].get(4) == 1 or (len(arr) >= 4 and arr[3] == 1)
+    if flagged and key is None:
         return "needs the measured key", None
     blob, g = arr[1], int(arr[2])
-    material = str(((g * MIX) % MOD2 + SQ) % MOD2)
+    if flagged:
+        material = li(g, key)
+    else:
+        material = str(((g * MIX) % MOD2 + SQ) % MOD2)
     inner = repeat_xor(blob, material)
     r = Reader(inner, 0, False)
     try:
@@ -271,25 +302,28 @@ def _text(v):
     return str(v)
 
 
-def resolve_text(value, block, index):
+def resolve_text(value, block, index, key=None):
     """Layer 5. A pointer into the string table becomes the text it names."""
     if not isinstance(value, dict):
         return None
     arr = value["arr"]
     if len(arr) < 3 or arr[0] != WRAP_TEXT:
         return None
-    if value["map"].get(4) == 1 or (len(arr) >= 4 and arr[3] == 1):
+    flagged = value["map"].get(4) == 1 or (len(arr) >= 4 and arr[3] == 1)
+    if flagged and key is None:
         return None
     slot = int(arr[1])
     if slot < 1 or slot > len(index):
         return None
     material = arr[2]
-    material = material.decode("latin-1") if isinstance(material, bytes) else str(material)
     start, length = index[slot - 1]
+    if flagged:
+        return repeat_xor(block[start:start + length], li(material, key))
+    material = material.decode("latin-1") if isinstance(material, bytes) else str(material)
     return repeat_xor(block[start:start + length], LQ + ":" + material)
 
 
-def constants_of(fn, block, index):
+def constants_of(fn, block, index, key=None):
     """Every constant of one function, carried as far as the layers go.
 
     Each entry is a dict with what it ended as and how it got there, so a reader
@@ -297,7 +331,7 @@ def constants_of(fn, block, index):
     """
     out = []
     for i, const in enumerate(fn["constants"], 1):
-        state, value = unpack_constant(const)
+        state, value = unpack_constant(const, key)
         row = {"index": i, "state": state, "value": value, "text": None}
         # A CONSTANT CAN BE A STRING POINTER ALREADY, with no packing around it.
         # Layer 5 was only tried on what layer 4 had just unpacked, so a constant
@@ -306,7 +340,7 @@ def constants_of(fn, block, index):
         # found it: a form seen and not handled is a missed layer, whatever else
         # adds up.
         if state == "other" and isinstance(const, dict):
-            direct = resolve_text(const, block, index)
+            direct = resolve_text(const, block, index, key)
             if direct is not None:
                 row["text"] = direct
                 row["state"] = "text"
@@ -316,7 +350,7 @@ def constants_of(fn, block, index):
                 and const["arr"][0] == WRAP_PROTO:
             row["value"] = const
         if state in ("ok", "plain"):
-            text = resolve_text(value, block, index)
+            text = resolve_text(value, block, index, key)
             if text is not None:
                 row["text"] = text
                 row["state"] = "text"
@@ -429,7 +463,7 @@ def walk(block, slice_table, slice_number, key=None, index_slice=3, plain=None):
 
     def one(pos, path):
         fn = read_function(plain, pos)
-        rows = constants_of(fn, block, index)
+        rows = constants_of(fn, block, index, key)
         functions.append({
             "path": path,
             "instructions": len(fn["instructions"]),
@@ -479,7 +513,7 @@ def walk(block, slice_table, slice_number, key=None, index_slice=3, plain=None):
                     "params": sub["params"],
                     "stack": sub["stack"],
                     "jump_key": sub["jump_key"],
-                    "constants": constants_of(sub, block, index),
+                    "constants": constants_of(sub, block, index, key),
                     "children": len(sub["children"]),
                     "material": material,
                 })

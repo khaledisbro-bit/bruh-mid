@@ -1,0 +1,35 @@
+THE SLICE, FUNCTION BY FUNCTION
+
+Every function the slice carries, with the names and numbers it
+holds, in its own order. The names came out of the file's own bytes
+through the constant layers; nothing here is guessed and nothing is
+invented. What is missing is the statements between them, because the
+opcode numbers change per instruction and writing Lua from a guess at
+them would be fiction.
+
+4 function(s).
+
+main(3 parameters)
+    13 step(s), stack 658845, jump key 1224959151
+    names, in order:
+        game  Players  GetService  PlayerAdded  Connect
+
+fn 1(1 parameter)
+    56 step(s), stack 527469, jump key 1188054535
+    names, in order:
+        Character  Humanoid  FindFirstChildOfClass  WalkSpeed  task  wait  
+        Parent
+    numbers: 3, first few: 2, 4, 3
+
+fn 2(2 parameters)
+    6 step(s), stack 764925, jump key 1370660329
+    names, in order:
+        Chatted  Connect
+
+fn 2.1(2 parameters)
+    45 step(s), stack 601503, jump key 1091055403
+    names, in order:
+        lower  
+        b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235
+    still wrapped: 1
+

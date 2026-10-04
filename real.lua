@@ -27,11 +27,20 @@
 --
 -- Set KEY to the three numbers and run:   luau real.lua
 
-local KEY = nil   -- example shape: { 562797805, 1581986302, 337997813 }
+local KEY = { 942594296, 1658152469, 1676287984 }
+-- recovered, and proved by the file's own tag over these very bytes:
+--   cd7d7829287d88c51333c08e4f9116fecce2010ec8a3043d71fc04df06b86238
 
 ----------------------------------------------------------------------------
 -- layer 1: the bytes
 ----------------------------------------------------------------------------
+
+-- EXTRA STRINGS TO TRY as the key to a packed function. A packed function's key
+-- is a string the program computes and compares, and the file stores that string
+-- only as a digest, so it is the one thing here no amount of reading recovers: it
+-- has to be guessed, and the file's own tag then says yes or no. Put candidates
+-- here; anything right opens, anything wrong is refused.
+local MATERIALS = { "!boost" }
 
 local SLICE2_HEX = {
     "9c52ef5c90fe0fb3d448959e88b2abe395fe41cbd8b9bd57743fd5fbb1e45d2f1ced956a2e09038f0ffd35e4146f61caacf6fc77374bc0557a053f29",
@@ -319,6 +328,30 @@ local function constMaterial(g)
     return tostring((g * 7919 % MOD2 + SQ) % MOD2)
 end
 
+-- THE OTHER MATERIAL, the one built from the key. Every constant of the real
+-- slice uses this: three linear forms over the key triple and the seed the
+-- constant carries, each written out as four bytes, low end first. Twelve bytes
+-- used as a repeating key. This is why the slice stays shut without the key and
+-- opens with it.
+local function keyMaterial(seed, key)
+    local s = tonumber(seed) or 0
+    local C = 1812386200
+    local lt = (key[1] * 48271 + key[2] * 131 + key[3] * 17
+                + C * 257 + s * 31 + 104729) % MOD
+    local lT = (key[2] * 65599 + key[3] * 257 + key[1] * 31
+                + C * 17 + s * 313 + 524287) % MOD
+    local lk = (key[3] * 31337 + key[1] * 193 + key[2] * 73
+                + C * 7919 + s * 257 + 131071) % MOD
+    local out = {}
+    for _, v in ipairs({ lt, lT, lk }) do
+        out[#out + 1] = string.char(v % 256)
+        out[#out + 1] = string.char(math.floor(v / 256) % 256)
+        out[#out + 1] = string.char(math.floor(v / 65536) % 256)
+        out[#out + 1] = string.char(math.floor(v / 16777216) % 256)
+    end
+    return table.concat(out)
+end
+
 ----------------------------------------------------------------------------
 -- layer 3: the reader. One reader, two modes: the function reader inverts its
 -- length bytes, the constant reader does not.
@@ -474,8 +507,15 @@ local function unwrapConstant(c)
     local arr = c.arr
     if arr[1] == WRAP_PROTO then return "packed function", c end
     if arr[1] ~= WRAP_CONST or #arr < 3 then return "other", c end
-    if c.map[4] == 1 or arr[4] == 1 then return "needs the measured key", nil end
-    local inner = repeatXor(arr[2], constMaterial(arr[3]))
+    local flagged = (c.map[4] == 1) or (arr[4] == 1)
+    local material
+    if flagged then
+        if KEY == nil then return "needs the measured key", nil end
+        material = keyMaterial(arr[3], KEY)
+    else
+        material = constMaterial(arr[3])
+    end
+    local inner = repeatXor(arr[2], material)
     local R = newReader(inner, 1, false)
     local ok, value = pcall(R.value)
     if not ok then return "would not read", nil end
@@ -487,11 +527,15 @@ local function resolveText(v)
     if type(v) ~= "table" then return nil end
     local arr = v.arr
     if arr[1] ~= WRAP_TEXT or #arr < 3 then return nil end
-    if v.map[4] == 1 or arr[4] == 1 then return nil end
+    local flagged = (v.map[4] == 1) or (arr[4] == 1)
     local slot = arr[2]
     local e = INDEX[slot]
     if not e then return nil end
     local raw = string.sub(STRINGTABLE, e.offset, e.offset + e.length - 1)
+    if flagged then
+        if KEY == nil then return nil end
+        return repeatXor(raw, keyMaterial(arr[3], KEY))
+    end
     return repeatXor(raw, LQ .. ":" .. tostring(arr[3]))
 end
 
@@ -561,6 +605,9 @@ end
 
 -- layer 6: try what the file already gave up, keep what the magic confirms
 local function openPacked()
+    -- the guesses first: a packed function's key is never stored, so a candidate
+    -- from MATERIALS is the only way in, and the magic says whether it is right
+    for _, extra in ipairs(MATERIALS) do names[#names + 1] = extra end
     local openedAny = 0
     for round = 1, 8 do
         local progress = false

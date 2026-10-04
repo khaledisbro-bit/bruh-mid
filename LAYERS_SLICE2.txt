@@ -1,0 +1,46 @@
+LAYERS
+
+Slice 2, 10494 byte(s).
+Encrypted: yes
+First five bytes: MYqme, which is what the reader demands.
+Deserialised 10494 of 10494 byte(s).
+String table: 124 entr(ies).
+Functions: 4.
+
+Constants: 20 in all.
+  16 came out as text, through layers 4 and 5
+  3 came out as a number, through layer 4
+  1 are still wrapped, and say why below
+
+main function
+  instructions 13, parameters 3, stack 658845, jump key 1224959151
+       1  game
+       2  Players
+       3  GetService
+       4  PlayerAdded
+       5  Connect
+
+nested function 1
+  instructions 56, parameters 1, stack 527469, jump key 1188054535
+       1  Character
+       2  Humanoid
+       3  FindFirstChildOfClass
+       4  WalkSpeed
+       5  2
+       6  4
+       7  task
+       8  wait
+       9  3
+      10  Parent
+
+nested function 2
+  instructions 6, parameters 2, stack 764925, jump key 1370660329
+       1  Chatted
+       2  Connect
+
+nested function 2.1
+  instructions 45, parameters 2, stack 601503, jump key 1091055403
+       1  lower
+       2  b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235
+       3  [a function, 393 byte(s), checked under salt 'proto:p.2.1e1']
+
