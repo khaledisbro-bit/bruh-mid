@@ -1,83 +1,95 @@
-real.txt - THE RESULT
-=====================================================================
+REAL.TXT - what the layers gave up, and what is left
 
-THE ANSWER IN ONE LINE
----------------------------------------------------------------------
-  Your script is 10494 bytes inside the file, at offset 96902 of the
-  block the loader decompresses. It is encrypted. Its key is three
-  numbers that are not stored anywhere: they are computed from what the
-  machine answers while the decoy layer runs. The key this environment
-  produces is wrong, so the script is still not readable.
+THE LAYER MAP IS NOW COMPLETE, AND IT IS SIX LAYERS DEEP
 
-WHAT IS PROVEN, NOT ASSUMED
----------------------------------------------------------------------
-  The cipher. Reimplemented from the interpreter's own source and run
-  against a piece whose key the file carries. It reproduces the build's
-  own output byte for byte:
-      piece 1, 96891 bytes, key "2111447040"
-      first bytes produced here : 4d59716d65a143111b3cf7aefaaeffffaeffffae
-      first bytes the build made: 4d59716d65a143111b3cf7aefaaeffffaeffffae
+The earlier runs read one layer and stopped. Reading one layer is why the output
+came back as numbers instead of names. Here are all six, each one checked against
+the file's own arithmetic:
 
-  The check the build runs before it decrypts. It is HMAC-SHA256 over
-  the ciphertext, keyed by the salt, a zero byte, and the key material.
-  Verified on the same piece:
-      computed: 75a8b0d01aaea83422ca96a111793743d5596b959569f3295c6a91bb2e70e532
-      in file : 75a8b0d01aaea83422ca96a111793743d5596b959569f3295c6a91bb2e70e532
+  layer 1  the outer chunk. A base85 body inside return({...}), decompressed by
+           a loader the file carries in the open.
+  layer 2  one loadstring. Out comes the interpreter, and with it a slice table:
+           four regions of the decompressed block by offset and length.
+  layer 3  each slice, decrypted. Three numbers walk forward once per byte. The
+           key is built while layer 2 runs, out of what the machine answers.
+  layer 4  the decrypted slice, deserialised. The reader refuses anything not
+           starting MYqme, stores every length byte inverted, folds signed
+           numbers, and tags values with its own byte numbers.
+  layer 5  each constant, unpacked. A constant is not a value. It is
+           {68, blob, g}, and the blob decrypts under a key made from g alone:
+           tostring((g * 7919 % 2147483629 + sq) % 2147483629), with sq a hex
+           literal the file carries. No measuring needed.
+  layer 6  the pointer resolved. What layer 5 gives is often {0, slot, material},
+           a pointer into the string table, which is the third slice. The entry
+           decrypts under "1812386200:" .. material. Out comes the name.
 
-  The key's own arithmetic. Five measured numbers go into three linear
-  forms mod 2147483647. The five this run measured give exactly the
-  three the build used:
-      Si = 768435
-      Sq = 553584
-      SJ = 1705633901
-      Se = 1508207997
-      SU = 1621166966
-      ->  562797805, 1581986302, 337997813
+  and one more, for functions carried as constants:
+           {194, blob, salt, tag} is a whole function, packed. Its key is a
+           string the program computes while it runs. The file carries a tag over
+           those bytes, so a guess at the key is confirmed or rejected at once.
 
-  So there is an exact offline test for any candidate key: it either
-  reproduces the tag the file carries or it does not, and the answer
-  takes microseconds with nothing running.
+LAYERS 4 TO 6 NEED NO KEY AT ALL
 
-WHAT THE SEARCH SETTLED
----------------------------------------------------------------------
-  Each of the five measured numbers was taken as the only wrong one and
-  scanned over its whole range - 2147483647 values each, 10737418235 in
-  all. A candidate was kept when its decryption looked like a program
-  rather than like noise (48 uniform bytes hold about 41 distinct values;
-  the piece whose plaintext is known holds 25; anything at or under 34
-  was kept) and then checked against the file's own tag.
+This is the part the earlier passes missed. Only the slice decryption needs the
+measured numbers. Everything after it is arithmetic over bytes the file already
+gave up. Run on the first slice, the one the run reaches, the layers produce:
 
-      Si   8604 candidates kept, none passed
-      Sq   8557 candidates kept, none passed
-      SJ   8719 candidates kept, none passed
-      Se   8593 candidates kept, none passed
-      SU   8566 candidates kept, none passed
+  13 functions, 96891 of 96891 bytes accounted for
+  671 constants in all
+  116 of them came out as text
+  550 came out as numbers
+  2 packed functions opened under keys the file's own tag confirmed
+  3 left wrapped, and each one says why
 
-  The search was tested on a key planted on purpose before its result was
-  believed: it found that key, and the tag check accepted it.
+The 116 names are real names, read out of the file's own bytes: Instance, new,
+Folder, SetAttribute, GetAttributes, typeof, Destroy, Enum, PartType,
+GetEnumItems, Vector3, X, Y, Z, game, FindService, Lighting, GetService,
+ClassName, TweenInfo, EasingStyle, Back, EasingDirection, Out, Time,
+RepeatCount, Reverses, DelayTime, BrickColor, Really black, Name, Number,
+Workspace, workspace, Changed, Random, Clone, and more. The full list with every
+function and every constant is in LAYERS.txt.
 
-  So no single wrong answer explains it. At least two of the five numbers
-  are wrong together, and a joint search over two is 2^62 - out of reach.
+Two of the four digests also came out as plain constants, which settles the
+earlier reading: they sit in the code as text, and are not a fingerprint of the
+machine.
 
-WHERE THAT LEAVES IT
----------------------------------------------------------------------
-  Everything the build double-checks about the host, this environment
-  now answers correctly - which is why it gets far enough to ask for the
-  encrypted piece at all, something it never did before. What is wrong is
-  in answers the build folds without checking, and more than one of them.
+WHAT IS STILL SHUT
 
-  Two ways to the script from here, and both are real:
+The second slice. It holds the real script, 10494 bytes. Its key is three
+numbers, and the numbers are not stored anywhere. The first layer measures them
+off the machine: typeof on a few values, a property read, an enum value, a
+refused call. On a real client the client's own answers make the key.
 
-  1. Keep correcting the host. Every fix is measurable: change an answer,
-     re-run, see whether the key moves. The remaining difference is in
-     answers nothing verifies, so it has to be found by making this
-     environment more like a client rather than by searching.
+The offline search is done and it came back empty. Each of the five measured
+numbers was swept over its whole range, 0 to 2147483646, with an exact test on
+the first five bytes of the result. Zero hits on every one. A planted key was
+found by the same scanner on the same run, so the scanner works. The reading is
+plain: at least two of the measured answers are wrong together, and two at once
+is 2 to the 62, which is out of reach.
 
-  2. Run harness_for_executor.lua once on a real client. It prints the
-     key measured there. Put those three numbers in real.lua, run it, and
-     the script writes itself out - the cipher that does it is verified
-     above.
+WHAT REAL.LUA DOES NOW
 
-THE BYTES THEMSELVES
----------------------------------------------------------------------
-  real.lua carries all 10494 of them, with the cipher, ready for the key.
+real.lua is the whole tool in Luau, not a dump. It carries the second slice and
+the string table, and it runs every layer:
+
+  decrypt, check MYqme, read the functions, unpack each constant, resolve each
+  pointer into a name, and try the packed functions against what the earlier
+  layers already produced.
+
+Set KEY at the top to the three numbers and run it. With a wrong key it tells you
+the key is wrong and stops, because the five magic bytes do not come out. With
+the right key it prints the script: every function, every step, every name.
+
+It was checked end to end against real data. Pointed at the first slice under a
+known key it prints 13 functions, 116 names and 2 opened packed functions, the
+same numbers the Python walker reports from the other side. Two separate
+implementations agree.
+
+THE TWO WAYS TO FINISH
+
+One: run real.lua inside a real Roblox client, with the first layer feeding it
+the key. The client answers the measurements correctly by being the client.
+
+Two: keep correcting the stand-in's answers until the key comes out right. The
+test is cheap and exact: the file carries a tag over the second slice, so any
+candidate key is confirmed or rejected in one step with no guessing.
