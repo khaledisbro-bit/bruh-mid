@@ -1,0 +1,99 @@
+INPUT
+  /root/.claude/uploads/45099479-1285-5875-8f33-fae937773cd0/48ce2488-25ms_obf_4.lua
+  228754 bytes, sha256 35b0d3c1bd0b135ed98eaceb9993a1444737e9b233324ade9f2132fbfc936b32
+
+THE OUTER LAYER, every parameter read out of the file's own text
+  base85 alphabet   85 characters, starting "'1RQ_v$Ko3Pg"
+  header subtracted 2686460627 and 3952316868
+  data section      108991 bytes, sha256 6554a22bc613526b9f305d0c779a37eca7f2ef56c5c53abf6b4c034b68b77792
+  the block the rest of the analysis used is this file's own:
+      its bytes 8 onward, for 108991 bytes, are identical: True
+  interpreter       1060968 bytes, sha256 61f3b447143fb5a809b9473b345e556f
+
+THE SCRIPT'S OWN SLICE
+  10494 bytes at offset 96901, sha256 9e416cfa1bf1b8e39231af81e1936e06
+  the tag the FILE carries : cd7d7829287d88c51333c08e4f9116fecce2010ec8a3043d71fc04df06b86238
+  the tag THIS KEY produces: cd7d7829287d88c51333c08e4f9116fecce2010ec8a3043d71fc04df06b86238
+  they agree               : True
+  first five bytes decrypted: b'MYqme'  (its reader accepts only MYqme)
+
+THE NAMES, ONE AT A TIME, WITH THE ARITHMETIC
+  the seed of each entry is carried by the constant that names it; the
+  twelve key bytes come from the key and that seed, and the text is the
+  exclusive-or of the two. Nothing else happens.
+
+  slot  1  seed 548093635  
+      ciphertext fcffba03
+      key bytes  9b9ed766b4e32b728621450b
+      text       game
+  slot  2  seed 565002181  
+      ciphertext 8ad1747f4c6dec
+      key bytes  dabd1506291f9f2d8a24480e
+      text       Players
+  slot  3  seed 581910727  
+      ciphertext 5fb82776f8286400ed42
+      key bytes  18dd53259d5a12698e274b11
+      text       GetService
+  slot  4  seed 598819273  
+      ciphertext 0690f03d77e4c440f64f2a
+      key bytes  56fc914412968524922a4e14
+      text       PlayerAdded
+  slot  5  seed 615727819  
+      ciphertext d774be0de3b28c
+      key bytes  941bd06386d1f85f962d5117
+      text       Connect
+  slot  6  seed 1330196982 
+      ciphertext 97799979e05e3e1464
+      key bytes  d411f80b813d4a711648d657
+      text       Character
+  slot  7  seed 1347105528 
+      ciphertext 5a445b4a9817d448
+      key bytes  1231362bf678bd2c1a4bd95a
+      text       Humanoid
+  slot  8  seed 1364014074 
+      ciphertext 16391a2e2cdd421b6a0db4343c343b2c29d8511b6d
+      key bytes  5050744a6ab430681e4edc5d
+      text       FindFirstChildOfClass
+  slot  9  seed 1380922620 
+      ciphertext d90ede028c9fc64646
+      key bytes  8e6fb269dfefa3232251df60
+      text       WalkSpeed
+  slot 10  seed 1431648258 
+      ciphertext 3dac1f2c
+      key bytes  49cd6c473ca2fd552e5ae869
+      text       task
+  slot 11  seed 1448556804 
+      ciphertext f08dc312
+      key bytes  87ecaa66b1dd7011325deb6c
+      text       wait
+  slot 12  seed 1482373896 
+      ciphertext 544a5540f420
+      key bytes  042b27259a5457083a63f172
+      text       Parent
+  slot 13  seed 1330258559 
+      ciphertext 285a7478763014
+      key bytes  6b32150c025570729fc1c758
+      text       Chatted
+  slot 14  seed 1395741904 
+      ciphertext 78257a6b70b968
+      key bytes  3b4a140515da1c38f844e143
+      text       Connect
+  slot 15  seed 968196331  
+      ciphertext 15ce620aa8
+      key bytes  79a1156fdac6b60fe08b912e
+      text       lower
+  slot 16  seed 985104877  
+      ciphertext daf5303677321e7287bca353daf0306d7d631f2ed7eca203ddf563382f36197d87eaa70989f5666b7f601c7885b8a001def0373b79314e73dcb7f7068ff2603b
+      key bytes  b8c0530e4e022a4be48e9431
+      text       b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235
+
+THE SAME THING WITH ONE BIT OF THE KEY FLIPPED: (942594297, 1658152469, 1676287984)
+  tag agrees: False
+  first five bytes: b'\x1b\xf8\xff?\xbb'
+  slot  1 text: b'\xd6\xa4be'
+  slot  2 text: b'\xe3\xabby\x04rs'
+  slot  3 text: b'\xf8!sSDrvi\xa2j'
+  slot  4 text: b'\xe3(byFrAd\xa5dd'
+
+A name is the exclusive-or of bytes in the file with bytes computed from
+a key the file itself vouches for. Change the key and it is noise.
