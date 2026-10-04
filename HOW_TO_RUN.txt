@@ -1,0 +1,75 @@
+HOW_TO_RUN.TXT - running this on a file it has never seen
+
+WHAT RUNS WITHOUT ANY KEY, ON ANY FILE OF THIS FAMILY
+
+  python3 pipeline/unobf.py <the obfuscated file> -o out
+
+That unwraps the outer chunk, pulls the interpreter out of the one loadstring,
+finds the slice table, and writes its report into out/. Nothing in it is specific
+to a sample: every per-build number is read out of that file's own text.
+
+Then, to walk the layers of whichever slice is open and write the reports:
+
+  python3 pipeline/core/layers.py <decompressed block> <out dir> <decrypted slice>
+
+  LAYERS.txt          every layer and what it gave up
+  SOURCE_LAYER1.txt   each function, with the names and numbers it holds
+  STRINGS.txt         the whole string table
+  IMPORTS.txt         the host names the interpreter reaches for
+
+And to check the result rather than trust it:
+
+  python3 pipeline/core/audit.py <block> <decrypted slice> <out dir> <listing>
+
+  AUDIT.txt           whether every byte accounts for itself, what is decoy with
+                      the run that proved it, whether anything is still wrapped,
+                      and whether a short function is short for a reason
+  source_code.luau    the open layer as Luau, every line marked from evidence
+
+Self-tests, which need no sample at all:
+
+  python3 pipeline/core/layers.py
+  python3 pipeline/core/folds.py
+  python3 pipeline/core/audit.py
+
+WHAT NEEDS A KEY, AND WHAT THE KEY NEEDS
+
+The slice holding the script is encrypted with three numbers the file measures off
+the host while its first slice runs. With them:
+
+  python3 pipeline/core/layers.py ... plus the key, and every constant resolves
+  real.lua                             set KEY at the top and it prints the slice
+
+Getting those three numbers is the open problem, and there are three routes:
+
+  1  run it where the measurements are real. Put the build on a client and the
+     client answers correctly by being the client. The gate then computes the key
+     itself and nothing here is needed.
+
+  2  correct every host answer the stand-in gives. The fold chain names which
+     answers are folded, so this is a finite list rather than a search -
+     FOLD_CHAIN.txt has it, and one wrong answer was found and fixed this way.
+
+  3  known plaintext. The string table is shared between slices and its shut
+     entries are the script's own names, with their LENGTHS readable with no key.
+     A guess at one long entry that agrees with itself over the bytes that reuse
+     the key's start pins the key to one line, and the file's own tag confirms the
+     point on it. This is what opened the sample here. It needs a guess from
+     outside the file, so it is not general.
+
+  4  not yet working: the same attack with nothing from outside. The file's own
+     structure already pins part of it - STRUCTURAL_ATTACK.txt says exactly how
+     far and where it breaks.
+
+WHAT YOU GET AT SOURCE LEVEL, AND WHAT YOU DO NOT
+
+With the key: every function, its parameter and step count, and every name and
+number it holds in its own order. SOURCE_REAL.txt and real_source.luau for this
+sample.
+
+Not the statements. The opcode is not stored in the instruction - the interpreter
+rebuilds it per instruction from a table it derives from the key and from which
+block the instruction sits in. Without that decoder lifted, a statement would be
+a guess, and none is written. Lifting it is the next piece of work: the decoder
+itself is seven lines of the interpreter and is already read out, what is missing
+is the per-block descriptors it reads.
