@@ -179,3 +179,49 @@ So the wrong answer is inside that list, or in the ORDER the answers are folded.
 The next cut is to read the fold out of the first slice, which is now readable
 with its real names, and compute the accumulators from the sequence of answers
 instead of running the whole thing again for each guess.
+
+ONE ANSWER FOUND WRONG, AND HOW
+
+typeof(Enum) is "Enums" in the host. This file answered "table".
+
+An Enum is "Enum" and an item is "EnumItem", and both were right. The CONTAINER
+was left a plain table, and the build asks about it before it trusts the enums it
+is about to read. Changing the answer moves the chain, so it is folded; the host's
+answer is the word, so the old one was wrong.
+
+With it fixed the key moves to 2135935925, 693359311, 48315665. The tag still
+refuses it, so at least one more answer is wrong - which is what the method is
+for. Every folded answer gets checked against what a client really says, and the
+tag only agrees when all of them are right at once. That is why corrections cannot
+be tested one at a time against the tag: they compound.
+
+WHAT ELSE THE CHAIN SETTLED
+
+Folded, and right as this file answers them:
+
+  typeof of an Instance - "Instance", not the class name
+  FindFirstChild's result
+  the attribute round trip, as pass or fail rather than as a value: reading back
+  nothing and reading back the wrong number give the same key
+  UDim.Offset and UDim.Scale, a Vector3 component, a Color3 component,
+  NumberRange.Min, NumberSequenceKeypoint.Envelope
+  TweenInfo.RepeatCount and TweenInfo.Reverses
+  an enum item's Value
+  Vector3:Dot
+  IsA
+  the dash positions in a GUID
+  what GetFullName joins its parts with
+
+Read and thrown away, each proved by a run whose chain did not move:
+
+  BrickColor.Number AND BrickColor.Name - the whole datatype is decoy here
+  the Random sequence
+  the braces around a GUID
+  the message Instance.new refuses with
+  what GetAttributes returns beyond the one attribute
+  the order GetChildren returns children in
+
+And one whole category is out: TOSTRING IS NEVER FOLDED. The text of an Enum, an
+enum item, the Enum container and an Instance were each changed and the chain did
+not move once. So the exact wording of every __tostring in this file is free.
+
