@@ -1,0 +1,220 @@
+THE REAL SCRIPT, AS FAR AS THE BYTES GO
+
+The second slice, decrypted with the key the file's own tag confirms:
+  942594296, 1658152469, 1676287984
+  tag cd7d7829287d88c51333c08e4f9116fecce2010ec8a3043d71fc04df06b86238
+  and the decryption begins MYqme, which is what its reader demands
+
+10,494 bytes, every one accounted for. Four functions.
+
+Nothing below is written by hand. The names came out of the file's own bytes
+through its constant layers, the numbers likewise, and the steps are the
+instruction stream as the file stores it. What is missing is the statement each
+step makes, because the opcode numbers change per instruction and are decoded
+by a table the interpreter builds from the key - writing Lua from a guess at
+them would be invention, so they are left as the file has them.
+
+======================================================================
+
+main
+    3 parameter(s), 13 step(s), stack 658845, jump key 1224959151
+
+    what it holds, in its own order:
+         1  game
+         2  Players
+         3  GetService
+         4  PlayerAdded
+         5  Connect
+
+    its steps, as the file stores them:
+          1   189308222  2237812717  190393504
+          2   190393259  2238250254
+          3   189308255  2251182845  190434041
+          4   190433796  2238178859
+          5   189625097  189625226  2237894742  189308681
+          6   189625113  {...}  2250729628  189625507
+          7   189625131  2238026762
+          8   189625148  {...}  2252227131  189625540
+          9   189625163  2248329269  189308617
+         10   189625183  2238512802
+         11   189308388  189625330  2249592481  189625591
+         12   189625215  2238284671
+         13   1959689727
+
+
+function 1
+    1 parameter(s), 56 step(s), stack 527469, jump key 1188054535
+
+    what it holds, in its own order:
+         1  Character
+         2  Humanoid
+         3  FindFirstChildOfClass
+         4  WalkSpeed
+         5  2
+         6  4
+         7  task
+         8  wait
+         9  3
+        10  Parent
+
+    its steps, as the file stores them:
+          1   1955788013  88971267
+          2   1433064567  1  0
+          3   1430446577  229628678  671242  684057
+          4   1200672143  1144571754
+          5   2080347270  1310047954
+          6   447614594  {...}  0  1  -1  4  -2  5  6  -1  4
+          7   446226290  {...}  2  1
+          8   448435323  9  8  7
+          9   446488289  0  1
+         10   452195193  10  -1
+         11   448012191  388204393
+         12   1578561550  2019778692
+         13   1484393483  618708632
+         14   670990279  180445678  159293  172108
+         15   562136259  1905894752
+         16   1315945034  1083195291
+         17   965900807  -2  -1  4
+         18   958432831  {...}  2  1
+         19   958688401  1495734527
+         20   255037272  1  -4  0  {...}  1
+         21   253793006  1841537925
+         22   1912299526  1151831040
+         23   1618362502  1  0
+         24   1614849311  1271886217  812368  825183
+         25   1167293290  1925860179
+         26   1586890040  1186320993
+         27   507247872  1  0
+         28   511068258  899187388  917256  930071
+         29   1368546929  967337060
+         30   760495771  -1  {...}  0  1
+         31   755329631  2
+         32   755824435  598880228
+         33   206116557  1752942642
+         34   845770459  0
+         35   1632610372  1  1
+         36   1634924396  543216795  460967  473782
+         37   1269254047  2133491277
+         38   474787753  -3
+         39   480882591  1480572674
+         40   88924897  880888337
+         41   1255209322  1  1
+         42   1251401147  570261170  802108  814923
+         43   1076680529  289183917
+         44   32242425  551725781
+         45   2069085271  1420090087
+         46   925687683  2  -3
+         47   924257512  3  1  1
+         48   926739628  332288564
+         49   822299793  626036052
+         50   817682881  1  1
+         51   814479239  1952270647  795172  807987
+         52   502277165  2019875645
+         53   61947040  0
+         54   707650199  2063327333
+         55   1769096026  268922544
+         56   1728484261
+
+
+function 2
+    2 parameter(s), 6 step(s), stack 764925, jump key 1370660329
+
+    what it holds, in its own order:
+         1  Chatted
+         2  Connect
+
+    its steps, as the file stores them:
+          1   2266509636  139268711  137453318  138355957
+          2   2264948532  139276647
+          3   2265662895  138290561
+          4   2259961348  138298496  138339131  137517759
+          5   2265099690  138306432
+          6   1062694798
+
+
+function 2.1
+    2 parameter(s), 45 step(s), stack 601503, jump key 1091055403
+
+    what it holds, in its own order:
+         1  lower
+         2  b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235
+         3  [a function, 393 byte(s), checked under salt 'proto:p.2.1e1']
+
+    its steps, as the file stores them:
+          1   429521184  387312649
+          2   629416756  1  1
+          3   632034994  580204415  946788  549708
+          4   1860718589  230692976
+          5   585427380  1  1
+          6   584006839  789610943  727061  329981
+          7   100627529  718328923
+          8   629560739  719820332
+          9   1036458613  1892252662
+         10   126947080  0
+         11   37532524  -1
+         12   48929179  3
+         13   35750044  0  0
+         14   38196908  1713653672
+         15   1159339241  1946868415
+         16   501748046  1  0
+         17   500918815  1871604633  421401  24321
+         18   1758237052  412532146
+         19   2122968751  1949405743
+         20   1068145169  1130387022
+         21   954159145  459224373
+         22   1042344155  832264611
+         23   1629217225  1  1
+         24   1630340176  1727166752  74011  676934
+         25   1831952407  856279917
+         26   1718731341  2074494256
+         27   521084306  1028988284  575367  178287
+         28   1840729622  1460118566
+         29   527908550  1  0
+         30   524540009  1947890598  378439  981362
+         31   1717380408  242573843
+         32   752743745  -1  {...}  0  1
+         33   751198067
+         34   749918532  1707306820
+         35   1825405017  394251019
+         36   1114071434  1  1
+         37   1113516717  1159099113  59654  662577
+         38   418328662  1829779766
+         39   930261847  1014377844
+         40   238794997  1
+         41   238304334  1  0  1
+         42   238365945  857205893
+         43   691595935  1300626226  2
+         44   1969214917  1549684492
+         45   197981272
+
+
+======================================================================
+
+THE STRING TABLE'S SHUT ENTRIES, ALL SIXTEEN, NOW OPEN
+
+    slot  1   game
+    slot  2   Players
+    slot  3   GetService
+    slot  4   PlayerAdded
+    slot  5   Connect
+    slot  6   Character
+    slot  7   Humanoid
+    slot  8   FindFirstChildOfClass
+    slot  9   WalkSpeed
+    slot 10   task
+    slot 11   wait
+    slot 12   Parent
+    slot 13   Chatted
+    slot 14   Connect
+    slot 15   lower
+    slot 16   b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235
+
+THE ONE THING THE BYTES DO NOT HOLD
+
+Function 2.1 carries a packed function of 393 bytes under the salt
+proto:p.2.1e1. Its key is a string the program computes and compares, and the
+file keeps only a digest of that string - slot 16,
+b5c89049c27bb0cc3a5e3b62e506a436cd38155e1b63a640f0d573d889c77235. A digest
+cannot be read backwards, so that string has to be offered from outside and the
+file's tag answers yes or no in one step. real.lua takes candidates for it in
+MATERIALS, and that list is empty.
