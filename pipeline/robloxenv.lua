@@ -1172,6 +1172,12 @@ if Enum == nil then
         end,
         __tostring = function() return "Enums" end,
     })
+    -- WHAT `typeof` CALLS THE CONTAINER. An Enum is "Enum" and an item is
+    -- "EnumItem", and both were answered - but the container itself is "Enums" in
+    -- the host and this file left it a table. A build that asks typeof(Enum)
+    -- before it trusts the enums it is about to read gets a one word difference
+    -- for free, and this one folds what it reads into its key.
+    kinds[Enum] = "Enums"
 
     -- typeof has to agree, or every check of the model answers "table". The
     -- real one still answers for everything else.
@@ -1207,6 +1213,14 @@ if Enum == nil then
     -- around it keeps seeing Lua.
     VMSMART_HOST_TYPE = function(v)
         if realtype(v) == "table" then
+            -- A VECTOR3 IS NOT USERDATA IN THE HOST. Luau carries a native
+            -- vector, and Roblox's Vector3 is it, so `type` of one answers
+            -- "vector" where every other datatype answers "userdata". That is a
+            -- one word difference a build reads in one call, and this build folds
+            -- what `type` says into its key.
+            if VMSMART_TAGGED and VMSMART_TAGGED[v] == "Vector3" then
+                return "vector"
+            end
             if (VMSMART_IS_INSTANCE and VMSMART_IS_INSTANCE[v])
                     or (VMSMART_TAGGED and VMSMART_TAGGED[v] ~= nil)
                     or (kinds and kinds[v] ~= nil) then
