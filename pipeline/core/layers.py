@@ -341,6 +341,13 @@ def candidates_from(functions):
         for row in fn["constants"]:
             if row["text"] is not None:
                 add(row["text"])
+                # The build keys one packed function with the lower case form of a
+                # name it also carries capitalised - "number" against "Number" -
+                # so the case variants of every recovered name are tried too. They
+                # are variants of the file's own text, and the file's own tag
+                # still decides which one is right.
+                add(row["text"].lower())
+                add(row["text"].upper())
             v = row["value"]
             if isinstance(v, bool):
                 continue

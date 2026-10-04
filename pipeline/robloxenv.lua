@@ -454,6 +454,13 @@ for _, n in ipairs({
     "NetworkServer", "Selection", "ChangeHistoryService", "Studio",
     "UserGameSettings", "TouchInputService", "CaptureService",
     "SerializationService", "ReflectionService", "ScriptService",
+    -- EncodingService is not a guess: THIS FILE'S OWN LOADER calls it, in the
+    -- open, before anything is decrypted -
+    --   buffer.tostring(game:GetService("EncodingService"):DecompressBuffer(...))
+    -- so a client that runs this build has it. Leaving it out made the stand-in
+    -- report a deviation on the build's very first host call, and the report
+    -- then pointed at the one name it should not have doubted.
+    "EncodingService",
 }) do VMSMART_SERVICES[n] = true end
 
 if Instance == nil then

@@ -5,12 +5,12 @@ Encrypted: yes
 First five bytes: MYqme, which is what the reader demands.
 Deserialised 96891 of 96891 byte(s).
 String table: 124 entr(ies).
-Functions: 15.
+Functions: 17.
 
-Constants: 671 in all.
+Constants: 682 in all.
   116 came out as text, through layers 4 and 5
   550 came out as a number, through layer 4
-  5 are still wrapped, and say why below
+  16 are still wrapped, and say why below
 
 main function
   instructions 2536, parameters 3, stack 138307, jump key 633355888
@@ -633,7 +633,7 @@ nested function 2
        9  67108864
       10  262147
       11  [a function, opened under 'string']
-      12  [a function, 1250 byte(s), checked under salt 'proto:a.2e2']
+      12  [a function, opened under 'number']
 
 nested function 3
   instructions 93, parameters 3, stack 987086, jump key 204869149
@@ -725,6 +725,23 @@ nested function 2.c11
        1  2262848
        2  8851859
 
+nested function 2.c12
+  instructions 31, parameters 1, stack 703834, jump key 1984240614
+       1  [other]
+       2  487375
+       3  3101307
+       4  [other]
+       5  [other]
+       6  [other]
+       7  [other]
+       8  [other]
+       9  [other]
+      10  [a function, opened under '0']
+
 nested function 4.c8
   instructions 14, parameters 1, stack 604504, jump key 692930895
+
+nested function 2.c12.c10
+  instructions 5, parameters 3, stack 829920, jump key 93325524
+       1  0
 

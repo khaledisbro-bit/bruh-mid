@@ -121,12 +121,11 @@ than one prints.
  112  90acbd0a49843186a7e7ed827cba07b0ce31720d48faaba5117c2f3c7dfa035c
  113  3121609a684026364f33af3329bd607f05e545fe643d2548cb87c50b7872496b
  114  string
- 115  format   (read with no key)
- 116  %.17g   (read with no key)
- 117  e([+-])0+(%d+(   (1 digit(s) not pinned)
-          digit 3 of the material: 0123456789
- 118  e%1%2   (read with no key)
- 119  gsub   (read with no key)
+ 115  format
+ 116  %.17g
+ 117  e([+-])0+(%d+)
+ 118  e%1%2
+ 119  gsub
  120  UDim2
  121  GenerateGUID
  122  vHmNZ0P7SZR9h
