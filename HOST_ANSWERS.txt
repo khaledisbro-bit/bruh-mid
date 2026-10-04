@@ -1,0 +1,113 @@
+HOST_ANSWERS.TXT - what the key is made of, measured rather than argued
+
+THE GATE, EXACTLY
+
+One instruction turns the measurements into the key. Here it is, as the file
+writes it, with the opcode that reaches it:
+
+  Ry = pop()                          -- three tables the program built
+  if A or B == nil or any of Ry[1], Ry[2], Ry[3], B is not a table then
+      nothing happens
+  else
+      Si = Ry[1][1]   Sq = Ry[2][1]   SJ = Ry[1][2]
+      Se = Ry[2][2]   SU = Ry[3][1]   Sx = B[861547]   SP = 0
+      if any of them is not a number then nothing happens
+      else
+          A = true;  B = nil
+          Su = { (SJ*48271 + Se*131  + SU*17    + Si*257 + Sq*31  + Sx*7919
+                  + 1812386200*193  + 1792341575) % 2147483647,
+                 (Se*65599 + SU*257 + SJ*31    + Si*97  + Sq*313 + Sx*131
+                  + 1812386200*17   + 1733192873) % 2147483647,
+                 (SU*31337 + SJ*193 + Se*73    + Si*17  + Sq*257 + Sx*65537
+                  + 1812386200*7919 + 246468262) % 2147483647 }
+          the real script = read(decrypt(slice 2, Su))
+
+This is not a reading of the file. It is the file. And it checks out: feeding the
+six numbers this run measured through those three forms gives back the exact key
+the run used, to the digit.
+
+  measured: Si 768435  Sq 553584  SJ 1705633901  Se 1508207997  SU 1621166966
+            Sx 1733248236 (not a measurement: it comes out of the loader's own
+            table)
+  key:      562797805, 1581986302, 337997813
+  computed: 562797805, 1581986302, 337997813
+
+WHY THE SEARCH FOUND NOTHING
+
+The earlier search swept each of the five numbers over its whole range, one at a
+time, and came back empty. The reason is now plain, and it was not a bug in the
+search.
+
+Change one host answer and watch all five numbers move at once:
+
+  answer changed             Si       Sq       SJ          Se          SU
+  nothing (baseline)       768435   553584   1705633901  1508207997  1621166966
+  typeof of a datatype     528944   715763   1428646728   456962645   253040676
+  the shape of a GUID      974490    34653    165010290  1305423894   735682994
+  what GetFullName joins    994675    18067   1679342002  1847113284    74354943
+
+The five are not five separate facts. They are one running hash over every answer
+the host gives, read off at five points. One wrong answer moves all five, so a
+sweep that holds four still and moves the fifth is searching a space the true key
+was never in. Two wrong together was the right reading of the result; one wrong
+answer is enough to produce it.
+
+WHAT DOES NOT FEED THE KEY
+
+Each of these was changed and the key did not move. They are settled, and no more
+work on them is worth anything:
+
+  the Random sequence. The generator was replaced with a different one and the
+  key stayed put. Roblox's own sequence is undocumented and cannot be
+  reproduced, and now it does not need to be.
+
+  every derived answer. The one function behind every value this file has to
+  guess was changed at the root, so every guess changed at once. The key stayed
+  put. So the BrickColor number, the stubbed fields and the guessed enum are all
+  outside the key.
+
+  this harness. The run makes six attempts at six patch levels, from everything
+  instrumented down to the chunk untouched, including one with the build's own
+  self-destruct stirs left in. All six produced the same key, to the digit. The
+  instrumentation is not what is wrong.
+
+WHAT DOES FEED IT
+
+  typeof. A datatype has to answer userdata, and an Instance too. Answering
+  table moves the key.
+
+  the shape of a GUID. 32 upper case hex digits with a dash after the 8th, 12th,
+  16th and 20th, braces unless asked otherwise. Moving the dashes moves the key.
+
+  what GetFullName joins its parts with. A dot. Changing it to a slash moves the
+  key. Whether the data model's own name belongs at the front does not matter
+  here, because nothing the build asks about reaches that far up the tree.
+
+ONE TRAP THAT IS NOT A TRAP
+
+Roblox keeps a datatype's components as 32 bit floats, so a value put in and read
+back is not always the value put in. That would wreck any key built from them -
+and the author knew. Every component this build reads back is a number a 32 bit
+float holds exactly:
+
+  0.03125  0.0625  0.125  0.1875  0.25  0.3125  0.375  0.5  0.5625  0.625
+  0.65625  0.6875  0.75  0.78125  0.8125  0.875  0.9375  0.96875
+
+All of them are sums of a few powers of two. So the double this file keeps and
+the float Roblox keeps are the same number, and nothing is lost either way.
+
+ENCODINGSERVICE IS NOT A PROBE
+
+The run flagged game:GetService("EncodingService") as a name no real client has.
+That was wrong, and the file says so itself: its own loader calls that service,
+in the open, before anything is decrypted, to decompress its payload. A client
+that runs this build has it. It is in the service list now.
+
+WHERE THAT LEAVES IT
+
+The key is a hash over every answer, so it is right only when every answer is
+right. The ones above are settled. What remains is to read the folding out of the
+first slice - which is now readable, with its real names - and compute the
+accumulators from the sequence of answers rather than by running the whole thing
+again. Then a wrong answer shows up as the one step where the two disagree,
+instead of as five numbers that are all wrong at once.
