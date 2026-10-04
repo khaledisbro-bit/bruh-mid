@@ -1,0 +1,79 @@
+RESULT.TXT - the source code, what there is of it and what is left
+
+THE FILE IS TWO PROGRAMS, NOT ONE
+
+  the first slice   the measurement layer. 96,891 bytes. It asks the host
+                    questions and turns the answers into three numbers.
+  the second slice  the real script. 10,494 bytes. Encrypted with those three
+                    numbers.
+  the third slice   the string table both share.
+  the fourth slice  the import list, in the open.
+
+THE FIRST SLICE IS DONE. ALL OF IT.
+
+Read, deserialised, and written out with its real names:
+
+  17 functions, 96,891 of 96,891 bytes accounted for
+  671 constants: 116 came out as text, 550 as numbers
+  4 packed functions opened, each confirmed by the file's own tag
+  SOURCE_LAYER1.txt      every function, with the names and numbers it holds
+  decoy.lua              2,254 lines of Lua: what it does to the host, in order
+  LAYERS.txt             all six layers and what each one gave up
+  STRINGS.txt            the whole string table, 124 entries
+  IMPORTS.txt            the 18 host names the interpreter reaches for
+
+What the measurement layer does, in its own order, read off its own constants:
+
+  makes a Folder, writes the attribute 4rI3AaoQ85 = 579, reads the attributes
+  back, asks typeof, destroys it
+  walks Enum.PartType, GetEnumItems, asks type
+  builds a Vector3 and reads X, Y, Z
+  game:FindService("Lighting"), GetService, ClassName
+  TweenInfo with EasingStyle.Back and EasingDirection.Out, then Time,
+  RepeatCount, Reverses, DelayTime
+  BrickColor("Really black"), Name and Number
+  Workspace and workspace, Changed
+  Random:Clone():NextInteger
+  NumberSequence and NumberSequenceKeypoint, Keypoints, Value, Envelope
+  FromValue, EnumType, FromName
+  UDim Scale and Offset, UDim2
+  Vector3 Cross and Dot
+  ReplicatedStorage:IsA against Players, ServiceProvider, RunService
+  coroutine.running, string.byte, math.max, math.floor
+  Vector2, HttpService:GenerateGUID, pcall, string.sub
+  Color3 R, G, B
+  a Part named AZXyj26AUybzMh, its Size
+  newproxy and a read of .Inner
+  two folders renamed 8CeGNFoPEPfT and ZeekraguZQ0x, Parent, GetFullName
+  NumberRange Min and Max
+  a Model, GetChildren, FindFirstChild, FindFirstChildOfClass,
+  FindFirstChildWhichIsA
+  rawequal, Color3:Lerp, Rect
+  Instance.new refused twice, for "part" and for qOyUT0qI5OURkfR1n0h0
+
+Its functions, by what they hold: one is the three number fold with nineteen
+multipliers, one is a mixer, two carry digests and compare them, one builds the
+GUID question, one the UDim2 question, one the newproxy question, two the refused
+classes, and one drives the accumulators for 180 steps.
+
+THE SECOND SLICE IS NOT DONE, AND HERE IS EXACTLY WHY
+
+Its 10,494 bytes are in real.lua along with the whole tool that reads them:
+decrypt, check the five magic bytes, read every function, unpack every constant,
+resolve every name, open the packed functions. Set KEY at the top and it prints
+the script.
+
+The key is three numbers, and they are not in the file. They are a hash over the
+answers the first slice collects, so they come out right only when every answer is
+right. Seventeen of those answers are now known to be folded, and four more are
+known to be read and thrown away, each settled by running the build twice and
+comparing the fold chain step for step.
+
+One answer was found wrong and fixed: typeof(Enum) is "Enums" in the host and this
+file said "table". The key moved. It is still not the right key, so at least one
+more answer is wrong - and the answer is somewhere in a closed list of 38 host
+reads, not somewhere unknown.
+
+host_probe.lua asks all 38 on their own and prints them one per line. Run it on a
+real client, put the two lists side by side, and the first line that differs is the
+last thing standing between here and the script.

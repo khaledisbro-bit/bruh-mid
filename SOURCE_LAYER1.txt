@@ -1,0 +1,113 @@
+THE SLICE, FUNCTION BY FUNCTION
+
+Every function the slice carries, with the names and numbers it
+holds, in its own order. The names came out of the file's own bytes
+through the constant layers; nothing here is guessed and nothing is
+invented. What is missing is the statements between them, because the
+opcode numbers change per instruction and writing Lua from a guess at
+them would be fiction.
+
+17 function(s).
+
+main(3 parameters)
+    2536 step(s), stack 138307, jump key 633355888
+    names, in order:
+        Instance  new  Folder  4rI3AaoQ85  SetAttribute  GetAttributes  
+        GetAttribute  typeof  Destroy  Enum  PartType  GetEnumItems  type  
+        Vector3  X  Y  Z  game  FindService  Lighting  GetService  ClassName  
+        TweenInfo  EasingStyle  Back  EasingDirection  Out  Time  
+        RepeatCount  Reverses  DelayTime  BrickColor  Really black  Name  
+        Number  Workspace  workspace  Changed  Random  Clone  NextInteger  
+        NumberSequence  NumberSequenceKeypoint  Keypoints  Value  Envelope  
+        FromValue  EnumType  FromName  UDim  Scale  Offset  Cross  Dot  
+        ReplicatedStorage  Players  IsA  ServiceProvider  RunService  
+        coroutine  running  byte  math  max  floor  Vector2  HttpService  
+        pcall  sub  Color3  R  G  B  Part  AZXyj26AUybzMh  Size  newproxy  
+        Inner  8CeGNFoPEPfT  ZeekraguZQ0x  Parent  GetFullName  NumberRange  
+        Min  Max  Model  GetChildren  FindFirstChild  FindFirstChildOfClass  
+        FindFirstChildWhichIsA  rawequal  Lerp  Rect  
+        264f3c7323315bf631eb7eb6850fba67ac4a908036294a93da967f6b52eabcfb  
+        946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14
+    numbers: 487, first few: 419130, 942725, 836810, 1656720098, 72882971, 607878787, 0, 1000003, 1, 738052, 31, -715574
+
+fn 1(1 parameter)
+    152 step(s), stack 512174, jump key 1987141208
+    numbers: 20, first few: 48271, 131, 7919, 1000003, 104729, 2147483647, 193, 40503, 313, 65537, 17, 131071
+
+fn 2(2 parameters)
+    70 step(s), stack 749630, jump key 22263355
+    names, in order:
+        type  
+        90acbd0a49843186a7e7ed827cba07b0ce31720d48faaba5117c2f3c7dfa035c  
+        3121609a684026364f33af3329bd607f05e545fe643d2548cb87c50b7872496b  
+        string  byte
+    numbers: 5, first few: -1, 1, 65599, 67108864, 262147
+    still wrapped: 2
+
+fn 3(3 parameters)
+    93 step(s), stack 987086, jump key 204869149
+    numbers: 19, first few: 48271, 131, 17, 257, 7919, 40503, 2147483647, 65599, 193, 31, 313, 104729
+
+fn 4(1 parameter)
+    38 step(s), stack 224540, jump key 387474943
+    names, in order:
+        946b5a82335e1d56a97a905e6916ec185bc4b1a3c1cdb248b36e8fe02247ae14
+    numbers: 6, first few: 65599, 97, 17, 31, 1, 1000003
+    still wrapped: 1
+
+fn 5(2 parameters)
+    71 step(s), stack 461996, jump key 570080737
+    names, in order:
+        UDim2  new  X  Offset  Y  Scale
+    numbers: 9, first few: 0, 997, 131, 1000003, 257, 1, 73, 1000033, 2
+
+fn 6(3 parameters)
+    13 step(s), stack 699452, jump key 752686531
+    names, in order:
+        GenerateGUID
+
+fn 7(1 parameter)
+    5 step(s), stack 416259, jump key 935292325
+
+fn 8(2 parameters)
+    6 step(s), stack 653715, jump key 1117898119
+    names, in order:
+        vHmNZ0P7SZR9h
+    numbers: 1, first few: 0
+
+fn 9(3 parameters)
+    8 step(s), stack 891171, jump key 1300503913
+    names, in order:
+        Inner
+    numbers: 1, first few: 0
+
+fn 10(1 parameter)
+    7 step(s), stack 564081, jump key 177412465
+    names, in order:
+        Instance  new  qOyUT0qI5OURkfR1n0h0
+
+fn 11(2 parameters)
+    7 step(s), stack 801537, jump key 360018259
+    names, in order:
+        Instance  new  part
+
+fn 12(3 parameters)
+    180 step(s), stack 38991, jump key 542624053
+    numbers: 2, first few: 1000003, 1
+
+fn 2.c11(3 parameters)   -- packed, opened under 'string'
+    11 step(s), stack 466378, jump key 1801634820
+    numbers: 2, first few: 2262848, 8851859
+
+fn 2.c12(1 parameter)   -- packed, opened under 'number'
+    31 step(s), stack 703834, jump key 1984240614
+    numbers: 2, first few: 487375, 3101307
+    still wrapped: 8
+
+fn 4.c8(1 parameter)   -- packed, opened under '1'
+    14 step(s), stack 604504, jump key 692930895
+
+fn 2.c12.c10(3 parameters)   -- packed, opened under '0'
+    5 step(s), stack 829920, jump key 93325524
+    numbers: 1, first few: 0
+

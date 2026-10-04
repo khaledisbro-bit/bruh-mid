@@ -741,6 +741,67 @@ def _short(v):
     return repr(v)
 
 
+def write_source(report, path):
+    """The slice written out function by function: what each one is made of.
+
+    This is not a decompilation and does not pretend to be. The opcodes are
+    decoded by the interpreter itself, from a dispatch tree whose numbers change
+    per instruction, so writing Lua statements here would mean inventing them.
+    What IS known for certain is every function's shape and every name and number
+    it holds, in the order the function holds them - and for a layer whose whole
+    job is to ask the host questions, that order is the program.
+    """
+    lines = ["THE SLICE, FUNCTION BY FUNCTION", "",
+             "Every function the slice carries, with the names and numbers it",
+             "holds, in its own order. The names came out of the file's own bytes",
+             "through the constant layers; nothing here is guessed and nothing is",
+             "invented. What is missing is the statements between them, because the",
+             "opcode numbers change per instruction and writing Lua from a guess at",
+             "them would be fiction.",
+             ""]
+    fns = report.get("functions", [])
+    lines.append("%d function(s)." % len(fns))
+    lines.append("")
+    for fn in fns:
+        if not fn["path"]:
+            name = "main"
+        else:
+            name = "fn " + ".".join(str(n) for n in fn["path"])
+        head = "%s(%d parameter%s)" % (name, fn["params"],
+                                       "" if fn["params"] == 1 else "s")
+        if fn.get("material"):
+            head += "   -- packed, opened under %r" % _text(fn["material"])
+        lines.append(head)
+        lines.append("    %d step(s), stack %d, jump key %d"
+                     % (fn["instructions"], fn["stack"], fn["jump_key"]))
+        names, numbers, held = [], [], []
+        for row in fn["constants"]:
+            if row["state"] == "text":
+                names.append(row["text"].decode("latin-1"))
+            elif isinstance(row["value"], (int, float)) and \
+                    not isinstance(row["value"], bool):
+                v = row["value"]
+                numbers.append(str(int(v)) if v == int(v) else str(v))
+            elif row["state"] not in ("ok", "plain"):
+                held.append(row["state"])
+        if names:
+            lines.append("    names, in order:")
+            line = "        "
+            for nm in names:
+                if len(line) + len(nm) > 76:
+                    lines.append(line)
+                    line = "        "
+                line += nm + "  "
+            lines.append(line.rstrip())
+        if numbers:
+            lines.append("    numbers: %d, first few: %s"
+                         % (len(numbers), ", ".join(numbers[:12])))
+        if held:
+            lines.append("    still wrapped: %d" % len(held))
+        lines.append("")
+    open(path, "w").write("\n".join(lines) + "\n")
+
+
 def selftest():
     """Checks the chain against the file's own behaviour, not against answers.
 
@@ -799,6 +860,7 @@ def run(block_path, slice_table, slice_number, out_dir,
     plain = open(plain_path, "rb").read() if plain_path else None
     report = walk(block, slice_table, slice_number, key=key, plain=plain)
     write_report(report, os.path.join(out_dir, "LAYERS.txt"))
+    write_source(report, os.path.join(out_dir, "SOURCE_LAYER1.txt"))
     if 4 in slice_table:
         length, offset = slice_table[4]
         paths, complete = imports(block, offset, length)
