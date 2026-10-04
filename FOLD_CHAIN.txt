@@ -1,20 +1,71 @@
 FOLD CHAIN
 
+The answers this build folds into its key, and the ones it reads and
+throws away. Sorted by where each one enters the chain.
+
+  folded at step 0       the attribute written and read back
+  folded at step 3       UDim.Offset
+  folded at step 50      NumberSequenceKeypoint.Envelope
+  folded at step 76      Vector3:Dot
+  folded at step 82      IsA
+  folded at step 92      typeof of a datatype
+  folded at step 119     the shape of a GUID
+  read and thrown away   BrickColor.Number
+  read and thrown away   the Random sequence
+
+A change that parts the chain is folded. A change that leaves it
+identical step for step is a decoy read: the build asked, and did
+nothing with the answer.
+
+----
+
 Each line is one host answer changed on purpose, and the step where
 the run stopped agreeing with the untouched run. The step is where
 that answer is read and folded. A change that parts the chain at a
 later step is read later; one that parts it at step 0 is read before
 anything else; one that does not part it at all is not folded.
 
-/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_brick.out
-    args  identical, 1164 step(s)
-    mods  identical, 4470 step(s)
+the attribute written and read back
+    args  parts at step 0 of 1164
+          untouched: (93, [1, 111730, 285])
+          changed:   (93, [1, 259590, 285])
+    mods  parts at step 2 of 4470
+          untouched: (30, 79982077966237, 2147483647, 1197017369, '279', '93')
+          changed:   (28, 1656720098, 1000003, 715130, '279', '152')
 
-/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_rand.out
-    args  identical, 1164 step(s)
-    mods  identical, 4470 step(s)
+UDim.Offset
+    args  parts at step 3 of 1164
+          untouched: (93, [2, 1096, 5870])
+          changed:   (93, [2, 1098, 5870])
+    mods  parts at step 11 of 4470
+          untouched: (38, 54912996, 1000003, 912834, '279', '71')
+          changed:   (38, 54912998, 1000003, 912836, '279', '71')
 
-/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_type.out
+NumberSequenceKeypoint.Envelope
+    args  parts at step 50 of 1164
+          untouched: (93, [1, 592468, 789])
+          changed:   (93, [1, 209462, 789])
+    mods  parts at step 175 of 4470
+          untouched: (30, 73100574274324, 2147483647, 230930444, '279', '93')
+          changed:   (28, 1509604067, 1000003, 599540, '279', '152')
+
+Vector3:Dot
+    args  parts at step 76 of 1164
+          untouched: (93, [1, 224967, 4818])
+          changed:   (93, [1, 423456, 4818])
+    mods  parts at step 268 of 4470
+          untouched: (30, 5993819008149, 2147483647, 192149372, '279', '93')
+          changed:   (28, 120248855, 1000003, 248495, '279', '152')
+
+IsA
+    args  parts at step 82 of 1164
+          untouched: (93, [1, 648747, 7712])
+          changed:   (93, [1, 573141, 7712])
+    mods  parts at step 287 of 4470
+          untouched: (30, 59638561545121, 2147483647, 793184284, '279', '93')
+          changed:   (28, 1233493997, 1000003, 490298, '279', '152')
+
+typeof of a datatype
     args  parts at step 92 of 1164
           untouched: (93, [1, 651140, 2036])
           changed:   (93, [1, 201239, 2036])
@@ -22,11 +73,19 @@ anything else; one that does not part it at all is not folded.
           untouched: (30, 40299364477885, 2147483647, 1833841930, '279', '93')
           changed:   (28, 830568760, 1000003, 566270, '279', '152')
 
-/tmp/claude-0/-home-user-bruh-mid/45099479-1285-5875-8f33-fae937773cd0/scratchpad/div_guid.out
+the shape of a GUID
     args  parts at step 119 of 1164
           untouched: (93, [1, 776851, 6265])
           changed:   (93, [1, 546032, 6265])
     mods  parts at step 425 of 4470
           untouched: (30, 39869070718925, 2147483647, 1036812370, '279', '93')
           changed:   (28, 823334268, 1000003, 331799, '279', '152')
+
+BrickColor.Number
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
+
+the Random sequence
+    args  identical, 1164 step(s)
+    mods  identical, 4470 step(s)
 

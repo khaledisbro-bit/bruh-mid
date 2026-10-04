@@ -156,6 +156,23 @@ def write_timeline(rows, total, path):
 def write_report(rows, path):
     """rows: [(what was changed, the comparison)] in the order they were run."""
     lines = ["FOLD CHAIN", "",
+             "The answers this build folds into its key, and the ones it reads and",
+             "throws away. Sorted by where each one enters the chain.",
+             ""]
+    ordered = sorted(rows, key=lambda r: (r[1]["args"]["at"] is None,
+                                          r[1]["args"]["at"] or 0))
+    for what, cmp in ordered:
+        at = cmp["args"]["at"]
+        if at is None:
+            lines.append("  read and thrown away   %s" % what)
+        else:
+            lines.append("  folded at step %-4d    %s" % (at, what))
+    lines += ["",
+              "A change that parts the chain is folded. A change that leaves it",
+              "identical step for step is a decoy read: the build asked, and did",
+              "nothing with the answer.",
+              "", "----", ""]
+    lines += [
              "Each line is one host answer changed on purpose, and the step where",
              "the run stopped agreeing with the untouched run. The step is where",
              "that answer is read and folded. A change that parts the chain at a",
@@ -206,7 +223,11 @@ if __name__ == "__main__":
         write_timeline(tl, total, "MEASUREMENTS.txt")
         rows = []
         for other in sys.argv[2:]:
-            rows.append((other, compare(base, other, fn=93)))
+            # label=path names the answer that was changed, for the report
+            label, _, path = other.partition("=")
+            if not path:
+                label, path = other, other
+            rows.append((label, compare(base, path, fn=93)))
         write_report(rows, "FOLD_CHAIN.txt")
         for what, cmp in rows:
             print("%s: args at %s, mods at %s"
