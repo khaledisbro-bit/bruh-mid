@@ -472,6 +472,146 @@ def walk(block, slice_table, slice_number, key=None, index_slice=3, plain=None):
     return report
 
 
+KNOWN_KEY_HEAD = LQ + ":"      # the part of a string key the file states outright
+
+
+def peek_entries(block, offset, known=None):
+    """Every string table entry, solved as far as its own bytes allow.
+
+    A string table key is "1812386200:" followed by the material - a ten digit
+    decimal number the referencing constant carries. The salt and the colon are
+    eleven bytes, and the cipher is exclusive-or against the key repeated. So the
+    first eleven bytes of every entry come out with no material at all: that is
+    most entries whole, and the head of the rest.
+
+    Past eleven bytes each position takes one digit. The key repeats every
+    twenty-one bytes, so digit d lands on every position with the same remainder,
+    and one digit has to satisfy all of them at once. Each digit is tried over its
+    ten values and kept only where every position it touches comes out printable.
+    An entry long enough to use a digit three times usually pins it outright.
+
+    Every material seen in this file begins "18", so the first two digits are
+    taken as read. Nothing else is assumed, and what stays ambiguous is reported
+    as ambiguous.
+    """
+    index = string_index(block, offset)
+    known = known or {}
+    rows = []
+    for slot, (start, length) in enumerate(index, 1):
+        raw = block[start:start + length]
+
+        # Where a constant named this entry, its material is known exactly and
+        # there is nothing to infer.
+        if slot in known:
+            text = repeat_xor(raw, KNOWN_KEY_HEAD + str(known[slot]))
+            rows.append({"slot": slot, "length": length, "text": text,
+                         "settled": length, "digits": [], "exact": True})
+            continue
+
+        out = bytearray(length)
+        for i in range(min(length, 11)):
+            out[i] = raw[i] ^ ord(KNOWN_KEY_HEAD[i])
+
+        # What the entry's own readable head is made of narrows the rest. An
+        # entry whose first eleven bytes are all hex digits is a digest and the
+        # rest is hex too; one whose head is all name characters is a name. The
+        # alphabet is taken from the entry, not from a list of expected strings.
+        head = bytes(out[:min(length, 11)])
+        allowed = None
+        if length > 11 and head:
+            hexset = set(b"0123456789abcdef")
+            nameset = set(b"abcdefghijklmnopqrstuvwxyz"
+                          b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+            if all(c in hexset for c in head):
+                allowed = hexset
+            elif all(c in nameset for c in head):
+                allowed = nameset
+
+        ambiguous = []
+        for d in range(10):
+            spots = [i for i in range(length) if i % 21 == 11 + d]
+            if not spots:
+                continue
+            ok = []
+            for digit in "0123456789":
+                chars = [raw[i] ^ ord(digit) for i in spots]
+                if not all(32 <= c <= 126 for c in chars):
+                    continue
+                if allowed is not None and not all(c in allowed for c in chars):
+                    continue
+                ok.append(digit)
+            if d == 0 and "1" in ok:
+                ok = ["1"]
+            elif d == 1 and "8" in ok:
+                ok = ["8"]
+            if len(ok) == 1:
+                digit = ok[0]
+            elif ok:
+                # prefer the digit giving the most letters, and say it is a pick
+                best, score = ok[0], -1
+                for digit in ok:
+                    n = sum(1 for i in spots if chr(raw[i] ^ ord(digit)).isalnum())
+                    if n > score:
+                        best, score = digit, n
+                digit = best
+                ambiguous.append((d, "".join(ok)))
+            else:
+                digit = "0"
+                ambiguous.append((d, "nothing printable"))
+            for i in spots:
+                out[i] = raw[i] ^ ord(digit)
+
+        rows.append({
+            "slot": slot,
+            "length": length,
+            "text": bytes(out),
+            "settled": min(length, 11),
+            "digits": ambiguous,
+            "exact": False,
+        })
+    return rows
+
+
+def materials_used(report):
+    """slot -> material, for every entry a constant in this slice named."""
+    out = {}
+    for fn in report.get("functions", []):
+        for row in fn["constants"]:
+            v = row["value"]
+            if isinstance(v, dict) and v.get("arr") and len(v["arr"]) >= 3 \
+                    and v["arr"][0] == WRAP_TEXT:
+                material = v["arr"][2]
+                material = material.decode("latin-1") if isinstance(material, bytes) \
+                    else str(material)
+                out[int(v["arr"][1])] = material
+    return out
+
+
+def write_strings(rows, path):
+    out = ["STRING TABLE", ""]
+    out.append("Every entry the whole file shares, the real script's names among")
+    out.append("them. The first eleven bytes of each one are read outright, with no")
+    out.append("key: the salt and the separator are the key's first eleven bytes and")
+    out.append("the file writes them in plain text. Past eleven, each position takes")
+    out.append("one digit of a ten digit number, so the choices are listed where more")
+    out.append("than one prints.")
+    out.append("")
+    for row in rows:
+        text = row["text"].decode("latin-1")
+        if row.get("exact"):
+            mark = ""
+        elif row["length"] <= 11:
+            mark = "   (read with no key)"
+        elif not row["digits"]:
+            mark = "   (solved)"
+        else:
+            mark = "   (%d digit(s) not pinned)" % len(row["digits"])
+        out.append("%4d  %s%s" % (row["slot"], text, mark))
+        for d, options in row["digits"]:
+            out.append("          digit %d of the material: %s" % (d + 1, options))
+    open(path, "w").write("\n".join(out) + "\n")
+
+
 def names_recovered(report):
     """Every piece of text the layers gave up, by function and slot."""
     out = {}
@@ -595,5 +735,40 @@ def selftest():
     return not bad
 
 
+def run(block_path, slice_table, slice_number, out_dir,
+        key=None, plain_path=None):
+    """Walk every layer of one slice and write both reports.
+
+    The block is the decompressed body, eight bytes of header and then the bytes
+    the slice table indexes. `plain_path` is for a slice whose decrypted bytes
+    came out of the build's own run, where the key itself was never recorded.
+    """
+    import os
+
+    block = open(block_path, "rb").read()[8:]
+    plain = open(plain_path, "rb").read() if plain_path else None
+    report = walk(block, slice_table, slice_number, key=key, plain=plain)
+    write_report(report, os.path.join(out_dir, "LAYERS.txt"))
+    if "stopped" not in report:
+        rows = peek_entries(block, slice_table[3][1], materials_used(report))
+        write_strings(rows, os.path.join(out_dir, "STRINGS.txt"))
+    return report
+
+
 if __name__ == "__main__":
-    selftest()
+    import sys
+
+    if len(sys.argv) == 1:
+        selftest()
+    else:
+        # layers.py <block> <out dir> [decrypted slice] [k1 k2 k3]
+        block_path, out_dir = sys.argv[1], sys.argv[2]
+        plain_path = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != "-" else None
+        key = tuple(int(x) for x in sys.argv[4:7]) if len(sys.argv) >= 7 else None
+        # the slice table is the interpreter's own, read from the capture
+        table = {1: (96891, 11), 2: (10494, 96902),
+                 3: (1375, 107396), 4: (221, 108771)}
+        which = 1 if plain_path else 2
+        rep = run(block_path, table, which, out_dir, key=key, plain_path=plain_path)
+        print("layers: slice %d, %s" % (which, rep.get("stopped") or
+              "%d function(s), %d opened" % (len(rep["functions"]), rep["opened"])))
