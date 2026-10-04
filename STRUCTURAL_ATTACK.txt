@@ -1,0 +1,69 @@
+STRUCTURAL_ATTACK.TXT - recovering the key with nothing from outside the file
+
+WHY THIS FILE EXISTS
+
+The key for this sample was recovered by known plaintext: words guessed at the
+string table's shut entries, confirmed by the file's own arithmetic and then by its
+tag. That works once. It does not transfer to another sample, because another
+sample has different words.
+
+This is the attack that does transfer. It is NOT finished. What follows is what it
+has established and what is still open, so the next pass starts from facts.
+
+WHAT THE FILE GIVES WITH NO KEY
+
+The real slice deserialises completely without a key. Four functions, every
+instruction, and every constant's SHAPE:
+
+  19 packed constants, each one {68, blob, seed, 1, 1}
+  the blob lengths: 3, 3, 3, 23, 23, 23, 23, 23, 24, 24, 24, 24, 24, 24,
+                    25, 25, 25, 25, 25
+  the seeds, in the open: 1089, 2066, 3043, 4020, 4997, then 1929084 upward,
+                          then 876013735 and 876014712
+  the seeds of the first five step by exactly 977, and so do the next ones
+
+The seed is the ONLY thing the key material varies with. So for two constants of
+the same shape, the three numbers their key is made of differ by a fixed multiple
+of the seed difference: 31, 313 and 257 times it. That is a relation between
+ciphertexts with no unknowns but the key itself.
+
+WHAT THAT ALREADY PINS
+
+Taking fourteen constants at once and requiring their first accumulator to follow
+its own step relation:
+
+  the first plaintext byte is 174, which the file's reader calls a table
+  the second is 4, so that table's array part holds four entries
+  the third is 7
+  the first accumulator is down to 64 readings from 2^32
+
+All three bytes are the same across all fourteen, each agreeing fourteen ways. The
+fourth byte is not shared, because that is where the constants start to differ from
+each other, and the relation alone leaves 64 readings of the high end.
+
+WHAT IS STILL OPEN
+
+  the third byte came out 7, and 7 is not one of the reader's tags - 134, 222,
+  202, 15, 161 and 174 are. So either the array count is encoded differently than
+  assumed, or the shape of these constants is not the shape the first slice used.
+  That is the next thing to settle, and it settles from the first slice, which is
+  open and whose constants can be read byte for byte.
+
+  the second and third accumulators gave no reading at all under the same
+  assumption, which is the same problem showing up louder: their bytes are not
+  shared across constants of different length.
+
+  the three byte constants are the way in. A three byte value can only be a one
+  character number, a one character string, or an empty table - three shapes, a
+  hundred or so readings in total - and all three of them have known seeds. That
+  pins the low bytes of the first accumulator exactly, with no assumption about
+  what a longer constant looks like.
+
+WHAT WOULD FINISH IT
+
+The first slice is fully open and uses the same reader, the same shapes and the
+same arithmetic. Every assumption this attack needs can be checked there first,
+against constants whose plaintext is already known. Then the same check runs on
+the shut slice with nothing guessed.
+
+Until that is done this is not a general tool, and it is not claimed to be.
