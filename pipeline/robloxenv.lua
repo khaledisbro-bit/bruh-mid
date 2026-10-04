@@ -580,6 +580,51 @@ if Instance == nil then
     end
     local declared = { ClassName = true, Name = true, Parent = true,
                        Archivable = true, RobloxLocked = true }
+    -- THE DEFAULTS A FRESH INSTANCE CARRIES, as the host ships them.
+    --
+    -- Only the ones this build or a build like it reads. A part's size is the one
+    -- that mattered: Instance.new("Part").Size is 4, 1, 2 in the host, and with no
+    -- entry for it this file answered a stub.
+    --
+    -- These are the host's published data, the same kind of thing as the
+    -- BrickColor palette and the enum values. Nothing here is behaviour.
+    local BASEPART = {
+        Size = nil,            -- filled in below, once the datatypes exist
+        Transparency = 0,
+        Reflectance = 0,
+        Anchored = false,
+        CanCollide = true,
+        CastShadow = true,
+        Massless = false,
+        Locked = false,
+    }
+    local DEFAULTS = {
+        Part = BASEPART, MeshPart = BASEPART, WedgePart = BASEPART,
+        CornerWedgePart = BASEPART, TrussPart = BASEPART, SpawnLocation = BASEPART,
+        UnionOperation = BASEPART, NegateOperation = BASEPART,
+        IntersectOperation = BASEPART,
+    }
+    function VMSMART_CLASS_DEFAULTS(class)
+        local d = DEFAULTS[class]
+        if d == nil then return nil end
+        local out = {}
+        for k, v in pairs(d) do out[k] = v end
+        -- the sizes the host gives, per class, and a Vector3 only exists once the
+        -- datatype file has been loaded
+        local v3 = VMSMART_CTOR and VMSMART_CTOR.Vector3
+        if v3 then
+            if class == "MeshPart" then
+                out.Size = v3(1, 1, 1)
+            elseif class == "TrussPart" then
+                out.Size = v3(2, 8, 2)
+            else
+                out.Size = v3(4, 1, 2)
+            end
+            out.Position = v3(0, 0, 0)
+        end
+        return out
+    end
+
     local function newInstance(class)
         local children = {}
         local attributes = {}
@@ -620,6 +665,15 @@ if Instance == nil then
         end
         local props = { ClassName = class, Name = class, Parent = nil,
                         Archivable = true, RobloxLocked = false }
+        -- WHAT A FRESH INSTANCE ALREADY HAS. A property with no entry here falls
+        -- through to a recording stub, and a stub is a truthy table where the host
+        -- hands back a value - so `Instance.new("Part").Size` answered an object
+        -- instead of a Vector3. These are the host's own defaults, which are data
+        -- rather than behaviour, and they are written down as such.
+        if VMSMART_CLASS_DEFAULTS then
+            local d = VMSMART_CLASS_DEFAULTS(class)
+            if d then for k, v in pairs(d) do props[k] = v end end
+        end
         local destroyed, parentLocked = false, false
         self = setmetatable({},
             { __index = function(_, k)

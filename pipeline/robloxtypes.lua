@@ -241,10 +241,14 @@ end
 local T = {}
 
 T.UDim = function(scale, offset)
-    -- Scale is a float in the host; Offset is a whole number and is left as it
-    -- comes, because rounding it is a separate question this file has no
-    -- evidence on.
+    -- Scale is a float in the host. Offset is an int32, so a fractional one does
+    -- not survive: the host rounds it. Which way a half goes is the one thing here
+    -- not read off anything, so away from zero is taken and recorded as derived.
     local sc, off = f32(scale), num(offset)
+    if off ~= floor(off) then
+        VMSMART_TYPES_STUBBED["UDim.Offset rounding of a fraction"] = true
+        off = off >= 0 and floor(off + 0.5) or -floor(-off + 0.5)
+    end
     return make("UDim", { Scale = sc, Offset = off,
                           __order = { "Scale", "Offset" } }, {
         Lerp = function(_, goal, alpha)
@@ -776,6 +780,11 @@ local CONSTANTS = {
 
 -- The root a program sees for a modelled type. `new` and the documented
 -- constructors answer with real values; anything else is recorded and stubbed.
+-- THE CONSTRUCTORS, BY NAME. The environment needs to build a value of its own
+-- for a property the host ships a default for - a part's size, say - and reaching
+-- for the global would mean depending on the order these two files load in.
+VMSMART_CTOR = T
+
 function VMSMART_TYPE_ROOT(name)
     local ctor = T[name]
     if ctor == nil then return nil end
