@@ -111,3 +111,71 @@ first slice - which is now readable, with its real names - and compute the
 accumulators from the sequence of answers rather than by running the whole thing
 again. Then a wrong answer shows up as the one step where the two disagree,
 instead of as five numbers that are all wrong at once.
+
+WHAT THE GATE READS, EXACTLY
+
+The three tables the gate pops were dumped at the instruction that reads them:
+
+  Ry[1] = { 768435, 1705633901 }
+  Ry[2] = { 553584, 1508207997 }
+  Ry[3] = { 1621166966 }
+
+Two entries, two entries, one. Each pair is a small number under 1000003 and a
+large one under 2147483647, and 1000003 is a constant of the first slice's own
+main function. So the program keeps two accumulators per group, one modulo
+1000003 and one modulo 2147483647, and the gate reads five of the six.
+
+THE FOURTH SLICE IS NOT ENCRYPTED
+
+It is the import list, and the loader parses it in the open before anything else
+runs. Eighteen names, all of them plain Luau:
+
+  bit32.band, bit32.rshift, tostring, bit32.rrotate, string.rep, string.sub,
+  string.pack, string.byte, pcall, tonumber, select, buffer.create,
+  buffer.tostring, rawequal, bit32.bnot, buffer.writeu8, debug.info, bit32.bxor
+
+Not one Roblox name among them. So the interpreter itself never asks the host
+anything. Every measurement is made by the program it runs, through names that
+program resolves for itself, and the whole of what the build asks the host is
+thirty-odd calls and about a hundred and fifty reads.
+
+MORE THINGS RULED OUT, EACH BY CHANGING IT AND WATCHING THE KEY
+
+  the single precision rounding. Components are 32 bit floats in the host, and
+  this file kept doubles. Rounding them changed the BrickColor palette's colour
+  from 0.06666666666666667 to 0.06666667014360428, which is what a client
+  answers, and the key did not move. Nothing the build reads back was a value
+  this mattered for. The rounding stays, because it is what the host does.
+
+  the data model's name at the front of GetFullName. Stopping the walk at the
+  data model changed nothing, because nothing the build asks about sits that far
+  up the tree. What the parts are joined WITH does matter, and that is a dot.
+
+  how the chunk is loaded. The interpreter imports debug.info, so where its
+  source sits could have mattered. The six attempts load six different sources,
+  from fully instrumented to untouched, and all six produce the same key. It
+  does not matter.
+
+THE WHOLE OF WHAT THE BUILD ASKS THE HOST
+
+Thirty-two distinct calls, and every one of them checks out against a client:
+
+  Folder:SetAttribute("4rI3AaoQ85", 579), GetAttributes(), GetAttribute(...)
+  Folder:set_Name(...) twice, set_Parent(...) twelve times, GetFullName(),
+  Destroy()
+  Model:GetChildren(), FindFirstChild("Folder"),
+  FindFirstChildOfClass("Folder"), FindFirstChildWhichIsA("Instance"), Destroy()
+  Part:set_Name(...), set_Size(Vector3(19, 10, 20)), Destroy()
+  ReplicatedStorage:IsA("Players"), IsA("ServiceProvider"), IsA("RunService"),
+  IsA("Folder") - all four false, which is what a client says
+  Instance.new refused for "part" and for a random name, with the host's own
+  message
+  BrickColor.new("Really black") -> number 1003
+  Enum.PartType.Ball -> name "Ball", value 0
+  Random.new(427163):Clone():NextInteger(...) - and the sequence does not reach
+  the key, which is settled above
+
+So the wrong answer is inside that list, or in the ORDER the answers are folded.
+The next cut is to read the fold out of the first slice, which is now readable
+with its real names, and compute the accumulators from the sequence of answers
+instead of running the whole thing again for each guess.

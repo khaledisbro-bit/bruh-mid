@@ -579,6 +579,40 @@ def peek_entries(block, offset, known=None):
     return rows
 
 
+def imports(block, offset, length):
+    """Slice 4, the import list. It is not encrypted and never was.
+
+    The build reaches every host function it uses through this list: a count,
+    then one path per entry, each path a list of names walked from getfenv().
+    Reading it says exactly which host names the build touches, before any of its
+    own code runs, and it needs no key at all.
+    """
+    raw = block[offset - 1:offset - 1 + length]
+    r = Reader(raw, 0, False)
+    out = []
+    for _ in range(r.uint()):
+        path = [r.text().decode("latin-1") for _ in range(r.uint())]
+        out.append(path)
+    out_complete = (r.p == len(raw))
+    return out, out_complete
+
+
+def write_imports(paths, complete, path):
+    lines = ["IMPORTS", "",
+             "Every host name this build reaches for, read out of the fourth",
+             "slice. That slice is not encrypted: the loader parses it in the",
+             "open before anything else happens, so this list needs no key.",
+             ""]
+    for i, p in enumerate(paths, 1):
+        lines.append("%4d  %s" % (i, ".".join(p)))
+    lines.append("")
+    lines.append("%d name(s), and the slice %s."
+                 % (len(paths),
+                    "accounts for every one of its bytes" if complete
+                    else "has bytes left over"))
+    open(path, "w").write("\n".join(lines) + "\n")
+
+
 def materials_used(report):
     """slot -> material, for every entry a constant in this slice named."""
     out = {}
@@ -765,6 +799,10 @@ def run(block_path, slice_table, slice_number, out_dir,
     plain = open(plain_path, "rb").read() if plain_path else None
     report = walk(block, slice_table, slice_number, key=key, plain=plain)
     write_report(report, os.path.join(out_dir, "LAYERS.txt"))
+    if 4 in slice_table:
+        length, offset = slice_table[4]
+        paths, complete = imports(block, offset, length)
+        write_imports(paths, complete, os.path.join(out_dir, "IMPORTS.txt"))
     if "stopped" not in report:
         rows = peek_entries(block, slice_table[3][1], materials_used(report))
         write_strings(rows, os.path.join(out_dir, "STRINGS.txt"))

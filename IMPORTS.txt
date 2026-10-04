@@ -1,0 +1,26 @@
+IMPORTS
+
+Every host name this build reaches for, read out of the fourth
+slice. That slice is not encrypted: the loader parses it in the
+open before anything else happens, so this list needs no key.
+
+   1  bit32.band
+   2  bit32.rshift
+   3  tostring
+   4  bit32.rrotate
+   5  string.rep
+   6  string.sub
+   7  string.pack
+   8  string.byte
+   9  pcall
+  10  tonumber
+  11  select
+  12  buffer.create
+  13  buffer.tostring
+  14  rawequal
+  15  bit32.bnot
+  16  buffer.writeu8
+  17  debug.info
+  18  bit32.bxor
+
+18 name(s), and the slice accounts for every one of its bytes.
