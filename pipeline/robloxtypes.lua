@@ -206,6 +206,30 @@ end
 
 local function num(x) return tonumber(x) or 0 end
 
+-- A COMPONENT IS A 32 BIT FLOAT IN THE HOST, NOT A DOUBLE.
+--
+-- Roblox keeps the numbers inside Vector3, Vector2, Color3, UDim, Rect,
+-- NumberRange, NumberSequenceKeypoint and TweenInfo as single precision floats.
+-- So a value goes in as a double and comes back rounded: 17/255 goes in as
+-- 0.06666666666666667 and comes back as 0.06666666865348816. A build that reads
+-- a component back and folds it into a number reads that difference.
+--
+-- This file kept doubles, so every component it handed back was the double that
+-- went in. Most of what this build reads is a sum of a few powers of two and
+-- survives either way, which is why it went unnoticed - but a colour taken from
+-- the BrickColor palette is a third of nothing like a power of two, and that one
+-- came back wrong by about two parts in a billion.
+--
+-- Written and read through a buffer, which is the one place Luau rounds to single
+-- precision exactly the way the engine does.
+local F32BUF = buffer and buffer.create and buffer.create(4)
+local function f32(x)
+    x = num(x)
+    if not F32BUF then return x end
+    buffer.writef32(F32BUF, 0, x)
+    return buffer.readf32(F32BUF, 0)
+end
+
 -- A plain Lua array, as opposed to one of these types. Indexing a type answers
 -- with a recording stub rather than nil, so `a[1] ~= nil` is true for every type
 -- as well - which made ColorSequence.new(colour, colour) treat its first colour
@@ -217,7 +241,10 @@ end
 local T = {}
 
 T.UDim = function(scale, offset)
-    local sc, off = num(scale), num(offset)
+    -- Scale is a float in the host; Offset is a whole number and is left as it
+    -- comes, because rounding it is a separate question this file has no
+    -- evidence on.
+    local sc, off = f32(scale), num(offset)
     return make("UDim", { Scale = sc, Offset = off,
                           __order = { "Scale", "Offset" } }, {
         Lerp = function(_, goal, alpha)
@@ -274,6 +301,7 @@ T.UDim2 = function(xs, xo, ys, yo)
 end
 
 T.Vector2 = function(x, y)
+    x, y = f32(x), f32(y)
     x, y = num(x), num(y)
     local mag = sqrt(x * x + y * y)
     return make("Vector2", { X = x, Y = y, Magnitude = mag,
@@ -301,8 +329,8 @@ T.Vector2 = function(x, y)
 end
 
 T.Vector3 = function(x, y, z)
-    x, y, z = num(x), num(y), num(z)
-    local mag = sqrt(x * x + y * y + z * z)
+    x, y, z = f32(x), f32(y), f32(z)
+    local mag = f32(sqrt(x * x + y * y + z * z))
     local self = make("Vector3", { X = x, Y = y, Z = z, Magnitude = mag,
                                    __order = { "X", "Y", "Z" } }, {
         Dot = function(_, o) return x * num(o.X) + y * num(o.Y) + z * num(o.Z) end,
@@ -354,7 +382,7 @@ T.Vector3 = function(x, y, z)
 end
 
 T.Color3 = function(r, g, b)
-    r, g, b = num(r), num(g), num(b)
+    r, g, b = f32(r), f32(g), f32(b)
     return make("Color3", { R = r, G = g, B = b,
                             __order = { "R", "G", "B" } }, {
         Lerp = function(_, o, t)
@@ -382,14 +410,14 @@ T.CFrame = function(a, b, c)
 end
 
 T.NumberRange = function(a, b)
-    a = num(a)
-    if b == nil then b = a else b = num(b) end
+    a = f32(a)
+    if b == nil then b = a else b = f32(b) end
     return make("NumberRange", { Min = a, Max = b, __order = { "Min", "Max" } })
 end
 
 T.NumberSequenceKeypoint = function(t, v, e)
     return make("NumberSequenceKeypoint",
-                { Time = num(t), Value = num(v), Envelope = num(e),
+                { Time = f32(t), Value = f32(v), Envelope = f32(e),
                   __order = { "Time", "Value", "Envelope" } })
 end
 
@@ -430,8 +458,8 @@ T.Rect = function(a, b, c, d)
     if rawtype(a) == "table" then min, max = a, b
     else min, max = T.Vector2(a, b), T.Vector2(c, d) end  -- Rect.new takes either
     return make("Rect", { Min = min, Max = max,
-                          Width = num(max.X) - num(min.X),
-                          Height = num(max.Y) - num(min.Y) })
+                          Width = f32(num(max.X) - num(min.X)),
+                          Height = f32(num(max.Y) - num(min.Y)) })
 end
 
 T.Ray = function(origin, direction)
@@ -471,11 +499,11 @@ T.Axes = function(...)
 end
 
 T.TweenInfo = function(time, style, direction, reps, reverses, delay)
-    return make("TweenInfo", { Time = num(time ~= nil and time or 1),
+    return make("TweenInfo", { Time = f32(time ~= nil and time or 1),
                                EasingStyle = style, EasingDirection = direction,
                                RepeatCount = num(reps),
                                Reverses = reverses and true or false,
-                               DelayTime = num(delay),
+                               DelayTime = f32(delay),
                                __args = { "Time", "EasingStyle",
                                           "EasingDirection", "RepeatCount",
                                           "Reverses", "DelayTime" } })
