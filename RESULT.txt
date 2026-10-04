@@ -77,3 +77,30 @@ reads, not somewhere unknown.
 host_probe.lua asks all 38 on their own and prints them one per line. Run it on a
 real client, put the two lists side by side, and the first line that differs is the
 last thing standing between here and the script.
+
+THE FILE SENT BACK IS THE SAME FILE
+
+Checked rather than assumed:
+
+  228,754 bytes, both of them
+  sha256  35b0d3c1bd0b135ed98eaceb9993a1444737e9b233324ade9f2132fbfc936b32
+  md5     78f8d954315630b709bfa189b23e80bb
+  byte for byte identical to the one this analysis has been working on
+
+And the pipeline was pointed at that exact upload rather than at the copy on
+disk. It runs it, reaches the second slice, and computes the same key:
+2135935925, 693359311, 48315665. So every result above is a result about this
+file, not about a sibling of it.
+
+It is still the obfuscated input, not anything's output: it begins
+return({[730471]=[=[ and carries one base85 body of 228,754 bytes. Whatever was
+tried on it, what came back was the file itself.
+
+WHAT A TOOL THAT READS ONE LAYER GETS
+
+The measurement layer, and nothing else. That is not a failing of any particular
+tool: the first slice is the only one that decrypts without a key, so a pass that
+stops at the first serialised program it finds comes back with 2,536 instructions
+that build a Folder, read a few components, ask typeof and throw most of the
+answers away. It looks like the script and it is not. The script is the second
+slice, and nothing reaches it without the three numbers.
