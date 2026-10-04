@@ -598,6 +598,15 @@ def write_strings(rows, path):
     out.append("")
     for row in rows:
         text = row["text"].decode("latin-1")
+        head = row["text"][:min(row["length"], 11)]
+        if not row.get("exact") and any(c < 32 or c > 126 for c in head):
+            # The salt form of the key is known outright, so when it yields bytes
+            # no text could hold, this entry is not keyed that way. The other form
+            # the file uses takes its key from the numbers the first layer
+            # measures off the machine, and that is what this is.
+            out.append("%4d  [keyed from the measured numbers, not from the salt]"
+                       % row["slot"])
+            continue
         if row.get("exact"):
             mark = ""
         elif row["length"] <= 11:
