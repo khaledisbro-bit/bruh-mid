@@ -68,6 +68,27 @@ def decompressions(src):
     u = _unobf()
     alphabets = u.find_base85_alphabet(src)
     blobs = u.find_blobs(src)
+    # The generic reader as well. `unobf`'s finders know the packings this tool
+    # grew up on; outer.py reads the alphabet and the body out of whatever
+    # loader the file carries, so a sample that states them differently still
+    # gets its frame decompressed here instead of failing the run outright.
+    try:
+        from . import outer
+    except ImportError:
+        outer = None
+    if outer is not None:
+        try:
+            alpha = outer._alphabet(src)
+            if alpha not in alphabets:
+                alphabets = list(alphabets) + [alpha]
+        except Exception:
+            pass
+        try:
+            body, _pad, _a, _b = outer._literal(src)
+            if body and all(body != b for _k, b in blobs):
+                blobs = list(blobs) + [("longest long bracket", body)]
+        except Exception:
+            pass
     out, notes = [], []
     for bkey, blob in sorted(blobs, key=lambda kv: -len(kv[1])):
         for ai, alpha in enumerate(alphabets):

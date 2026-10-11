@@ -52,8 +52,15 @@ from core import driver, tracefmt, version  # noqa: E402
 
 def safe_long_bracket(content):
     """A Lua long-bracket level that cannot collide with the content."""
+    # Overlapping runs count. `re.finditer` resumes after the text a match
+    # consumed, so `]]==]` matched the leading `]]` at level 0 and never saw the
+    # `]==]` behind it. A payload carrying its own `[==[` body then got wrapped
+    # at the level it already closes at, and the embedded string ended early -
+    # the harness failed to parse on a line of the script's own text. A
+    # lookahead for the closing bracket consumes none of it, so every run is
+    # measured from where it starts.
     longest = 0
-    for m in re.finditer(r"\](=*)\]", content):
+    for m in re.finditer(r"\](=*)(?=\])", content):
         longest = max(longest, len(m.group(1)))
     for m in re.finditer(r"\](=*)$", content):
         longest = max(longest, len(m.group(1)))

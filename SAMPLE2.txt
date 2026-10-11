@@ -1,0 +1,113 @@
+WHAT THIS BUILD IS, READ FROM THE BUILD
+
+  file              /root/.claude/uploads/45099479-1285-5875-8f33-fae937773cd0/06f51c74-25ms_obf_2.lua
+  sha256            9f56416dc341466a5a218f1f286ecaf755e5adfa23d1a3f28f88df4e124fb8a1
+  outer alphabet    85 characters, first eight 'ms*?)[u\\'
+  header            little end first
+  sections          source first, 158286 byte interpreter, 65911 byte data block
+
+  char shift        66, pinned by 4 of its own arrays reading as type names
+  magic             'SgzR'
+  varint byte       (b - 115) % 256
+  value tags        18=false, 68=table, 83=number_text, 85=nil, 122=int, 165=string, 178=true, 230=double
+  field order       12:value, 11:values, 10:count, 14:value_lists, 3:byte_ranges_reversed, 8:count, 4:count, 9:count, 5:value, 2:byte, 13:count, 1:values, 6:numbers, 7:value, 16:value, 15:value, 17:count, 18:count
+  seed              1410283338
+  string separator  ':'
+
+  slices
+    1      872 bytes at       4   the string table
+    2      150 bytes at     876   the host names
+    3    63854 bytes at    1026   runs first, closed with a key the file carries
+    4     1022 bytes at   64880   the gated payload
+
+  host names, read back from their hashes (no key needed)
+     1  buffer.tostring
+     2  buffer.writeu8
+     3  bit32.rrotate
+     4  pcall
+     5  string.rep
+     6  bit32.band
+     7  bit32.rshift
+     8  buffer.readu8
+     9  rawequal
+    10  buffer.create
+    11  tonumber
+    12  bit32.bxor
+    13  tostring
+    14  select
+    15  string.pack
+    16  debug.info
+
+  slice 3 opens with the key the file carries (633654016)
+    its own tag over the closed bytes: agrees
+    first four bytes read 'SgzR', the magic this build states is 'SgzR'
+
+  slice 3 read as a function: 63850 of 63850 bytes accounted for
+    336 constants: 54 opened to text, 0 still behind the gate
+    string table entries this slice uses: 54 of 90
+
+      entry  9  game
+      entry 10  ReplicatedStorage
+      entry 11  GetService
+      entry 12  ClassName
+      entry 13  type
+      entry 14  typeof
+      entry 15  byte
+      entry 16  Players
+      entry 17  RunService
+      entry 18  Instance
+      entry 19  new
+      entry 20  Folder
+      entry 21  pcall
+      entry 22  Destroy
+      entry 23  newproxy
+      entry 24  Inner
+      entry 25  buffer
+      entry 26  fromstring
+      entry 27  jCB2brJMcK
+      entry 28  len
+      entry 29  readu8
+      entry 30  Faces
+      entry 31  Enum
+      entry 32  NormalId
+      entry 33  Top
+      entry 34  Bottom
+      entry 35  Back
+      entry 36  Model
+      entry 37  Parent
+      entry 38  GetChildren
+      entry 39  FindFirstChild
+      entry 40  FindFirstChildOfClass
+      entry 41  FindFirstChildWhichIsA
+      entry 42  rawequal
+      entry 43  PartType
+      entry 44  FromValue
+      entry 45  EnumType
+      entry 46  Name
+      entry 47  Value
+      entry 48  FromName
+      entry 49  Material
+      entry 50  Plastic
+      entry 51  IsStudio
+      entry 52  IsClient
+      entry 53  IsServer
+      entry 54  Axes
+      entry 55  Axis
+      entry 56  Y
+      entry 57  X
+      entry 58  Z
+      entry 59  Ray
+      entry 60  Vector3
+      entry 61  Origin
+      entry 62  Direction
+
+    entries no opened slice reaches: 36 (1, 2, 3, 4, 5, 6, 7, 8, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90)
+
+  the gate
+    the payload is slice 4, closed with a key of three numbers
+    its salt   'proto:main'
+    its tag    1ffe7907670cebfd9922c7c9abec6d1a33aa80e6fd001327bc5adf7cc602a169
+    the three numbers are built from measurements the program takes of
+    its host, so nothing here opens it: a wrong key is caught by that tag
+    rather than producing text, which is what makes it a check and not a
+    guess.
