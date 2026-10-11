@@ -111,3 +111,47 @@ WHAT THIS BUILD IS, READ FROM THE BUILD
     its host, so nothing here opens it: a wrong key is caught by that tag
     rather than producing text, which is what makes it a check and not a
     guess.
+
+  THE GATE, RUN
+  -------------
+  The build was run end to end under the offline stand-in, with the slice the
+  file keys itself checked against its own tag.
+
+    slice 3's tag over its closed bytes          AGREES
+    the key the gate then built                  902766382:38066988:882264298
+    slice 4's tag under that key                 does not agree
+
+  So the gate works and the key it produced is wrong, which is what a stand-in
+  has to produce: the three numbers are built from five measurements the
+  program takes of its host, and this environment is not that host. The five it
+  measured here were
+
+    113219, 217419, 618090305, 1549103305, 1163791916
+
+  and the sixth input is 1729227716, which the build carries itself, with a
+  seventh fixed at 0.
+
+  What the program measures, as it did it:
+
+    makes a Part, parents it, turns off collision, touch and query, sets
+    Transparency to 1 and Size to (1.25, 3.5, 6.25), gives it custom physical
+    properties, builds a CFrame from an orientation and sets the Part's CFrame
+    to it, then reads back
+        AngularAccelerationToTorque
+        TorqueToAngularAcceleration
+        GetMass
+        VectorToObjectSpace, twice
+        VectorToWorldSpace, twice
+    and separately GetChildren, FindFirstChild, FindFirstChildOfClass and
+    FindFirstChildWhichIsA on a Model, and IsStudio, IsClient and IsServer on
+    RunService.
+
+  Every one of those is a fact about Roblox rather than about this file: a
+  block's mass is its volume times its density, its inertia about an axis
+  follows from its size and mass, and the two vector transforms are the part's
+  CFrame applied one way and the other. So the way in is to answer them
+  exactly, not to search for the key: the tag above says yes or no on each
+  attempt, and a wrong answer is caught rather than accepted.
+
+  That is where this stands. The payload is 1022 bytes, slice 4, and the 36
+  string table entries no opened slice reaches belong to it.
