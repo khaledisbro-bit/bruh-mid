@@ -131,6 +131,9 @@ local function make(typeName, fields, methods, lazy, ops)
                 if VMSMART_READ then
                     VMSMART_READ(typeName .. "." .. tostring(k), own)
                 end
+                if VMSMART_SWAP then
+                    return VMSMART_SWAP(typeName .. "." .. tostring(k), own)
+                end
                 return own
             end
             local l = lazy and lazy[k]
@@ -402,15 +405,231 @@ T.Color3 = function(r, g, b)
     })
 end
 
-T.CFrame = function(a, b, c)
+-- A CFRAME, WITH ITS ROTATION.
+--
+-- This used to carry a position and nothing else, so every rotation was the
+-- identity and `VectorToObjectSpace` handed back whatever it was given. A build
+-- that measures its host through a part's CFrame then folds numbers that are
+-- not the host's into its key, and the run looks like it worked.
+--
+-- The algebra is the documented one: a 3x3 rotation stored by rows, a position,
+-- composition as matrix product, and the two vector transforms as that matrix
+-- applied one way and transposed the other. Components are stored through f32
+-- because that is how the host stores them, and a fold over a component reads
+-- the same bits here as there.
+T.CFrame = function(a, b, c, r00, r01, r02, r10, r11, r12, r20, r21, r22)
     local pos
     if rawtype(a) == "table" and VMSMART_TAGGED[a] == "Vector3" then
         pos = a
+        -- CFrame.new(position, lookAt): the documented two-Vector3 form
+        if rawtype(b) == "table" and VMSMART_TAGGED[b] == "Vector3" then
+            return T.CFrameLookAt(a, b)
+        end
     else
         pos = T.Vector3(a, b, c)
     end
-    return make("CFrame", { Position = pos, X = pos.X, Y = pos.Y, Z = pos.Z,
-                            p = pos, __order = { "X", "Y", "Z" } })
+    if r00 == nil then
+        r00, r01, r02 = 1, 0, 0
+        r10, r11, r12 = 0, 1, 0
+        r20, r21, r22 = 0, 0, 1
+    end
+    local m = { f32(r00), f32(r01), f32(r02),
+                f32(r10), f32(r11), f32(r12),
+                f32(r20), f32(r21), f32(r22) }
+    local px, py, pz = num(pos.X), num(pos.Y), num(pos.Z)
+
+    local function toWorld(v)
+        local x, y, z = num(v.X), num(v.Y), num(v.Z)
+        return T.Vector3(m[1] * x + m[2] * y + m[3] * z,
+                         m[4] * x + m[5] * y + m[6] * z,
+                         m[7] * x + m[8] * y + m[9] * z)
+    end
+    local function toObject(v)
+        local x, y, z = num(v.X), num(v.Y), num(v.Z)
+        return T.Vector3(m[1] * x + m[4] * y + m[7] * z,
+                         m[2] * x + m[5] * y + m[8] * z,
+                         m[3] * x + m[6] * y + m[9] * z)
+    end
+
+    local self
+    self = make("CFrame", {
+        Position = pos, X = px, Y = py, Z = pz, p = pos,
+        RightVector = T.Vector3(m[1], m[4], m[7]),
+        UpVector = T.Vector3(m[2], m[5], m[8]),
+        LookVector = T.Vector3(-m[3], -m[6], -m[9]),
+        XVector = T.Vector3(m[1], m[4], m[7]),
+        YVector = T.Vector3(m[2], m[5], m[8]),
+        ZVector = T.Vector3(m[3], m[6], m[9]),
+        Rotation = nil,
+        __order = { "X", "Y", "Z" },
+    }, {
+        VectorToWorldSpace = function(_, v) return toWorld(v) end,
+        VectorToObjectSpace = function(_, v) return toObject(v) end,
+        PointToWorldSpace = function(_, v)
+            local w = toWorld(v)
+            return T.Vector3(num(w.X) + px, num(w.Y) + py, num(w.Z) + pz)
+        end,
+        PointToObjectSpace = function(_, v)
+            return toObject(T.Vector3(num(v.X) - px, num(v.Y) - py,
+                                      num(v.Z) - pz))
+        end,
+        GetComponents = function()
+            return px, py, pz, m[1], m[2], m[3], m[4], m[5], m[6],
+                m[7], m[8], m[9]
+        end,
+        components = function()
+            return px, py, pz, m[1], m[2], m[3], m[4], m[5], m[6],
+                m[7], m[8], m[9]
+        end,
+        Inverse = function()
+            local ip = toObject(T.Vector3(-px, -py, -pz))
+            return T.CFrame(num(ip.X), num(ip.Y), num(ip.Z),
+                            m[1], m[4], m[7], m[2], m[5], m[8], m[3], m[6], m[9])
+        end,
+        -- ToOrientation and ToEulerAnglesYXZ are the same function in the host
+        ToOrientation = function() return T.CFrameToYXZ(m) end,
+        ToEulerAnglesYXZ = function() return T.CFrameToYXZ(m) end,
+        ToEulerAnglesXYZ = function() return T.CFrameToXYZ(m) end,
+        ToWorldSpace = function(_, o) return self * o end,
+        ToObjectSpace = function(_, o)
+            return self.Inverse and (self:Inverse() * o) or o
+        end,
+        Lerp = function(_, o, t)
+            -- position only, and recorded as such: interpolating a rotation
+            -- needs the host's slerp, which is not documented bit for bit
+            t = num(t)
+            VMSMART_TYPES_STUBBED["CFrame:Lerp rotation"] = true
+            return T.CFrame(px + (num(o.X) - px) * t,
+                            py + (num(o.Y) - py) * t,
+                            pz + (num(o.Z) - pz) * t,
+                            m[1], m[2], m[3], m[4], m[5], m[6],
+                            m[7], m[8], m[9])
+        end,
+    }, {
+        Rotation = function()
+            return T.CFrame(0, 0, 0, m[1], m[2], m[3], m[4], m[5], m[6],
+                            m[7], m[8], m[9])
+        end,
+    }, {
+        __mul = function(x, y)
+            if rawtype(y) == "table" and VMSMART_TAGGED[y] == "Vector3" then
+                local w = toWorld(y)
+                return T.Vector3(num(w.X) + px, num(w.Y) + py, num(w.Z) + pz)
+            end
+            local n = VMSMART_FIELDS[y] and VMSMART_CFRAME_ROWS[y]
+            if not n then return x end
+            local o = {}
+            for i = 0, 2 do
+                for j = 1, 3 do
+                    o[i * 3 + j] = m[i * 3 + 1] * n[j]
+                        + m[i * 3 + 2] * n[3 + j]
+                        + m[i * 3 + 3] * n[6 + j]
+                end
+            end
+            local t = toWorld(y.Position)
+            return T.CFrame(num(t.X) + px, num(t.Y) + py, num(t.Z) + pz,
+                            o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8], o[9])
+        end,
+        __add = function(x, y)
+            return T.CFrame(px + num(y.X), py + num(y.Y), pz + num(y.Z),
+                            m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9])
+        end,
+        __sub = function(x, y)
+            return T.CFrame(px - num(y.X), py - num(y.Y), pz - num(y.Z),
+                            m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9])
+        end,
+    })
+    VMSMART_CFRAME_ROWS[self] = m
+    return self
+end
+
+-- The rotation rows of a CFrame this file built, so composition can read the
+-- other operand's matrix. Kept outside the value because the components of
+-- these types deliberately do not live in the table.
+VMSMART_CFRAME_ROWS = VMSMART_CFRAME_ROWS or {}
+
+-- These four live on T rather than as locals of their own. The stand-in, the
+-- datatypes and the harness are concatenated into ONE chunk, so a top-level
+-- local here spends one of that chunk's 200 registers, and four more tipped the
+-- whole harness over the limit: it stopped compiling, with the error pointing
+-- at a line in the harness that had not changed.
+T.rotX = function(t)
+    return { 1, 0, 0, 0, math.cos(t), -math.sin(t), 0, math.sin(t), math.cos(t) }
+end
+T.rotY = function(t)
+    return { math.cos(t), 0, math.sin(t), 0, 1, 0, -math.sin(t), 0, math.cos(t) }
+end
+T.rotZ = function(t)
+    return { math.cos(t), -math.sin(t), 0, math.sin(t), math.cos(t), 0, 0, 0, 1 }
+end
+T.matmul = function(a, b)
+    local o = {}
+    for i = 0, 2 do
+        for j = 1, 3 do
+            o[i * 3 + j] = a[i * 3 + 1] * b[j] + a[i * 3 + 2] * b[3 + j]
+                + a[i * 3 + 3] * b[6 + j]
+        end
+    end
+    return o
+end
+
+-- fromOrientation and fromEulerAnglesYXZ are the same documented rotation:
+-- Y first, then X, then Z.
+T.CFrameFromYXZ = function(rx, ry, rz)
+    local m = T.matmul(T.matmul(T.rotY(num(ry)), T.rotX(num(rx))), T.rotZ(num(rz)))
+    return T.CFrame(0, 0, 0, m[1], m[2], m[3], m[4], m[5], m[6],
+                    m[7], m[8], m[9])
+end
+
+T.CFrameFromXYZ = function(rx, ry, rz)
+    local m = T.matmul(T.matmul(T.rotX(num(rx)), T.rotY(num(ry))), T.rotZ(num(rz)))
+    return T.CFrame(0, 0, 0, m[1], m[2], m[3], m[4], m[5], m[6],
+                    m[7], m[8], m[9])
+end
+
+T.CFrameToYXZ = function(m)
+    -- the inverse of Ry*Rx*Rz
+    local x = math.asin(math.max(-1, math.min(1, -m[6])))
+    local y, z
+    if math.abs(m[6]) < 0.9999999 then
+        y = math.atan2(m[3], m[9])
+        z = math.atan2(m[4], m[5])
+    else
+        y = math.atan2(-m[7], m[1])
+        z = 0
+    end
+    return x, y, z
+end
+
+T.CFrameToXYZ = function(m)
+    local y = math.asin(math.max(-1, math.min(1, m[3])))
+    local x, z
+    if math.abs(m[3]) < 0.9999999 then
+        x = math.atan2(-m[6], m[9])
+        z = math.atan2(-m[2], m[1])
+    else
+        x = math.atan2(m[8], m[5])
+        z = 0
+    end
+    return x, y, z
+end
+
+T.CFrameLookAt = function(from, to, up)
+    local fx, fy, fz = num(from.X), num(from.Y), num(from.Z)
+    local dx, dy, dz = num(to.X) - fx, num(to.Y) - fy, num(to.Z) - fz
+    local len = sqrt(dx * dx + dy * dy + dz * dz)
+    if len == 0 then return T.CFrame(fx, fy, fz) end
+    -- the look axis points from the position towards the target, and the host's
+    -- third column is the opposite of it
+    local lx, ly, lz = dx / len, dy / len, dz / len
+    local ux, uy, uz = 0, 1, 0
+    if up ~= nil then ux, uy, uz = num(up.X), num(up.Y), num(up.Z) end
+    local rx, ry, rz = ly * uz - lz * uy, lz * ux - lx * uz, lx * uy - ly * ux
+    local rl = sqrt(rx * rx + ry * ry + rz * rz)
+    if rl == 0 then return T.CFrame(fx, fy, fz) end
+    rx, ry, rz = rx / rl, ry / rl, rz / rl
+    local nx, ny, nz = ry * lz - rz * ly, rz * lx - rx * lz, rx * ly - ry * lx
+    return T.CFrame(fx, fy, fz, rx, nx, -lx, ry, ny, -ly, rz, nz, -lz)
 end
 
 T.NumberRange = function(a, b)
@@ -758,9 +977,38 @@ local EXTRA = {
         FromAxis = function() return T.Vector3(1, 0, 0) end,
     },
     CFrame = {
-        Angles = function() return T.CFrame(0, 0, 0) end,
-        fromEulerAnglesXYZ = function() return T.CFrame(0, 0, 0) end,
-        lookAt = function(at) return T.CFrame(at) end,
+        Angles = function(x, y, z) return T.CFrameFromXYZ(x, y, z) end,
+        fromEulerAnglesXYZ = function(x, y, z)
+            return T.CFrameFromXYZ(x, y, z)
+        end,
+        fromEulerAnglesYXZ = function(x, y, z)
+            return T.CFrameFromYXZ(x, y, z)
+        end,
+        fromOrientation = function(x, y, z) return T.CFrameFromYXZ(x, y, z) end,
+        fromMatrix = function(pos, vx, vy, vz)
+            if vz == nil then
+                -- the host completes the third axis from the other two
+                vz = vx and vy and T.Vector3(
+                    num(vx.Y) * num(vy.Z) - num(vx.Z) * num(vy.Y),
+                    num(vx.Z) * num(vy.X) - num(vx.X) * num(vy.Z),
+                    num(vx.X) * num(vy.Y) - num(vx.Y) * num(vy.X)) or nil
+            end
+            if not (pos and vx and vy and vz) then return T.CFrame(0, 0, 0) end
+            return T.CFrame(num(pos.X), num(pos.Y), num(pos.Z),
+                            num(vx.X), num(vy.X), num(vz.X),
+                            num(vx.Y), num(vy.Y), num(vz.Y),
+                            num(vx.Z), num(vy.Z), num(vz.Z))
+        end,
+        lookAt = function(at, target, up)
+            if target == nil then return T.CFrame(at) end
+            return T.CFrameLookAt(at, target, up)
+        end,
+        lookAlong = function(at, dir, up)
+            if dir == nil then return T.CFrame(at) end
+            return T.CFrameLookAt(at, T.Vector3(num(at.X) + num(dir.X),
+                                                num(at.Y) + num(dir.Y),
+                                                num(at.Z) + num(dir.Z)), up)
+        end,
     },
     Rect = {},
     UDim = {},

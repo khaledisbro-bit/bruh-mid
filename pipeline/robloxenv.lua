@@ -689,10 +689,190 @@ if Instance == nil then
                           if VMSMART_READ then
                               VMSMART_READ(class .. "." .. tostring(k), own)
                           end
+                          -- One place a capture can be re-taken with ONE
+                          -- answer changed. Which host answers a build folds
+                          -- into its key is otherwise only readable by lifting
+                          -- its bytecode; with this, the same run is taken
+                          -- again with one read altered and the key is
+                          -- compared, which names the dependency directly.
+                          if VMSMART_SWAP then
+                              return VMSMART_SWAP(class .. "." .. tostring(k), own)
+                          end
                           return own
                       end
                   end
                   return answer(k, (function()
+                  -- A PART'S PHYSICS, FROM ITS OWN SIZE AND DENSITY.
+                  --
+                  -- A build of this class measures its host here: it makes a
+                  -- part, sets a size and a density, and folds what the engine
+                  -- says the part weighs and how it turns into the key its
+                  -- payload is locked with. Answered with a recording stub,
+                  -- those reads are fiction and the key is wrong.
+                  --
+                  -- Mass is volume times density, which is the engine's own
+                  -- rule. Density comes from CustomPhysicalProperties when the
+                  -- program set one, and otherwise from the material: a
+                  -- material's density is host DATA, so only the default
+                  -- material's is used and anything else is recorded as not
+                  -- answered. The two torque helpers are the inertia of a box
+                  -- about its own centre, which is physics rather than
+                  -- anything about this file, and both are recorded as derived
+                  -- because the engine's own pair is reported as disabled and
+                  -- cannot be checked against it.
+                  -- WHERE THE SCRIPT IS RUNNING, as the host would say it.
+                  --
+                  -- These three were answered with a recording stub, which is
+                  -- a truthy table, so a build that asks all three was told
+                  -- yes three times - a combination no real host gives. They
+                  -- are read off VMSMART_RUNCONTEXT so a capture can be taken
+                  -- for each place a script can run, and the default is the
+                  -- one these scripts are written for: a live client.
+                  if class == "RunService"
+                      and (k == "IsClient" or k == "IsServer"
+                           or k == "IsStudio" or k == "IsRunning"
+                           or k == "IsRunMode" or k == "IsEdit") then
+                      local ctx = VMSMART_RUNCONTEXT or {}
+                      local answers = {
+                          IsClient = ctx.client ~= false,
+                          IsServer = ctx.server == true,
+                          IsStudio = ctx.studio == true,
+                          IsRunning = ctx.running ~= false,
+                          IsRunMode = ctx.runmode == true,
+                          IsEdit = ctx.edit == true,
+                      }
+                      local answer_ = answers[k]
+                      return answer_ ~= nil and function() return answer_ end
+                          or nil
+                  end
+                  if k == "GetMass" or k == "AssemblyMass"
+                      or k == "AssemblyRootPart" or k == "AssemblyCenterOfMass"
+                      or k == "AngularAccelerationToTorque"
+                      or k == "TorqueToAngularAcceleration" then
+                      local isPart = VMSMART_ISA(class, "BasePart")
+                      -- the physics answers go through the same recorder and
+                      -- the same one-answer override as every other read, so a
+                      -- sweep over host answers covers them too
+                      local function seen_(what, v)
+                          if VMSMART_READ then VMSMART_READ(what, v) end
+                          if VMSMART_SWAP then return VMSMART_SWAP(what, v) end
+                          return v
+                      end
+                      if isPart then
+                          local function density()
+                              local pp = props.CustomPhysicalProperties
+                              local f = pp and VMSMART_FIELDS and VMSMART_FIELDS[pp]
+                              if f and tonumber(f.Density) then
+                                  return tonumber(f.Density)
+                              end
+                              local mat = props.Material
+                              if mat ~= nil and tostring(mat) ~= "Enum.Material.Plastic" then
+                                  VMSMART_TYPES_STUBBED[class .. ".Material density"] = true
+                              end
+                              return 0.7
+                          end
+                          local function size()
+                              local sz = props.Size
+                              local f = sz and VMSMART_FIELDS and VMSMART_FIELDS[sz]
+                              if not f then return 4, 1, 2 end
+                              return tonumber(f.X) or 4, tonumber(f.Y) or 1,
+                                  tonumber(f.Z) or 2
+                          end
+                          local function mass()
+                              local x, y, z = size()
+                              return x * y * z * density()
+                          end
+                          if k == "GetMass" then
+                              return function()
+                                  return seen_(class .. ":GetMass()", mass())
+                              end
+                          end
+                          -- AssemblyMass is a PROPERTY, not a method: for a
+                          -- part on its own the assembly is that part, so it
+                          -- reads as its mass.
+                          if k == "AssemblyMass" then
+                              return seen_(class .. ".AssemblyMass", mass())
+                          end
+                          -- and the assembly's root is the part itself while
+                          -- nothing is welded to it
+                          if k == "AssemblyRootPart" then return self end
+                          -- a lone block's centre of mass is its own centre,
+                          -- which is where its CFrame puts it
+                          if k == "AssemblyCenterOfMass" then
+                              local cf = props.CFrame
+                              local f = cf and VMSMART_FIELDS and VMSMART_FIELDS[cf]
+                              if f and f.Position ~= nil then
+                                  return seen_(class .. ".AssemblyCenterOfMass",
+                                               f.Position)
+                              end
+                              return seen_(class .. ".AssemblyCenterOfMass",
+                                           props.Position)
+                          end
+                          VMSMART_TYPES_STUBBED[class .. ":" .. k
+                              .. " (the engine's own is reported disabled)"] = true
+                          -- THE TWO TORQUE HELPERS.
+                          --
+                          -- The engine's pair is undocumented and reported
+                          -- disabled, so there is nothing to read the exact
+                          -- behaviour off. What IS physics is the inertia of a
+                          -- box: m/12 of the squared sizes, about its own
+                          -- centre, with the parallel axis term when a pivot
+                          -- is given, and the part's rotation deciding which
+                          -- axes those are. Which of those the engine applies
+                          -- is the open question, so the model is a knob and
+                          -- every answer it gives is recorded as derived.
+                          local v3 = VMSMART_CTOR and VMSMART_CTOR.Vector3
+                          local model = VMSMART_TORQUE_MODEL or "local"
+                          if model == "error" then
+                              return function()
+                                  error("AngularAccelerationToTorque is not "
+                                        .. "enabled", 0)
+                              end
+                          end
+                          local function comps(v)
+                              local f = v and VMSMART_FIELDS and VMSMART_FIELDS[v]
+                              if not f then return 0, 0, 0 end
+                              return tonumber(f.X) or 0, tonumber(f.Y) or 0,
+                                  tonumber(f.Z) or 0
+                          end
+                          local function inertia(pivot)
+                              local x, y, z = size()
+                              local m = mass()
+                              local ix = m / 12 * (y * y + z * z)
+                              local iy = m / 12 * (x * x + z * z)
+                              local iz = m / 12 * (x * x + y * y)
+                              if pivot ~= nil and model:find("pivot") then
+                                  local dx, dy, dz = comps(pivot)
+                                  ix = ix + m * (dy * dy + dz * dz)
+                                  iy = iy + m * (dx * dx + dz * dz)
+                                  iz = iz + m * (dx * dx + dy * dy)
+                              end
+                              return ix, iy, iz
+                          end
+                          local function rotated(v, inverse)
+                              local cf = props.CFrame
+                              if not (cf and model:find("world")) then return v end
+                              local fn = inverse and cf.VectorToObjectSpace
+                                  or cf.VectorToWorldSpace
+                              if not fn then return v end
+                              return fn(cf, v)
+                          end
+                          if k == "AngularAccelerationToTorque" then
+                              return function(_, a, pivot)
+                                  local ix, iy, iz = inertia(pivot)
+                                  local ax, ay, az = comps(rotated(a, true))
+                                  local out = v3 and v3(ix * ax, iy * ay, iz * az)
+                                  return out and rotated(out, false) or nil
+                              end
+                          end
+                          return function(_, t, pivot)
+                              local ix, iy, iz = inertia(pivot)
+                              local tx, ty, tz = comps(rotated(t, true))
+                              local out = v3 and v3(tx / ix, ty / iy, tz / iz)
+                              return out and rotated(out, false) or nil
+                          end
+                      end
+                  end
                   if k == "GetChildren" or k == "GetDescendants" then
                       return function()
                           -- INSERTION ORDER, like the host. Children were kept
@@ -1107,10 +1287,40 @@ if Enum == nil then
         HttpContentType = { "ApplicationJson", "ApplicationXml",
                             "ApplicationUrlEncoded", "TextPlain", "TextXml" },
         RaycastFilterType = { "Exclude", "Include" },
+        Axis = { "X", "Y", "Z" },
         HumanoidStateType = nil,
+    }
+    -- AN ENUM WHOSE NUMBERS ARE NOT A RUN FROM ZERO.
+    --
+    -- Material's are spaced, and a build that reads one and folds it needs the
+    -- host's number rather than a position in a list. Written out by name and
+    -- value for that reason; a material not listed here still gets a derived
+    -- number and is still recorded as derived, so nothing is quietly invented.
+    local realEnumPairs = {
+        Material = {
+            Plastic = 256, SmoothPlastic = 272, Neon = 288,
+            Wood = 512, WoodPlanks = 528,
+            Marble = 784, Slate = 800, Concrete = 816, Granite = 832,
+            Brick = 848, Pebble = 864, Rock = 896, Sandstone = 912,
+            CorrodedMetal = 1040, DiamondPlate = 1056, Foil = 1072,
+            Metal = 1088,
+            Grass = 1280, LeafyGrass = 1284, Sand = 1296, Fabric = 1312,
+            Snow = 1328, Mud = 1344,
+            Ice = 1536, Glacier = 1552, Glass = 1568, ForceField = 1584,
+            Air = 1792, Water = 2048,
+        },
     }
     -- the values run from 0 in list order, which is how the host numbers them
     local realEnumValues = {}
+    for enumName, pairsByName in pairs(realEnumPairs) do
+        local order, byName = {}, {}
+        for n, v in pairs(pairsByName) do
+            byName[n] = v
+            order[#order + 1] = n
+        end
+        table.sort(order, function(a, b) return byName[a] < byName[b] end)
+        realEnumValues[enumName] = { byName = byName, order = order }
+    end
     for enumName, names in pairs(realEnums) do
         local byName, order = {}, {}
         for i = 1, #names do

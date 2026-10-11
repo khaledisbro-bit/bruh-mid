@@ -155,3 +155,37 @@ WHAT THIS BUILD IS, READ FROM THE BUILD
 
   That is where this stands. The payload is 1022 bytes, slice 4, and the 36
   string table entries no opened slice reaches belong to it.
+
+  WHAT THE GATE'S FIVE NUMBERS DEPEND ON, MEASURED
+  ------------------------------------------------
+  The run was taken again 233 times, each time with exactly one host answer
+  changed and nothing else, and the key the gate built was compared. That names
+  the gate's inputs without reading its bytecode.
+
+  The five numbers move when any of these change:
+
+    UDim.Offset        14 reads
+    UDim.Scale          7 reads
+    Vector3.X, .Y, .Z  12 reads
+    Axes.X, .Y, .Z      6 reads
+    Faces.Top, .Bottom, .Back
+
+  They do not move when the part's mass, its centre of mass, its torque
+  conversions, or which side of the client/server/Studio line the script is on
+  change. So the gate folds datatype algebra, not the engine's physics: every
+  number in that list is a pure function of the arguments the program passed in,
+  which is why this environment answers them exactly rather than by deriving
+  anything.
+
+  Nothing the program asks for is unanswered now, and no arithmetic in the run
+  touches a value this environment invented. The key it builds is still rejected
+  by the payload's own tag, so one of the answers above is still not what Roblox
+  would say, or the program takes a different branch here than it would there.
+  Two branch-level host facts were found by this method and are recorded as
+  derived: the engine's AngularAccelerationToTorque and
+  TorqueToAngularAcceleration are reported disabled, and whether they raise or
+  answer changes the five numbers while the numbers they answer with do not.
+
+  So the remaining work is reading the fold itself, which is now possible: slice
+  3 is open, its 336 constants and 54 names are readable, and the fold is in its
+  instructions.
